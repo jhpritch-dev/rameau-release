@@ -1,0 +1,130 @@
+name: ci
+
+# This gate exists BEFORE the source tree lands, deliberately. The secret scan is the third
+# of three layers that keep credentials out of this repository (allowlist, .gitignore, this),
+# and it is the only one that runs on every push whether or not a human remembered the other
+# two. The build steps below are written to pass on an empty tree and to start doing real
+# work the moment source appears, so the gate never has to be "turned on" later.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: a scan of the working tree alone cannot see a value that was
+          # committed and later removed, and a removed value is still reachable.
+          fetch-depth: 0
+
+      - name: install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.21.2
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: prove the scanner fires before trusting a zero
+        # A clean report is exactly the output nobody re-checks. So plant a known-positive
+        # in a scratch directory OUTSIDE the repo, confirm gitleaks reports it, and only
+        # then believe a zero from the real scan. A scan that cannot be shown to fire is
+        # not evidence.
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/canary && cd /tmp/canary
+          git init -q .
+          # The canary is assembled from fragments at run time. Written as one literal it
+          # would itself be a finding in THIS file, and the scan step below scans the
+          # workspace -- so the gate would fail on its own workflow. The alternative,
+          # allowlisting this path, would weaken the only layer that runs unconditionally.
+          printf 'aws_access_key_id = %s%s\n' 'AKIA' 'IOSFODNN7EXAMPLE' > creds.txt
+          git add creds.txt
+          git -c user.email=ci@example.invalid -c user.name=ci commit -qm canary
+          if gitleaks detect --source . --no-banner --redact --exit-code 1 >/dev/null 2>&1; then
+            echo "CONTROL FAILED: gitleaks did not flag a known-positive. The scan below cannot be trusted."
+            exit 1
+          fi
+          echo "control ok: gitleaks flags a known-positive"
+
+      - name: scan working tree and full history
+        # --redact so a finding never prints the value into a public CI log.
+        run: |
+          set -euo pipefail
+          gitleaks detect \
+            --source "$GITHUB_WORKSPACE" \
+            --redact \
+            --no-banner \
+            --report-format sarif \
+            --report-path gitleaks.sarif \
+            --exit-code 1
+
+      - name: upload findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-sarif
+          path: gitleaks.sarif
+          if-no-files-found: ignore
+
+  build:
+    name: compile and validate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: byte-compile python, if any
+        run: |
+          set -euo pipefail
+          # -print -quit avoids walking the whole tree just to answer "are there any".
+          if [ -z "$(find . -name '*.py' -not -path './.git/*' -print -quit)" ]; then
+            echo "no python in the tree yet - skipping (this is expected pre-source)"
+            exit 0
+          fi
+          python -m compileall -q .
+          echo "byte-compile ok"
+
+      - name: validate compose, if present
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          found=0
+          for f in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do
+            [ -f "$f" ] || continue
+            found=1
+            echo "validating $f"
+            docker compose -f "$f" config --quiet
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "no compose file yet - skipping (this is expected pre-source)"
+          fi
+
+      - name: licence and scope invariants
+        # Cheap structural checks that protect the two promises this repo makes about itself.
+        run: |
+          set -euo pipefail
+          test -f LICENSE || { echo "LICENSE missing"; exit 1; }
+          grep -q "Apache License" LICENSE || { echo "LICENSE is not Apache-2.0"; exit 1; }
+          test -f RELEASE-SCOPE.md || { echo "RELEASE-SCOPE.md missing"; exit 1; }
+          test -f SECURITY.md || { echo "SECURITY.md missing"; exit 1; }
+          echo "invariants ok"

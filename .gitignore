@@ -1,0 +1,99 @@
+# Credential and environment material. This file exists BEFORE any source lands in this
+# repository, deliberately: the release tree is assembled from a wiped subset of a private
+# archive, and the cheapest place to stop a credential is before it is ever staged.
+#
+# Nothing here is a substitute for the scrub. It is the second of three layers:
+#   1. the allowlist   -- only approved paths are copied into this tree at all
+#   2. this .gitignore -- shapes that must never be staged even if copied
+#   3. CI secret scan  -- a gate on every push and pull request
+# A finding at layer 3 means layers 1 and 2 both failed and the assembly is wrong.
+
+# --- environment and secrets -------------------------------------------------
+.env
+.env.*
+!.env.example
+*.env
+secrets/
+.secrets/
+*.secret
+*.secrets
+credentials.json
+*credential*
+*-credentials*
+auth.json
+.sops.yaml
+.sops/
+*.kubeconfig
+kubeconfig
+kubeconfig.*
+
+# --- keys and certificates ---------------------------------------------------
+*.pem
+*.key
+!**/testdata/**/*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+*.ppk
+known_hosts
+
+# --- tokens -----------------------------------------------------------------
+*.token
+.netrc
+_netrc
+.npmrc
+.pypirc
+
+# --- model weights and large binaries ---------------------------------------
+# A source release does not ship weights. These are fetched at run time.
+*.gguf
+*.safetensors
+*.bin
+*.onnx
+*.pt
+*.pth
+models/
+model-cache/
+
+# --- python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# --- node -------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+.pnpm-store/
+
+# --- local state and scratch -------------------------------------------------
+*.log
+*.sqlite
+*.sqlite3
+*.db
+data/
+volumes/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.idea/
+.vscode/
+
+# --- never publish the assembly working material ----------------------------
+_scrub/
+_preimages/
+_defect-fixes/
+WIPE-LEDGER.md
