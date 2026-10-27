@@ -95,8 +95,19 @@ rulings that removed twelve paths and corrected 130 transforms.
 - **200 of the 282 selected paths are a safe byte copy.** 68 need the resolver sweep, 7
   must be derived as `.example` files, and 7 need documentation scrubbing. The assembly
   is still a transform rather than a copy, but it is a third of the size this note first
-  recorded: the sweep had been assigned by file *extension*, and 145 of the files it
-  named contain no private literal at all. It is now decided by reading the file.
+  recorded: the sweep had been assigned by file *extension*, and **130 of the 207 files
+  it named were found to carry no private literal and were reclassified as straight
+  copies**, with a further 9 leaving the release set entirely. It is now decided by
+  reading the file.
+
+  An earlier draft of this line said 145. That figure came from an exploratory scan
+  using five host-and-path patterns, while the census that decides the transform uses
+  seven — it also counts a redacted octet and a private IP. The eight-file gap is
+  exactly that class: files such as `fetch_guard.py` and `vite.config.js` carry
+  `192.168.x.N` placeholders and none of the host patterns, and the census is right to
+  keep them in the sweep, because a redacted placeholder is a non-working value. 130 is
+  the number this sentence describes and the only one a reader can reconstruct from
+  `allowlist.json`; 145 answered a different question.
 - **Every file in the planned `docs/` slot is new writing.** The source archive's entire
   `docs/` tree is excluded as internal, so no documentation carries over.
 - **`bfg-1.14.0.jar` (GPLv3, 13.8 MB, two copies) is excluded** and must be named in the

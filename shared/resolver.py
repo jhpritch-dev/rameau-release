@@ -145,21 +145,44 @@ def _redaction_complaint(host: str) -> Optional[str]:
     rejected `10.infra.example.com` -- a perfectly valid FQDN, since DNS labels may be
     all digits -- and told the operator their own address was archive scaffolding.
 
-    A masked address keeps most of its octets and replaces one or two with a short
-    mask token. So: four fields, at least two real octets, at least one field that is
-    not an octet, and every such field at most two characters long.
+    A masked address keeps some of its octets and replaces the rest with short mask
+    tokens. So: four fields, at least ONE real octet, at least one field that is not an
+    octet, and every such field at most two characters long.
 
-    What this deliberately does NOT catch, so the boundary is a decision and not an
-    accident: a four-field host whose non-octet label is three or more characters,
-    such as `1.2.3.foo`. That shape is far more likely to be somebody's hostname than
-    a redaction, and refusing a real endpoint is the worse error.
+    The octet floor was 2 until review found it let the heavily-masked cases through
+    while catching the lightly-masked ones: `10.x.x.x`, `172.x.x.x` and `192.x.x.x` --
+    the canonical shorthands for the RFC1918 ranges, and far likelier in a
+    hand-scrubbed file than the `192.168.x1.4` the rule was tuned for -- were ACCEPTED,
+    while `10.0.x.x` was refused. A floor of 1 catches all three and still accepts
+    `a.b.c.d`, which has zero octets and is the control the floor was there to protect,
+    so the floor came down for free.
+
+    Two boundaries this deliberately does NOT catch. Both are decisions, recorded so
+    they read as such rather than as oversights:
+
+    `1.2.3.foo` -- three octets and a three-character label. More likely somebody's
+    hostname than a mask, and refusing a live endpoint is the worse error.
+
+    `x.x.x.x` -- structurally identical to `a.b.c.d`: four single-character non-octet
+    labels, zero octets. No shape-based rule can refuse one and accept the other, so
+    this is unreachable rather than unfixed. Catching it would need a mask alphabet,
+    which trades a named cost for an unmeasured one.
+
+    And the price of the two-character ceiling, stated plainly because it was picked
+    rather than measured: a four-label host whose non-octet labels are ALL at most two
+    characters, with at least one octet, is refused. The class is numeric subdomains
+    under a two-letter domain or ccTLD -- `8.8.8.io`, `10.20.30.io`, `1.2.co.uk`,
+    `1.2.t.me`. Review could not name a host that actually exists in that shape, so no
+    real break is claimed; `co.uk` is what keeps the class from being purely exotic.
+    The error it produces names the host and is actionable, which is why the cost is
+    judged worth paying.
     """
     fields = host.split(".")
     if len(fields) != 4:
         return None
     octets = [f for f in fields if _is_octet(f)]
     masked = [f for f in fields if not _is_octet(f)]
-    if len(octets) >= 2 and masked and all(len(f) <= 2 for f in masked):
+    if len(octets) >= 1 and masked and all(len(f) <= 2 for f in masked):
         return ("it still carries a redacted address (%r) -- this is a placeholder "
                 "from the source archive, not a working value" % host)
     return None

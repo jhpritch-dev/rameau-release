@@ -105,6 +105,59 @@ def test_a_legitimate_host_is_never_called_a_redaction(good):
     assert resolve("router", env={"RAMEAU_ROUTER_URL": good}) == good.rstrip("/")
 
 
+@pytest.mark.parametrize("masked_range", [
+    "http://10.x.x.x:8089",     # canonical RFC1918 shorthand
+    "http://172.x.x.x:8089",
+    "http://192.x.x.x:8089",
+    "http://10.1.x.x:8089",     # lightly masked, caught before the floor came down too
+    "http://10.0.x.x:8089",
+])
+def test_a_heavily_masked_private_range_is_rejected(masked_range):
+    """Found in review: the octet floor of 2 ACCEPTED 10.x.x.x while refusing 10.0.x.x.
+
+    These three shorthands are likelier in a hand-scrubbed file than the mixed-alnum
+    mask the rule had just been tuned for, so the floor was the real finding.
+    """
+    with pytest.raises(ConfigError) as err:
+        resolve("router", env={"RAMEAU_ROUTER_URL": masked_range})
+    assert "redacted" in str(err.value)
+
+
+def test_lowering_the_octet_floor_did_not_cost_the_control():
+    """a.b.c.d has zero octets, so the floor of 1 still lets it through. This is the
+    control the floor existed to protect, and it is why the change was free."""
+    for ok in ("http://a.b.c.d", "http://api.eu.example.com",
+               "http://node1.dc2.example.com"):
+        assert resolve("router", env={"RAMEAU_ROUTER_URL": ok}) == ok
+
+
+def test_x_x_x_x_is_UNREACHABLE_not_unfixed():
+    """Documented boundary, not an oversight.
+
+    `x.x.x.x` is structurally identical to `a.b.c.d` -- four single-character non-octet
+    labels, zero octets -- so no shape-based rule can refuse one and accept the other.
+    This test records the behaviour so a later reader sees a decision rather than a gap.
+    """
+    url = "http://x.x.x.x:8089"
+    assert resolve("router", env={"RAMEAU_ROUTER_URL": url}) == url
+
+
+@pytest.mark.parametrize("collateral", [
+    "http://8.8.8.io", "http://10.20.30.io", "http://0.1.2.ai",
+    "http://1.2.t.me", "http://1.2.co.uk", "http://10.0.co.uk",
+])
+def test_the_price_of_the_two_character_ceiling(collateral):
+    """These ARE refused, and that is the accepted cost of the <=2 mask ceiling.
+
+    The class is numeric subdomains under a two-letter domain or ccTLD. Review could
+    not name a host that exists in this shape, so no real break is claimed -- but the
+    cost is real and this test exists so that anyone changing the ceiling can see
+    exactly what they are trading, instead of discovering it from a bug report.
+    """
+    with pytest.raises(ConfigError):
+        resolve("router", env={"RAMEAU_ROUTER_URL": collateral})
+
+
 def test_the_redaction_rule_s_documented_blind_spot():
     """`1.2.3.foo` is NOT treated as a redaction, and that is a decision.
 
