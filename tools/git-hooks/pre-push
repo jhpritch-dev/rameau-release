@@ -84,13 +84,21 @@ if "$GITLEAKS" detect --source "$control_dir" --no-banner --redact --exit-code 1
 fi
 say "control ok: the scanner flags a planted credential"
 
-# --- the real scan --------------------------------------------------------------------
-# Scan the working tree and the full local history. History matters: a value that was
-# committed and later removed is still reachable, and this hook's whole purpose is to
-# stop such an object before it reaches a remote.
+# --- the gate: LOCAL HISTORY ----------------------------------------------------------
+# This scans git objects, which is exactly what a push sends. A value that was committed
+# and later removed is still reachable, and stopping such an object before it reaches a
+# remote is this hook's whole purpose.
+#
+# It does NOT scan the working tree, and an earlier version of this hook SAID IT DID.
+# `gitleaks detect --source X` traverses history; the worktree needs `--no-git`, which is
+# the separate advisory pass below. Measured: a credential written to an uncommitted file
+# exits 0 here and is caught only by `--no-git`. The gate was never bypassable -- only
+# committed objects get pushed, and those are precisely what this scans -- but the
+# success message claimed a check that had not run, which is the defect this repository's
+# own rule exists to prevent.
 repo_root="$(git rev-parse --show-toplevel)"
 
-say "scanning working tree and full local history..."
+say "scanning local history -- this is the gate, and it covers everything a push sends..."
 if ! "$GITLEAKS" detect \
         --source "$repo_root" \
         --redact \
@@ -102,8 +110,8 @@ if ! "$GITLEAKS" detect \
     say ""
     say "PUSH REFUSED: gitleaks reported ${count} finding(s)."
     say ""
-    say "Findings are REDACTED above and in the report. Do not paste a value anywhere to"
-    say "investigate it -- read the file and line directly."
+    say "Findings are REDACTED above, with the file and line of each. Do not paste a value"
+    say "anywhere to investigate it -- open the file and line directly."
     say ""
     say "If a value here is real and has ever been pushed anywhere, deleting the line is"
     say "NOT the fix. The value must be ROTATED. A commit that removes it only makes it"
@@ -111,5 +119,29 @@ if ! "$GITLEAKS" detect \
     exit 1
 fi
 
-say "clean: no findings in the tree or in local history"
+say "clean: no findings in local history"
+
+# --- advisory: THE WORKING TREE -------------------------------------------------------
+# ADVISORY, and deliberately not a gate. `--no-git` reads files from disk, which includes
+# untracked AND gitignored ones -- measured: both are reported. A local `.env` that
+# .gitignore exists precisely to keep out of the repository would therefore refuse every
+# push, and a gate that blocks on files it is not sending is one people turn off with
+# RAMEAU_SKIP_SECRET_GATE=1. A gate nobody runs protects nothing, so this warns instead.
+#
+# Warning costs nothing here: if any of it is ever committed, the scan above refuses it.
+say ""
+say "advisory pass: scanning the working tree (NOT a gate -- see the note below)..."
+if ! "$GITLEAKS" detect         --no-git         --source "$repo_root"         --redact         --no-banner         --exit-code 1         --report-format json         --report-path "$control_dir/worktree.json"; then
+    wcount="$(python -c "import json,sys;print(len(json.load(open(sys.argv[1]))))" "$control_dir/worktree.json" 2>/dev/null || echo '?')"
+    say ""
+    say "NOTE: the push is NOT blocked by the above. ${wcount} finding(s) are in the WORKING"
+    say "TREE, which a push does not send, so the push proceeds."
+    say ""
+    say "That list includes untracked and gitignored files, so a local .env may appear here"
+    say "and be entirely correct. Read each one before you commit it: once committed, the"
+    say "history gate above refuses the push, and by then rotation is the only remedy."
+else
+    say "advisory: working tree clean too"
+fi
+
 exit 0
