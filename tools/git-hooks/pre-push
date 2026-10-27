@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Pre-push secret gate for the RAMEAU release repository.
+#
+# WHY THIS EXISTS, specifically:
+#
+# GitHub's own push protection would block a credential at the door, before the object
+# reaches the remote. It is NOT available on this repository: secret scanning returns
+# HTTP 422 and rulesets return HTTP 403 while the repository is private on this plan.
+# Both become available when it goes public, which is exactly backwards from when they
+# are most needed -- the private window is when the source tree lands.
+#
+# So the only remote gate is CI, and CI runs AFTER the push has landed. A credential
+# caught there has already left the machine, and rotation rather than deletion is then
+# the only remediation. This hook restores the "block before it leaves" property locally.
+#
+# Install:
+#     git config core.hooksPath tools/git-hooks
+# or:
+#     cp tools/git-hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+#
+# This hook FAILS CLOSED. If gitleaks is not installed, the push is refused rather than
+# waved through, because a gate that silently disables itself when its tool is missing is
+# worse than no gate: it produces the appearance of protection. Override only with a
+# deliberate, visible environment variable, and only when you have checked by hand:
+#
+#     RAMEAU_SKIP_SECRET_GATE=1 git push
+#
+set -euo pipefail
+
+say() { printf 'pre-push: %s\n' "$1" >&2; }
+
+if [ "${RAMEAU_SKIP_SECRET_GATE:-0}" = "1" ]; then
+    say "SKIPPED by RAMEAU_SKIP_SECRET_GATE=1. You have taken responsibility for this push."
+    exit 0
+fi
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+    say "REFUSING: gitleaks is not installed, so this push cannot be checked."
+    say ""
+    say "This hook fails closed on purpose. GitHub push protection is unavailable on this"
+    say "repository while it is private, so this is the only gate that runs before the"
+    say "objects leave this machine."
+    say ""
+    say "Install gitleaks, or override deliberately with RAMEAU_SKIP_SECRET_GATE=1."
+    exit 1
+fi
+
+say "gitleaks $(gitleaks version 2>/dev/null || echo '(version unknown)')"
+
+# --- control: prove the scanner fires before trusting a zero --------------------------
+# A clean report is exactly the output nobody re-checks. The canary is GENERATED rather
+# than written literally, for two reasons: a literal key in this file would itself be a
+# finding when the tree is scanned, and the obvious choice -- AWS's documented example
+# key -- is ALLOWLISTED BY GITLEAKS BY DEFAULT, because it appears throughout AWS's own
+# documentation. That mistake was made once in this repository's CI and the control
+# caught it. base32 emits A-Z2-7, which satisfies the AWS key shape; `cut` rather than a
+# second `head` avoids a SIGPIPE under `set -o pipefail`.
+control_dir="$(mktemp -d)"
+cleanup() { rm -rf "$control_dir"; }
+trap cleanup EXIT
+
+(
+    cd "$control_dir"
+    git init -q .
+    key="AKIA$(LC_ALL=C head -c 64 /dev/urandom | base32 | tr -d '=' | tr -cd 'A-Z0-9' | cut -c1-16)"
+    printf 'aws_access_key_id = %s\n' "$key" > creds.txt
+    git add creds.txt
+    git -c user.email=hook@example.invalid -c user.name=hook commit -qm canary
+)
+
+# gitleaks exits nonzero on findings, so a ZERO exit means it missed the planted value.
+if gitleaks detect --source "$control_dir" --no-banner --redact --exit-code 1 >/dev/null 2>&1; then
+    say "CONTROL FAILED: gitleaks did not flag a generated known-positive."
+    say "The scan below would be meaningless, so this push is refused."
+    exit 1
+fi
+say "control ok: the scanner flags a planted credential"
+
+# --- the real scan --------------------------------------------------------------------
+# Scan the working tree and the full local history. History matters: a value that was
+# committed and later removed is still reachable, and this hook's whole purpose is to
+# stop such an object before it reaches a remote.
+repo_root="$(git rev-parse --show-toplevel)"
+
+say "scanning working tree and full local history..."
+if ! gitleaks detect \
+        --source "$repo_root" \
+        --redact \
+        --no-banner \
+        --exit-code 1 \
+        --report-format json \
+        --report-path "$control_dir/findings.json"; then
+    count="$(python -c "import json,sys;print(len(json.load(open(sys.argv[1]))))" "$control_dir/findings.json" 2>/dev/null || echo '?')"
+    say ""
+    say "PUSH REFUSED: gitleaks reported ${count} finding(s)."
+    say ""
+    say "Findings are REDACTED above and in the report. Do not paste a value anywhere to"
+    say "investigate it -- read the file and line directly."
+    say ""
+    say "If a value here is real and has ever been pushed anywhere, deleting the line is"
+    say "NOT the fix. The value must be ROTATED. A commit that removes it only makes it"
+    say "harder to find."
+    exit 1
+fi
+
+say "clean: no findings in the tree or in local history"
+exit 0

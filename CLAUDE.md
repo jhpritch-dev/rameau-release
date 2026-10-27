@@ -25,6 +25,24 @@ This matters more than usual here. A value committed to a private repository has
 left the machine it came from, and a later rewrite does not un-send it. Rotation, not
 deletion, is the remediation — so the cheap moment to get this right is before the commit.
 
+### Install the pre-push gate
+
+```
+git config core.hooksPath tools/git-hooks
+```
+
+GitHub's push protection, which blocks a credential *before* the object reaches the remote,
+is **not available on this repository while it is private** on the current plan — secret
+scanning returns 422 and rulesets return 403. Both only switch on when the repository goes
+public, which is the inverse of when they are most needed: the private window is exactly
+when the source tree lands.
+
+So CI is the only remote gate, and CI runs *after* the push has landed. The hook in
+`tools/git-hooks/pre-push` restores the block-before-it-leaves property locally. It **fails
+closed**: with gitleaks absent it refuses the push rather than waving it through, because a
+gate that silently disables itself when its tool is missing is worse than no gate — it
+manufactures the appearance of protection.
+
 ## What this environment can and cannot reach
 
 This session runs against the repository only. **It has no network path to the deployment
