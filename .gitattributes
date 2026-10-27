@@ -1,0 +1,33 @@
+# Normalise line endings in the repository to LF.
+#
+# This tree is assembled on Windows and runs on Linux. Without this, a commit made on a
+# Windows checkout can store CRLF in a file that CI executes as a shell script, and the
+# failure is confusing out of proportion to its cause: `\r` becomes part of the last
+# argument on every line.
+#
+# `* text=auto` tells git to normalise on commit; the explicit entries below leave no doubt
+# for the files where a stray CR actually breaks something.
+
+* text=auto eol=lf
+
+*.sh      text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.py      text eol=lf
+*.md      text eol=lf
+*.toml    text eol=lf
+*.json    text eol=lf
+Dockerfile      text eol=lf
+Dockerfile.*    text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+
+# Binary: never normalise, never diff as text.
+*.png     binary
+*.jpg     binary
+*.gif     binary
+*.ico     binary
+*.pdf     binary
+*.gguf    binary
+*.safetensors binary
+*.onnx    binary
