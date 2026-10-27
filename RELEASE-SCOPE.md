@@ -55,6 +55,33 @@ being published, or is large enough to deserve its own release.
 If a week of the release schedule slips, the slack is taken from the bottom of the in-scope
 table — never from the scrub or the scanning steps.
 
+## Known assembly obligations, recorded before they can be forgotten
+
+From the allowlist census of 2026-10-27 (286 of 7,009 source paths selected, 3.4 MB):
+
+- **A `NOTICE` file is required at the root.** Nine `.woff2` faces (Instrument Sans,
+  Instrument Serif, JetBrains Mono) and their three OFL licence texts are in the release
+  set. SIL OFL 1.1 is compatible with Apache-2.0 but is *not* Apache-2.0, so the third-party
+  attribution has to be stated rather than implied. This file does not exist yet because the
+  fonts have not landed; it goes in with them, not before.
+- **`docker/.env.example` must be read line by line before it is copied.** It was classified
+  into the release set on its *filename* alone. A `.example` suffix is a convention, not a
+  guarantee, and this is exactly the kind of file where the convention is most often broken.
+- **`shared/resolver.py` does not exist in the source archive.** It is the keystone of the
+  literal-and-address resolver sweep, so the sweep cannot begin by running it — it has to be
+  written first. Treating it as existing would have made the sweep look like a mechanical
+  pass when it is partly new work.
+- **Only 72 of the 286 selected paths are a safe byte copy.** 199 need the resolver sweep, 7
+  must be derived as `.example` files, and 8 need documentation scrubbing. The assembly is a
+  transform, not a copy, and the per-path transform is recorded in the census.
+- **Every file in the planned `docs/` slot is new writing.** The source archive's entire
+  `docs/` tree is excluded as internal, so no documentation carries over.
+- **`bfg-1.14.0.jar` (GPLv3, 13.8 MB, two copies) is excluded** and must be named in the
+  wipe ledger. A GPL artefact reaching an Apache-2.0 release would be a licence conflict,
+  not merely unwanted weight.
+
+No model weights exist anywhere in the source archive, so none can leak into the release.
+
 ## Rules that outlive the release
 
 - **No credential, key, token, address or hostname from the private deployment appears in
