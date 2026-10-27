@@ -50,18 +50,34 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/canary && cd /tmp/canary
           git init -q .
-          # The canary is assembled from fragments at run time. Written as one literal it
-          # would itself be a finding in THIS file, and the scan step below scans the
-          # workspace -- so the gate would fail on its own workflow. The alternative,
-          # allowlisting this path, would weaken the only layer that runs unconditionally.
-          printf 'aws_access_key_id = %s%s\n' 'AKIA' 'IOSFODNN7EXAMPLE' > creds.txt
+
+          # The canary is GENERATED, for two separate reasons.
+          #
+          # 1. A literal key written here would itself be a finding in THIS file, and the
+          #    scan step below scans the workspace -- so the gate would fail on its own
+          #    workflow. Allowlisting this path instead would weaken the only layer that
+          #    runs unconditionally.
+          #
+          # 2. The first version of this step used AWS's documented example key. gitleaks
+          #    ALLOWLISTS that value by default, precisely because it appears in
+          #    documentation everywhere -- so the control failed on its first run and
+          #    correctly refused to let the real scan be trusted. A canary has to be a
+          #    value the scanner will actually flag, not a famous example every scanner is
+          #    built to ignore. base32 emits A-Z2-7, which satisfies the AWS key shape, and
+          #    `cut` rather than a second `head` avoids a SIGPIPE under `pipefail`.
+          KEY="AKIA$(LC_ALL=C head -c 64 /dev/urandom | base32 | tr -d '=' | tr -cd 'A-Z0-9' | cut -c1-16)"
+          printf 'aws_access_key_id = %s\n' "$KEY" > creds.txt
           git add creds.txt
           git -c user.email=ci@example.invalid -c user.name=ci commit -qm canary
+
+          # gitleaks exits nonzero when it finds something, so a ZERO exit here means the
+          # planted credential was missed.
           if gitleaks detect --source . --no-banner --redact --exit-code 1 >/dev/null 2>&1; then
-            echo "CONTROL FAILED: gitleaks did not flag a known-positive. The scan below cannot be trusted."
+            echo "CONTROL FAILED: gitleaks did not flag a generated known-positive."
+            echo "The scan below cannot be trusted and this job fails on purpose."
             exit 1
           fi
-          echo "control ok: gitleaks flags a known-positive"
+          echo "control ok: gitleaks flags a generated known-positive"
 
       - name: scan working tree and full history
         # --redact so a finding never prints the value into a public CI log.
