@@ -1,0 +1,156 @@
+# RAMEAU -- Docker Compose stack for v0.1
+#
+# Scope: this file runs the two units v0.1 publishes -- the router and the portal -- on one
+# host, with no cluster and no registry. RELEASE-SCOPE.md puts "Docker Compose, including a
+# profile that runs with no egress" in scope for v0.1; the no-egress half is
+# compose.no-egress.yaml beside this file, applied as an overlay.
+#
+# -----------------------------------------------------------------------------------------
+# WHY THERE IS NO `ollama` SERVICE, AND WHY THAT IS NOT AN OMISSION
+# -----------------------------------------------------------------------------------------
+# Inference stays on the host. A container that wanted the accelerator would need /dev/kfd,
+# /dev/dri or /dev/accel passed into it, which ties the stack to one vendor's driver stack on
+# one kind of host -- and RAMEAU is published to run on hosts whose accelerators we know
+# nothing about. So the generation and embedding backends are HOST-BOUNDARY INPUTS: you point
+# RAMEAU_OLLAMA_URL at an ollama you already run, and the stack never owns a model, a driver
+# or a GPU. This also keeps the no-egress profile meaningful: the router still reaches a local
+# backend across the host gateway with no route off the machine.
+#
+# The same reasoning makes arbiter, kb, broadcaster and search absent rather than optional
+# services: none of their images is part of v0.1, so defining them here would describe a
+# stack this repository cannot build. They are URLs if you have them and blank if you do not
+# -- see "OPTIONAL ENDPOINTS" below.
+#
+# -----------------------------------------------------------------------------------------
+# EVERY PUBLISHED PORT BINDS 127.0.0.1
+# -----------------------------------------------------------------------------------------
+# Each `ports:` entry below has an explicit 127.0.0.1 in its default. A bare "18080:8080"
+# binds 0.0.0.0 and publishes the router to the whole network the host sits on, which for a
+# router that will happily proxy to a local model is not a small mistake. If you need to
+# expose a port deliberately, override the variable -- so that the exposure is a decision
+# someone wrote down, not a default nobody read.
+#
+# Requires Compose v2.24 or newer, for `env_file: required: false`.
+
+name: rameau
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# The operator's own values. Copy profiles/compose.env.example to profiles/compose.env and
+# edit it; `required: false` means the stack still starts without it, so that a first run
+# fails on a missing endpoint with the registry's own error message rather than on a missing
+# file. The example is generated from shared/resolver.py -- edit the registry, not the file.
+x-env-file: &env-file
+  - path: profiles/compose.env
+    required: false
+
+services:
+
+  # =========================================================================================
+  # ROUTER -- the OpenAI-compatible endpoint, classifier, cascade and request cache
+  # =========================================================================================
+  router:
+    build:
+      context: ../services/router
+      dockerfile: ../../deploy/images/router/Dockerfile
+      args:
+        # A build arg is never a secret: it is baked into the image and readable with
+        # `docker history`. A commit SHA is fine; a token would not be.
+        RAMEAU_COMMIT: ${RAMEAU_COMMIT:-unknown}
+    image: rameau/router:${RAMEAU_TAG:-dev}
+    env_file: *env-file
+    environment:
+      # --- host-boundary inputs: REQUIRED, and deliberately un-defaulted --------------------
+      # `:?` fails the run with this message rather than starting a router that cannot
+      # generate. There is no default because every plausible default is wrong: a loopback
+      # address means "this container", not "the host", and a guess that resolves is worse
+      # than one that does not.
+      RAMEAU_OLLAMA_URL: ${RAMEAU_OLLAMA_URL:?set this to the ollama you run on the host, e.g. http://host.docker.internal:11434 -- a container loopback address reaches the container, not the host}
+      # The embedding endpoint is kept separate so embeddings never contend with generation on
+      # one accelerator. Point it at the same ollama if you have only one.
+      RAMEAU_EMBED_URL: ${RAMEAU_EMBED_URL:-}
+      # --- optional endpoints: blank counts as unset -----------------------------------------
+      # shared/resolver.py records which capability each one unlocks. A blank value is not a
+      # misconfiguration; it means you are not running that capability.
+      RAMEAU_ARBITER_URL: ${RAMEAU_ARBITER_URL:-}
+      RAMEAU_KB_URL: ${RAMEAU_KB_URL:-}
+      RAMEAU_BROADCASTER_URL: ${RAMEAU_BROADCASTER_URL:-}
+      RAMEAU_SEARCH_URL: ${RAMEAU_SEARCH_URL:-}
+      # --- the router's own identity, as other services should address it --------------------
+      # 8080 is the port the container listens on (see the Dockerfile's CMD). It is NOT the
+      # port the private deployment published, and this is the one place that distinction has
+      # bitten: an in-container URL built from a host-side port resolves to nothing.
+      RAMEAU_ROUTER_URL: http://router:8080
+      RAMEAU_ROUTER_CHAT_URL: http://router:8080/v1/chat/completions
+      RAMEAU_ROUTER_HEALTH_URL: http://router:8080/status
+    volumes:
+      # The four runtime JSON files are read as `Path(__file__).parent / "<name>.json"`, so
+      # each must land at /app/<name>.json EXACTLY. Mounting a directory onto /app instead
+      # would shadow the application code with a config folder, and the container would start
+      # and then fail to import -- so these are four file mounts, not one directory mount.
+      #
+      # The release ships them as *.example.json, because the real ones carry fleet detail;
+      # copy and edit them once (deploy/README.md). Read-only, so the container cannot drift
+      # from what you edited. fleet_config.json additionally re-reads on mtime change on every
+      # request, so editing the host file re-tiers a running router with no restart.
+      - ./config/fleet_config.json:/app/fleet_config.json:ro
+      - ./config/capability_registry.json:/app/capability_registry.json:ro
+      - ./config/capability_profiles.json:/app/capability_profiles.json:ro
+      - ./config/bifrost_shell_policy.json:/app/bifrost_shell_policy.json:ro
+    ports:
+      - "${RAMEAU_ROUTER_PUBLISH:-127.0.0.1:18080}:8080"
+    extra_hosts:
+      # host.docker.internal is a Docker Desktop name and does NOT resolve inside a container
+      # on a Linux host without this. Without it the router starts, /status answers, and every
+      # generation request fails -- the failure looks like a model problem and is not.
+      - "host.docker.internal:host-gateway"
+    networks: [rameau]
+    logging: *logging
+    restart: "no"
+    # NO healthcheck on /health alone, deliberately. The router's own .dockerignore records
+    # that a minimal build context can drop bifrost_delegate.py -- which is read off disk with
+    # `ast` and imported by nothing, so an import-closure context misses it -- after which the
+    # tool loop refuses every delegated leaf, fail-closed, while /health still returns 200. A
+    # healthcheck on /health would read green on exactly that failure and is therefore worse
+    # than none. The acceptance test must exercise one delegated leaf; see deploy/README.md.
+
+  # =========================================================================================
+  # PORTAL -- the existing web UI, ruled in scope by John on 2026-10-27
+  # =========================================================================================
+  portal:
+    build:
+      context: ../services/portal
+      dockerfile: ../../deploy/images/portal/Dockerfile
+    image: rameau/portal:${RAMEAU_TAG:-dev}
+    env_file: *env-file
+    environment:
+      # The portal's nginx config is copied into the image as a TEMPLATE, and the nginx
+      # image's own 20-envsubst-on-templates.sh resolves ${BIFROST_HOST} at container start.
+      # The envsubst FILTER in the Dockerfile is not optional -- the config carries 25 nginx
+      # runtime variables ($host, $uri, $remote_addr ...) and an unfiltered substitution
+      # blanks every one of them, producing a config that starts and proxies wrongly, which
+      # is worse than a config that refuses to start.
+      BIFROST_HOST: ${BIFROST_HOST:-host.docker.internal}
+    ports:
+      - "${RAMEAU_PORTAL_PUBLISH:-127.0.0.1:13110}:80"
+    extra_hosts:
+      # The portal's nginx proxies five routes to host.docker.internal (/router/, /kb/,
+      # /broadcaster/, /arbiter/, /prom/). Without this they 502 on Linux while / still serves
+      # the SPA, so the portal looks up and every panel is empty.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      # Ordering only. Compose's plain depends_on waits for the container to start, not for
+      # the app to be ready, and there is no router healthcheck to wait on (see above). The
+      # portal tolerates a router that is not up yet: those routes 502 until it is.
+      - router
+    networks: [rameau]
+    logging: *logging
+    restart: "no"
+
+networks:
+  rameau:
+    driver: bridge

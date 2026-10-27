@@ -1,0 +1,55 @@
+# .dockerignore -- RAMEAU portal build context
+#
+# Context root: services/portal/ in this repository (the app root, not the repo root).
+#
+# Deny-by-default, then re-admit. Same two syntax rules as the router's list: a '#' is a
+# comment only at the start of a line, so never put one after a pattern; and a negation
+# cannot re-admit a file whose parent directory is still excluded.
+
+# ---- deny everything, then re-admit ----
+**
+
+# ---- the reproducible install ----
+!package.json
+!package-lock.json
+
+# ---- the Vite entry and its config ----
+!index.html
+!vite.config.js
+
+# ---- sources and static assets ----
+!src/
+!src/**
+!public/
+!public/**
+
+# ---- the nginx config, copied into the serve stage as a template ----
+!nginx.conf
+
+# ---- STALE BUILD OUTPUT: never admit ----
+# A committed index-*.js / index-*.css pair existed at the app root of the source tree this
+# came from, while .gitignore ignored `dist`. Vite writes to dist/, so those files were a
+# PREVIOUS build output, not an input. Reaching the build stage they would be harmless;
+# reaching the serve stage they would shadow the fresh bundle and the portal would serve a
+# stale build under a stale asset hash -- silently, with no error anywhere. Excluded by `**`
+# already, and named here so that a future edit re-admitting the app root cannot sweep them
+# back in.
+assets/
+index-*.js
+index-*.css
+dist/
+
+# ---- never, under any circumstances ----
+.env
+.env.*
+*.pem
+*.key
+.netrc
+.git-credentials
+.git/
+node_modules/
+*.log
+*.bak
+*.bak-*
+*_fixed.jsx
+*_v2.jsx

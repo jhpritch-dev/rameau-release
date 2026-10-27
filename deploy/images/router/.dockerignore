@@ -1,0 +1,86 @@
+# .dockerignore -- RAMEAU router build context
+#
+# Context root: services/router/ in this repository.
+#
+# Deny-by-default, then re-admit. The point is not image size, it is that a narrow context is
+# the only thing that makes the COPY groups in the Dockerfile mean anything: `COPY *.py ./`
+# cannot widen what this file has already excluded.
+#
+# -----------------------------------------------------------------------------------------
+# TWO SYNTAX RULES THIS FILE OBEYS, BOTH LEARNED THE HARD WAY
+# -----------------------------------------------------------------------------------------
+# 1. NO TRAILING COMMENTS ON A PATTERN LINE. A '#' starts a comment only at the START of a
+#    line. Writing
+#        !fleet_config.json              # read by config.py
+#    is the single pattern "fleet_config.json<spaces>#<spaces>read by config.py", which
+#    matches nothing, so the re-admission silently does not happen.
+# 2. A NEGATION CANNOT RE-ADMIT A FILE WHOSE PARENT DIRECTORY IS EXCLUDED. `**` followed by
+#    `!dir/file` does not work; the directory has to be re-admitted first.
+#
+# -----------------------------------------------------------------------------------------
+# A GREEN BUILD IS NOT EVIDENCE THIS LIST IS RIGHT
+# -----------------------------------------------------------------------------------------
+# A module missing from this list does not fail the build. It fails at import or at first
+# use, and /status can still answer 200. After every refresh of the router source, recompute
+# the import closure of main:app with an AST walk and compare it against what this admits.
+#
+# And one module is NOT in that closure and must still be admitted: bifrost_delegate.py is
+# read off disk with `ast` and imported by nothing. Omit it and the tool loop refuses every
+# delegated leaf, fail-closed, while health still reads green. It is admitted explicitly
+# below, with this comment, because it is the one entry a closure-based regeneration of this
+# file would drop.
+
+# ---- deny everything, then re-admit ----
+**
+
+# ---- dependency manifest ----
+!requirements.txt
+
+# ---- application source ----
+# Bounded to the top level on purpose: the router's modules are flat, and `**/*.py` would
+# re-admit test files, scratch scripts and vendored copies.
+!*.py
+
+# ---- packages ----
+!backends/
+!backends/**
+
+# ---- the skill registry, baked at build time ----
+!skills/
+!skills/**
+
+# ---- NOT admitted, and deliberately so ----
+# The four runtime JSON files (fleet_config.json, capability_registry.json,
+# capability_profiles.json, bifrost_shell_policy.json) are absent from this context by
+# design. The release ships them as *.example.json and the stack bind-mounts the operator's
+# copies; see the Dockerfile and deploy/compose.yaml. Do not re-admit them: baking fleet
+# detail into a published image is the thing the release exists to avoid.
+
+# ---- never, under any circumstances ----
+# Belt and braces. Everything here is already excluded by `**`, and it is restated so that a
+# future edit which re-admits a directory cannot sweep one of these in as a side effect.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+.netrc
+.git-credentials
+.git/
+.github/
+**/__pycache__/
+**/*.pyc
+*.log
+*.bak
+*.bak-*
+*.sqlite
+*.db
+.venv/
+venv/
+node_modules/
+tests/
+test_*.py
+*_test.py

@@ -1,0 +1,56 @@
+# RAMEAU -- the no-egress overlay
+#
+# RELEASE-SCOPE.md puts "Docker Compose, including a profile that runs with no egress" in
+# scope for v0.1. This is that profile. Apply it as an overlay, never on its own:
+#
+#     docker compose -f compose.yaml -f compose.no-egress.yaml up --build
+#
+# -----------------------------------------------------------------------------------------
+# WHY AN OVERLAY FILE AND NOT A COMPOSE `profiles:` KEY
+# -----------------------------------------------------------------------------------------
+# `profiles:` selects which SERVICES run. It cannot change a network's properties, and the
+# whole of no-egress is one network property. Expressing it as a profile would mean defining
+# a second copy of every service on a second network, and two definitions of one service
+# drift. An overlay changes the single thing that differs and leaves the services alone.
+#
+# -----------------------------------------------------------------------------------------
+# WHAT `internal: true` DOES AND DOES NOT GUARANTEE
+# -----------------------------------------------------------------------------------------
+# It removes the network's gateway, so containers on it have no route off the host: no
+# internet, no LAN, no DNS beyond Docker's embedded resolver. That is the property worth
+# having and it is enforced by the network stack rather than by anything the application
+# does or promises.
+#
+# It is NOT a security boundary in the sense the private deployment's NetworkPolicy objects
+# are. Three limits, stated because someone will otherwise assume they are covered:
+#
+#   1. It constrains EGRESS from this network only. A published port still accepts inbound
+#      traffic from the host, which is why those bindings are 127.0.0.1 in compose.yaml.
+#   2. It does not isolate the services from EACH OTHER. Everything on `rameau` can still
+#      reach everything else on `rameau`, on any port. Compose has no NetworkPolicy and no
+#      per-service deny; if you need pod-to-pod restriction, you need the runtime descriptor,
+#      not this file.
+#   3. `extra_hosts: host.docker.internal:host-gateway` still resolves, but the route to the
+#      gateway is gone -- so the name resolves and the connection fails. That is the point
+#      and also the surprise: a host-boundary endpoint that worked a moment ago now times out
+#      rather than refusing, because there is no gateway to send a reset.
+#
+# -----------------------------------------------------------------------------------------
+# CONSEQUENCE YOU MUST PLAN FOR: THE BACKEND IS OUTSIDE
+# -----------------------------------------------------------------------------------------
+# compose.yaml deliberately keeps inference on the host, so RAMEAU_OLLAMA_URL normally points
+# across the host gateway -- which this overlay severs. Under no-egress the router can only
+# reach a backend that is itself ON this network. Two honest options:
+#
+#   * Run the stack no-egress to prove the containment property, with generation expected to
+#     fail. This is the useful audit: it shows the router has no route out.
+#   * Put a backend on the network yourself, by adding a service with your own image and
+#     pointing RAMEAU_OLLAMA_URL at it by service name. The release does not ship one,
+#     for the reasons in compose.yaml.
+#
+# What this overlay must NOT become is a quiet re-opening of egress because generation
+# failed. If generation has to work, use compose.yaml alone and say so.
+
+networks:
+  rameau:
+    internal: true
