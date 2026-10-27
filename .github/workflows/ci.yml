@@ -135,6 +135,45 @@ jobs:
           python -m pytest -q --tb=line
           echo "tests ok"
 
+      - name: the example env files must be GENERATED, not written
+        # Both files claim to come from the registry in shared/resolver.py. A claim in a
+        # header comment is not a property; regenerating and diffing is. Without this,
+        # someone edits .env.example by hand, the header still says "generated", and the
+        # next regeneration silently reverts their change.
+        run: |
+          set -euo pipefail
+          if [ ! -f shared/resolver.py ]; then
+            echo "no resolver yet - skipping (this is expected pre-source)"
+            exit 0
+          fi
+          python shared/resolver.py --env-example > /tmp/env.expected
+          python shared/resolver.py --compose-example > /tmp/compose.expected
+          fail=0
+          diff -u .env.example /tmp/env.expected || fail=1
+          diff -u deploy/profiles/compose.env.example /tmp/compose.expected || fail=1
+          if [ "$fail" -ne 0 ]; then
+            echo "an example env file is out of step with the registry."
+            echo "regenerate it rather than editing it by hand:"
+            echo "  python shared/resolver.py --env-example > .env.example"
+            echo "  python shared/resolver.py --compose-example > deploy/profiles/compose.env.example"
+            exit 1
+          fi
+          echo "both example env files match the registry"
+
+      - name: the in-network profile must not contain loopback
+        # The failure this guards is silent: loopback inside a container resolves to the
+        # container itself, so the stack comes up and every endpoint refuses.
+        run: |
+          set -euo pipefail
+          f=deploy/profiles/compose.env.example
+          [ -f "$f" ] || { echo "no compose profile yet - skipping"; exit 0; }
+          if grep -nE '127\.0\.0\.1|localhost' "$f"; then
+            echo "loopback in the in-network profile: inside a container that is the"
+            echo "container itself, not the service."
+            exit 1
+          fi
+          echo "no loopback in the in-network profile"
+
       - name: validate compose, if present
         run: |
           set -euo pipefail

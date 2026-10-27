@@ -57,7 +57,14 @@ table — never from the scrub or the scanning steps.
 
 ## Known assembly obligations, recorded before they can be forgotten
 
-From the allowlist census of 2026-10-27 (286 of 7,009 source paths selected, 3.4 MB):
+From the allowlist census of 2026-10-27, after the operator rulings of that date:
+**282 of 7,009 source paths selected, 3,757,558 bytes.** Transforms: 200 straight
+copies, 68 needing the resolver sweep, 7 derived as `.example`, 7 needing documentation
+scrubbing. Twenty paths remain undecided and are triaged separately.
+
+Earlier figures circulated for this census — 286/3.4 MB, and later 294/4.0 MB with 207
+sweep files — are both superseded. The first predates a re-run; the second predates the
+rulings that removed twelve paths and corrected 130 transforms.
 
 - **A `NOTICE` file is required at the root.** Nine `.woff2` faces (Instrument Sans,
   Instrument Serif, JetBrains Mono) and their three OFL licence texts are in the release
@@ -67,13 +74,29 @@ From the allowlist census of 2026-10-27 (286 of 7,009 source paths selected, 3.4
 - **`docker/.env.example` must be read line by line before it is copied.** It was classified
   into the release set on its *filename* alone. A `.example` suffix is a convention, not a
   guarantee, and this is exactly the kind of file where the convention is most often broken.
-- **`shared/resolver.py` does not exist in the source archive.** It is the keystone of the
-  literal-and-address resolver sweep, so the sweep cannot begin by running it — it has to be
-  written first. Treating it as existing would have made the sweep look like a mechanical
-  pass when it is partly new work.
-- **Only 72 of the 286 selected paths are a safe byte copy.** 199 need the resolver sweep, 7
-  must be derived as `.example` files, and 8 need documentation scrubbing. The assembly is a
-  transform, not a copy, and the per-path transform is recorded in the census.
+- **`shared/resolver.py` — DISCHARGED** in `3a59271`, with its defects fixed in the
+  commit that carries this note. It exists, it is covered by tests, and it resolves every
+  endpoint from the environment with no fallback to a literal address.
+
+  What it was actually needed for turned out not to be what this note assumed. The
+  archive's addresses had already been redacted *in place*, which left fourteen `getenv`
+  call sites across eight files defaulting to values like `http://192.168.x.4:11436` —
+  not a leak, and not a working value either. The resolver's job is to refuse those
+  loudly rather than fail as a DNS lookup several layers below the real mistake.
+
+- **The two example env files are generated, and are deliberately two files.**
+  `.env.example` carries loopback values for running on a host;
+  `deploy/profiles/compose.env.example` addresses services by name for running inside a
+  container network. One file could not serve both: inside a container, loopback is the
+  container itself, so a host-oriented file silently points every endpoint at nothing.
+  CI regenerates both and diffs them, so "generated from the registry" is a gate rather
+  than a claim.
+
+- **200 of the 282 selected paths are a safe byte copy.** 68 need the resolver sweep, 7
+  must be derived as `.example` files, and 7 need documentation scrubbing. The assembly
+  is still a transform rather than a copy, but it is a third of the size this note first
+  recorded: the sweep had been assigned by file *extension*, and 145 of the files it
+  named contain no private literal at all. It is now decided by reading the file.
 - **Every file in the planned `docs/` slot is new writing.** The source archive's entire
   `docs/` tree is excluded as internal, so no documentation carries over.
 - **`bfg-1.14.0.jar` (GPLv3, 13.8 MB, two copies) is excluded** and must be named in the

@@ -73,9 +73,11 @@ def test_a_redacted_placeholder_is_rejected():
 
 @pytest.mark.parametrize("redacted", [
     "http://192.168.x.4:8089",     # the archive's own convention
-    "http://192.168.xx.4:8089",    # a two-letter redaction the first rule missed
+    "http://192.168.xx.4:8089",    # a two-letter mask
+    "http://192.168.x1.4:8089",    # a mask mixing a letter and a digit
     "http://192.168.2.x:8089",     # redacted last octet
     "http://x.168.2.4:8089",       # redacted first octet
+    "http://192.168.x.y:8089",     # two masked octets
 ])
 def test_every_shape_of_redaction_is_rejected(redacted):
     with pytest.raises(ConfigError) as err:
@@ -83,10 +85,34 @@ def test_every_shape_of_redaction_is_rejected(redacted):
     assert "redacted" in str(err.value)
 
 
-def test_a_four_field_alphabetic_fqdn_is_allowed():
-    """Negative control for the redaction rule: a.b.c.d has four fields and no digits,
-    so it is a hostname, not a redacted address."""
-    url = "http://api.eu.example.com"
+@pytest.mark.parametrize("good", [
+    "http://api.eu.example.com",        # four fields, no digits at all
+    "http://10.infra.example.com:8089", # ALL-NUMERIC DNS LABEL in a real hostname
+    "http://1.example.com:8089",        # three fields, numeric label
+    "http://192.0.2.4:8089",          # a real dotted quad
+    "http://10.1.2.3:80",
+    "http://127.0.0.1:11434",
+    "http://2026.10.27.9:8089",         # four numerics, one not octet-range
+])
+def test_a_legitimate_host_is_never_called_a_redaction(good):
+    """The rule's cost of being wrong is refusing somebody's real endpoint and telling
+    them it is archive scaffolding, so the permissive side needs the wider test set.
+
+    `10.infra.example.com` is the case that shipped broken: the first rule asked
+    whether a four-field host mixed numeric and alphabetic fields, and DNS labels may
+    be all digits.
+    """
+    assert resolve("router", env={"RAMEAU_ROUTER_URL": good}) == good.rstrip("/")
+
+
+def test_the_redaction_rule_s_documented_blind_spot():
+    """`1.2.3.foo` is NOT treated as a redaction, and that is a decision.
+
+    Three octets and a non-octet label would fit the mask shape, but a three-character
+    label is far more likely to be a real hostname than a mask. This test exists so the
+    boundary is recorded rather than discovered later by someone assuming it is caught.
+    """
+    url = "http://1.2.3.foo:8089"
     assert resolve("router", env={"RAMEAU_ROUTER_URL": url}) == url
 
 
@@ -105,8 +131,6 @@ def test_a_single_letter_hostname_is_not_rejected():
 
 
 @pytest.mark.parametrize("bad,expect", [
-    ("", "empty"),
-    ("   ", "empty"),
     ("127.0.0.1:8089", "scheme"),
     ("ftp://host/", "scheme"),
     ("http://", "host"),
@@ -115,6 +139,37 @@ def test_a_malformed_value_is_refused_with_the_reason(bad, expect):
     with pytest.raises(ConfigError) as err:
         resolve("router", env={"RAMEAU_ROUTER_URL": bad})
     assert expect in str(err.value)
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "\t"])
+def test_a_SET_BUT_EMPTY_variable_counts_as_UNSET(blank):
+    """Compose's env_file injects every key in the file, so a blank-valued example env
+    file arrives as nine set-but-empty variables. Treating that as an error would
+    hard-fail a core-only deployment on the optional endpoints, which is exactly what
+    `required_for` exists to prevent.
+    """
+    with pytest.raises(ConfigError) as err:
+        resolve("kb", env={"RAMEAU_KB_URL": blank})
+    msg = str(err.value)
+    assert "no endpoint configured" in msg, "empty must read as unset, not as malformed"
+    assert "RAMEAU_KB_URL" in msg
+
+
+def test_an_empty_canonical_falls_through_to_a_set_alias():
+    """The corollary: if the canonical variable is blank and a legacy alias carries a
+    real value, the alias must win rather than the blank shadowing it."""
+    env = {"RAMEAU_EMBED_URL": "", "HEARTH_VEGA8_URL": "http://127.0.0.1:11436"}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert resolve("embed", env=env) == "http://127.0.0.1:11436"
+
+
+def test_a_present_but_malformed_value_still_raises_as_malformed():
+    """Positive twin for the empty-means-unset change: it must not have turned every
+    bad value into a quiet 'unset'."""
+    with pytest.raises(ConfigError) as err:
+        resolve("kb", env={"RAMEAU_KB_URL": "not-a-url"})
+    assert "set but unusable" in str(err.value)
 
 
 def test_unset_names_the_variable_and_an_example():
@@ -181,6 +236,20 @@ def test_missing_with_no_names_covers_the_whole_registry():
     assert set(missing(env={})) == set(ENDPOINTS)
 
 
+def test_missing_with_an_EMPTY_list_means_no_endpoints():
+    """Falsy is not absent. `missing(())` previously fell through to "audit everything"
+    because the default was chosen with `or`."""
+    assert missing((), env={}) == {}
+    assert missing([], env={}) == {}
+
+
+def test_resolve_all_of_nothing_returns_nothing():
+    """`resolve_all(cfg.get("endpoints", []))` is an ordinary call shape. It used to
+    raise "9 of 0 endpoints are not configured" -- a hard failure on a request for
+    nothing, with a message that could not be true."""
+    assert resolve_all([], env={}) == {}
+
+
 def test_the_default_environment_is_read_per_call_not_frozen(monkeypatch):
     """A mutable default would capture the first environment the module ever saw."""
     monkeypatch.delenv("RAMEAU_ROUTER_URL", raising=False)
@@ -202,3 +271,41 @@ def test_describe_emits_every_variable_and_parses_as_env():
 def test_describe_mentions_which_endpoints_are_optional():
     text = describe()
     assert "only needed for: embeddings" in text
+
+
+def test_the_loopback_example_warns_against_using_it_in_a_container():
+    """The hazard is silent: loopback inside a container is the container, so the file
+    would misconfigure every endpoint while looking correct."""
+    text = describe("loopback")
+    assert "NOT FOR A CONTAINER" in text
+    assert "deploy/profiles/compose.env.example" in text
+
+
+def test_the_compose_example_uses_service_names_not_loopback():
+    text = describe("compose")
+    assert "127.0.0.1" not in text, "loopback in an in-network profile is the bug"
+    assert "localhost" not in text
+    assert "RAMEAU_OLLAMA_URL=http://ollama:11434" in text
+    assert "RAMEAU_ROUTER_CHAT_URL=http://router:8089/v1/chat/completions" in text, \
+        "the path must survive the host rewrite"
+
+
+def test_both_profiles_define_EXACTLY_the_same_keys():
+    """Two artifacts, one registry. If they ever disagree on which keys exist, one of
+    them is silently incomplete -- which is the drift that generating them prevents."""
+    def keys(text):
+        return {ln.split("=", 1)[0] for ln in text.splitlines()
+                if ln and not ln.startswith("#")}
+    assert keys(describe("loopback")) == keys(describe("compose"))
+    assert keys(describe("loopback")) == {s.env for s in ENDPOINTS.values()}
+
+
+def test_every_registry_entry_has_a_compose_service():
+    """A new endpoint must not silently fall out of the compose profile."""
+    from resolver import COMPOSE_SERVICE
+    assert set(COMPOSE_SERVICE) == set(ENDPOINTS)
+
+
+def test_describe_refuses_an_unknown_host_mode():
+    with pytest.raises(ValueError):
+        describe("kubernetes")

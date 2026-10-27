@@ -129,34 +129,57 @@ ENDPOINTS: Dict[str, Endpoint] = {
 }
 
 
+def _is_octet(field: str) -> bool:
+    """True for a field that could be an IPv4 octet: 1-3 digits, value 0-255."""
+    return field.isdigit() and len(field) <= 3 and int(field) <= 255
+
+
+def _redaction_complaint(host: str) -> Optional[str]:
+    """Return a complaint when `host` looks like a MASKED IPv4 address.
+
+    This is the failure the module exists for: the source archive redacted addresses
+    in place, leaving values like 192.168.x.4 that are neither a leak nor usable.
+
+    The discriminator is OCTETS, not "numeric versus alphabetic". An earlier version
+    asked whether a four-field host mixed numeric and alphabetic fields, which
+    rejected `10.infra.example.com` -- a perfectly valid FQDN, since DNS labels may be
+    all digits -- and told the operator their own address was archive scaffolding.
+
+    A masked address keeps most of its octets and replaces one or two with a short
+    mask token. So: four fields, at least two real octets, at least one field that is
+    not an octet, and every such field at most two characters long.
+
+    What this deliberately does NOT catch, so the boundary is a decision and not an
+    accident: a four-field host whose non-octet label is three or more characters,
+    such as `1.2.3.foo`. That shape is far more likely to be somebody's hostname than
+    a redaction, and refusing a real endpoint is the worse error.
+    """
+    fields = host.split(".")
+    if len(fields) != 4:
+        return None
+    octets = [f for f in fields if _is_octet(f)]
+    masked = [f for f in fields if not _is_octet(f)]
+    if len(octets) >= 2 and masked and all(len(f) <= 2 for f in masked):
+        return ("it still carries a redacted address (%r) -- this is a placeholder "
+                "from the source archive, not a working value" % host)
+    return None
+
+
 def _looks_like_a_url(value: str) -> Optional[str]:
     """Return a complaint about `value`, or None when it is usable.
 
     Deliberately shallow: this catches the mistakes that actually happen -- a bare
     host, a leftover redaction, a trailing slash -- and does not try to validate
     hostnames, which is the resolver's business to pass through, not to police.
+
+    An empty value is NOT this function's business: `resolve` treats empty as unset.
     """
-    if not value.strip():
-        return "it is empty or whitespace"
     parts = urlsplit(value)
     if parts.scheme not in ("http", "https"):
         return "it has no http:// or https:// scheme"
     if not parts.netloc:
         return "it has no host"
-    host = parts.hostname or ""
-    # A redacted octet is the exact failure this module was written for. The archive's
-    # convention was a single "x" (192.168.x.4), but keying on single letters alone
-    # would miss 192.168.xx.4. The general shape is a four-field host that MIXES
-    # numeric and alphabetic fields -- which no real hostname and no real address does.
-    # A wholly alphabetic four-field name (a.b.c.d) is a legitimate FQDN and passes.
-    fields = host.split(".")
-    if len(fields) == 4:
-        numeric = [f for f in fields if f.isdigit()]
-        alpha = [f for f in fields if f.isalpha()]
-        if numeric and alpha and len(numeric) + len(alpha) == 4:
-            return ("it still carries a redacted address (%r) -- this is a placeholder "
-                    "from the source archive, not a working value" % host)
-    return None
+    return _redaction_complaint(parts.hostname or "")
 
 
 def resolve(name: str, env: Optional[Dict[str, str]] = None) -> str:
@@ -177,7 +200,15 @@ def resolve(name: str, env: Optional[Dict[str, str]] = None) -> str:
 
     for var in (spec.env,) + tuple(spec.aliases):
         raw = src.get(var)
-        if raw is None:
+        # EMPTY MEANS UNSET, deliberately. Compose's `env_file` injects every key in
+        # the file, so a blank-valued example env file arrives as a set-but-empty
+        # variable for all nine endpoints. Treating that as an error would hard-fail a
+        # core-only deployment on `kb`, `arbiter`, `broadcaster` and `search` -- the
+        # very endpoints whose `required_for` tags exist so they can be left out. An
+        # empty value therefore falls through to the next alias and then to the
+        # "not configured" error, which names the variable. A value that is present
+        # but malformed is a different mistake and still raises as such.
+        if raw is None or not raw.strip():
             continue
         complaint = _looks_like_a_url(raw)
         if complaint is not None:
@@ -217,14 +248,21 @@ def _warn_alias(var: str, spec: Endpoint) -> None:
     )
 
 
-def missing(names: Iterable[str] = (),
+def missing(names: Optional[Iterable[str]] = None,
             env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     """Report which of `names` cannot be resolved, as {name: reason}.
 
     For a startup check that wants to list every problem at once rather than abort on
-    the first. An empty `names` means every registered endpoint.
+    the first.
+
+    `names=None` (the default) audits every registered endpoint. An EMPTY iterable
+    means exactly what it says: no endpoints, so nothing is missing. The distinction
+    matters because `resolve_all` forwards its own argument here -- with `or` deciding
+    this, `resolve_all([])` audited all nine and raised "9 of 0 endpoints are not
+    configured", so a caller asking for nothing got a hard failure. Falsy is not the
+    same as absent; test for None.
     """
-    wanted = list(names) or sorted(ENDPOINTS)
+    wanted = sorted(ENDPOINTS) if names is None else list(names)
     out: Dict[str, str] = {}
     for n in wanted:
         try:
@@ -242,6 +280,8 @@ def resolve_all(names: Iterable[str],
     N-round guessing game. This reports the whole set.
     """
     wanted = list(names)
+    if not wanted:
+        return {}
     bad = missing(wanted, env=env)
     if bad:
         body = "\n\n".join(bad[n] for n in wanted if n in bad)
@@ -251,20 +291,85 @@ def resolve_all(names: Iterable[str],
     return {n: resolve(n, env=env) for n in wanted}
 
 
-def describe() -> str:
-    """The registry as .env.example content, so the docs cannot drift from the code."""
-    lines = [
-        "# RAMEAU endpoints. Every address the router uses is read from here.",
-        "# There are no built-in defaults: an unset endpoint fails at startup with",
-        "# the variable's name, rather than silently pointing somewhere unreachable.",
-        "",
-    ]
+# Service names an in-network (Compose) deployment resolves instead of loopback. Kept
+# beside the registry so the two example files are generated from one source and cannot
+# drift apart; a compose file that renames a service must change this map.
+COMPOSE_SERVICE = {
+    "router": "router",
+    "router_chat": "router",
+    "router_health": "router",
+    "ollama": "ollama",
+    "embed": "embed",
+    "kb": "kb",
+    "arbiter": "arbiter",
+    "broadcaster": "broadcaster",
+    "search": "search",
+}
+
+
+def _in_network(example: str, service: str) -> str:
+    """Rewrite a loopback example to address `service` on the compose network."""
+    parts = urlsplit(example)
+    port = ":%d" % parts.port if parts.port else ""
+    return "%s://%s%s%s" % (parts.scheme, service, port, parts.path)
+
+
+def describe(host: str = "loopback") -> str:
+    """The registry as env-file content, so the docs cannot drift from the code.
+
+    host="loopback" -- for running the router directly on a machine.
+    host="compose"  -- for running it inside a container network.
+
+    The two are SEPARATE ARTIFACTS on purpose. Inside a container, 127.0.0.1 is the
+    container itself, so copying the loopback file into a Compose deployment points
+    every endpoint at the container's own loopback and yields connection-refused --
+    which is precisely the "fails several layers below the real mistake" symptom this
+    module was written to remove. Shipping one file for both would reintroduce it.
+    """
+    if host not in ("loopback", "compose"):
+        raise ValueError("host must be 'loopback' or 'compose', not %r" % host)
+
+    if host == "loopback":
+        head = [
+            "# RAMEAU endpoints -- values for running the router DIRECTLY ON A HOST.",
+            "#",
+            "# Generated from shared/resolver.py: `python shared/resolver.py",
+            "# --env-example`. Edit the registry, not this file.",
+            "#",
+            "# NOT FOR A CONTAINER. Inside a container 127.0.0.1 is the container",
+            "# itself, so these values would point every endpoint at the container's",
+            "# own loopback. For Compose use deploy/profiles/compose.env.example,",
+            "# which addresses services by name.",
+            "#",
+            "# There are no built-in defaults: an unset endpoint fails at resolution",
+            "# naming the variable. A blank value counts as unset, so you may leave",
+            "# any endpoint your deployment does not use empty.",
+            "",
+        ]
+    else:
+        head = [
+            "# RAMEAU endpoints -- values for running INSIDE A CONTAINER NETWORK.",
+            "#",
+            "# Generated from shared/resolver.py: `python shared/resolver.py",
+            "# --compose-example`. Edit the registry, not this file.",
+            "#",
+            "# Each host below is a COMPOSE SERVICE NAME and must match the service",
+            "# names in the compose file. They are resolved by the container network's",
+            "# DNS, not by the host, which is why loopback is wrong here.",
+            "#",
+            "# A blank value counts as unset, so an endpoint your profile does not",
+            "# run may be left empty.",
+            "",
+        ]
+    lines = list(head)
     for name in sorted(ENDPOINTS):
         spec = ENDPOINTS[name]
+        value = (spec.example if host == "loopback"
+                 else _in_network(spec.example, COMPOSE_SERVICE[name]))
         lines.append("# %s -- %s" % (name, spec.purpose))
         if spec.required_for != "core":
             lines.append("#   only needed for: %s" % spec.required_for)
-        lines.append("%s=%s" % (spec.env, spec.example))
+        lines.append("%s=%s" % (spec.env, value))
         lines.append("")
     return "\n".join(lines)
 
@@ -272,7 +377,9 @@ def describe() -> str:
 if __name__ == "__main__":  # pragma: no cover - operator convenience
     import sys
     if len(sys.argv) > 1 and sys.argv[1] == "--env-example":
-        sys.stdout.write(describe())
+        sys.stdout.write(describe("loopback"))
+    elif len(sys.argv) > 1 and sys.argv[1] == "--compose-example":
+        sys.stdout.write(describe("compose"))
     else:
         bad = missing()
         for n in sorted(ENDPOINTS):
