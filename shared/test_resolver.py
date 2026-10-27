@@ -143,8 +143,14 @@ def test_x_x_x_x_is_UNREACHABLE_not_unfixed():
 
 
 @pytest.mark.parametrize("collateral", [
+    # two octets, under a two-letter domain or ccTLD
     "http://8.8.8.io", "http://10.20.30.io", "http://0.1.2.ai",
     "http://1.2.t.me", "http://1.2.co.uk", "http://10.0.co.uk",
+    # ONE octet, under a real two-plus-two public suffix. These entered the class
+    # when the floor came down from two octets to one, and they are the reason the
+    # floor and the ceiling have to be read together.
+    "http://1.cs.ac.uk", "http://1.bt.co.uk", "http://2.my.id.au",
+    "http://3.ab.co.nz", "http://4.xy.or.jp", "http://7.t.co.uk",
 ])
 def test_the_price_of_the_two_character_ceiling(collateral):
     """These ARE refused, and that is the accepted cost of the <=2 mask ceiling.
@@ -153,9 +159,37 @@ def test_the_price_of_the_two_character_ceiling(collateral):
     not name a host that exists in this shape, so no real break is claimed -- but the
     cost is real and this test exists so that anyone changing the ceiling can see
     exactly what they are trading, instead of discovering it from a bug report.
+
+    THE FLOOR AND THE CEILING MULTIPLY, and the first version of this test documented
+    only one of them. Lowering the floor from two octets to one enlarged this class
+    from `<octet>.<octet>.<=2>.<=2>` to `<octet>.<=2>.<=2>.<=2>`, which lands on
+    `ac.uk`, `co.uk`, `id.au`, `or.jp`, `ne.jp` and `co.nz` -- real two-plus-two
+    public suffixes, not invented shapes, so this half of the class is populated by
+    construction in a way `1.2.t.me` is not. The only thing between it and a real
+    refusal is a numeric label in front, and numeric shard and version subdomains
+    are an ordinary pattern. Still no live host named in this shape, so still no
+    break claimed; the point is that whoever next touches EITHER bound sees both.
     """
     with pytest.raises(ConfigError):
         resolve("router", env={"RAMEAU_ROUTER_URL": collateral})
+
+
+@pytest.mark.parametrize("safe", [
+    # three fields, so the rule never engages: it requires exactly four
+    "http://5.ne.jp", "http://1.go.jp", "http://9.ed.ao", "http://2.gv.at",
+    # five fields, likewise out of scope
+    "http://1.a.b.co.uk",
+])
+def test_the_price_is_BOUNDED_to_four_field_hosts(safe):
+    """The bound that stops the class above from being much larger than it is.
+
+    `_redaction_complaint` returns None unless the host has EXACTLY four
+    dot-separated fields, so a numeric label under a bare two-plus-two suffix --
+    `5.ne.jp`, `2.gv.at` -- is accepted, and so is anything longer. Without this
+    test the price test above reads as though every numeric-label-under-a-short-
+    suffix host were refused, which would overstate the cost it documents.
+    """
+    assert resolve("router", env={"RAMEAU_ROUTER_URL": safe}) == safe
 
 
 def test_the_redaction_rule_s_documented_blind_spot():
