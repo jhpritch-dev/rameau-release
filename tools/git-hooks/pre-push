@@ -34,18 +34,26 @@ if [ "${RAMEAU_SKIP_SECRET_GATE:-0}" = "1" ]; then
     exit 0
 fi
 
-if ! command -v gitleaks >/dev/null 2>&1; then
-    say "REFUSING: gitleaks is not installed, so this push cannot be checked."
+# The binary is normally on PATH. RAMEAU_GITLEAKS names it explicitly for the common
+# case of a package manager that installs outside PATH (winget and Homebrew casks both
+# do this). It is an env var rather than a list of search paths in this file, because a
+# hardcoded install location is one machine's detail and this repository is published.
+GITLEAKS="${RAMEAU_GITLEAKS:-gitleaks}"
+
+if ! command -v "$GITLEAKS" >/dev/null 2>&1; then
+    say "REFUSING: gitleaks was not found, so this push cannot be checked."
+    say "  looked for: $GITLEAKS"
     say ""
     say "This hook fails closed on purpose. GitHub push protection is unavailable on this"
     say "repository while it is private, so this is the only gate that runs before the"
     say "objects leave this machine."
     say ""
-    say "Install gitleaks, or override deliberately with RAMEAU_SKIP_SECRET_GATE=1."
+    say "Install gitleaks, or point RAMEAU_GITLEAKS at the binary, or override"
+    say "deliberately with RAMEAU_SKIP_SECRET_GATE=1."
     exit 1
 fi
 
-say "gitleaks $(gitleaks version 2>/dev/null || echo '(version unknown)')"
+say "gitleaks $("$GITLEAKS" version 2>/dev/null || echo '(version unknown)')"
 
 # --- control: prove the scanner fires before trusting a zero --------------------------
 # A clean report is exactly the output nobody re-checks. The canary is GENERATED rather
@@ -69,7 +77,7 @@ trap cleanup EXIT
 )
 
 # gitleaks exits nonzero on findings, so a ZERO exit means it missed the planted value.
-if gitleaks detect --source "$control_dir" --no-banner --redact --exit-code 1 >/dev/null 2>&1; then
+if "$GITLEAKS" detect --source "$control_dir" --no-banner --redact --exit-code 1 >/dev/null 2>&1; then
     say "CONTROL FAILED: gitleaks did not flag a generated known-positive."
     say "The scan below would be meaningless, so this push is refused."
     exit 1
@@ -83,7 +91,7 @@ say "control ok: the scanner flags a planted credential"
 repo_root="$(git rev-parse --show-toplevel)"
 
 say "scanning working tree and full local history..."
-if ! gitleaks detect \
+if ! "$GITLEAKS" detect \
         --source "$repo_root" \
         --redact \
         --no-banner \
