@@ -33,6 +33,12 @@ later rewrite un-sends it.
 | configuration | a single documented config surface plus `.env.example` |
 | deployment | Docker Compose, including a profile that runs with no egress |
 | observability | structured logs and basic request metrics |
+| the portal | the existing web UI, as it stands -- **ruled in by John 2026-10-27** |
+| autopilot | the planning graph and its orchestration -- **ruled in by John 2026-10-27** |
+
+The last two rows were added by ruling, not by drafting, and the reason is recorded
+below under "A scope gap and a scope contradiction, both settled by ruling" -- the
+census had already selected both families and this table did not name them.
 
 ## Explicitly NOT in v0.1
 
@@ -41,13 +47,13 @@ being published, or is large enough to deserve its own release.
 
 | cut | reason |
 |---|---|
-| overnight orchestration / scheduled self-improvement | operationally entangled with a specific fleet |
+| overnight orchestration / scheduled self-improvement | operationally entangled with a specific fleet. **Narrowed 2026-10-27:** this cuts the scheduled overnight RUNNER and its fleet wiring, NOT the autopilot planning graph, which is ruled in above |
 | the agent sandbox | depends on a Linux-only isolation mechanism not present on every host |
 | NPU classification path | hardware-specific, and the measured failure rate on the one host that has it is too high to publish |
 | quantum-related experiments | research, not product |
 | workflow-automation integration | third-party service wiring, host-specific |
 | messaging bridges and notification transports | credential-bearing by nature |
-| the portal redesign | its own track, with its own design review |
+| the portal **redesign** | its own track, with its own design review. **Clarified 2026-10-27:** this only ever cut the redesign; the existing portal is ruled in above |
 | GitOps / continuous-deploy layer | a ship-path concern, not a routing concern |
 | multi-host fleet management | the private deployment's shape is not the product |
 | benchmark harness and published throughput figures | figures belong to hardware; publishing them would invite machine-to-machine comparison, which this project explicitly does not do |
@@ -65,6 +71,39 @@ scrubbing. Twenty paths remain undecided and are triaged separately.
 Earlier figures circulated for this census — 286/3.4 MB, and later 294/4.0 MB with 207
 sweep files — are both superseded. The first predates a re-run; the second predates the
 rulings that removed twelve paths and corrected 130 transforms.
+
+### A scope gap and a scope contradiction, both settled by ruling (2026-10-27)
+
+**37% of the selected set was scope this document did not grant.** Measured against
+`allowlist.json`: 53 unique RELEASE paths, 1,392,077 of 3,757,558 bytes, in families the
+tables above either cut or never mentioned.
+
+| family | RELEASE paths | bytes | what the tables said |
+|---|---|---|---|
+| portal | 35 | 872,218 | **nothing** — the in-scope table named no UI at all |
+| autopilot | 6 | 332,580 | cut, as "overnight orchestration / scheduled self-improvement" |
+| `igor_tool_loop.py` | 1 | 110,359 | nothing |
+| `bifrost_delegate.py` | 1 | 37,616 | nothing |
+| decomposer | 4 | 29,503 | nothing |
+| shell-mcp | 6 | 9,801 | cut, as "the agent sandbox" |
+
+These were two different defects and it matters which was which. For **autopilot** the cut
+list named the family and the census selected it anyway: a contradiction, where two parts
+of one document disagreed and a reader could cite either. For the **portal** there was
+nothing to contradict — the in-scope table lists seven areas and none of them is a user
+interface, so 872 KB of UI was being assembled under a scope that never addressed it. A
+gap is the worse of the two, because a contradiction announces itself and a gap does not.
+
+**John ruled on 2026-10-27: portal and autopilot stay in.** Both now have in-scope rows,
+the two cut rows are narrowed to say what they actually cut, and the compose service list
+can be written against this table.
+
+**The ruling covers two of the six families, and the other four remain open.**
+`igor_tool_loop.py`, `bifrost_delegate.py` and the decomposer are selected and unnamed by
+either table — the same gap as the portal, not yet closed. `docker/shell-mcp/` is the
+sharper case: the cut list names "the agent sandbox" directly and six shell-mcp paths are
+selected, so that contradiction is still live. Nothing here extends the ruling to them;
+they are listed so the next reader sees four open questions rather than a settled table.
 
 - **A `NOTICE` file is required at the root.** Nine `.woff2` faces (Instrument Sans,
   Instrument Serif, JetBrains Mono) and their three OFL licence texts are in the release
