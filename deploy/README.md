@@ -89,8 +89,32 @@ wrote down.
 
 Inside the network the router is `http://router:8080`. That is the port the container listens
 on, and it is **not** the port the private deployment published — an in-container URL built
-from a host-side port resolves to nothing, and that mistake is already in
-`profiles/compose.env.example`, which names `router:8089`. Correct the file or regenerate it.
+from a host-side port resolves to nothing. That mistake was in `profiles/compose.env.example`
+until **2026-10-27**: six wrong values across five endpoints — `router:8089` three times,
+`kb:8091`, `broadcaster:8092`, `search:8888` — plus a health path, `/router/status`, that
+belongs to the portal's nginx rather than to the router. `.env.example` carried three of them
+too. It is fixed at the source: `shared/resolver.py` now records what each unit listens on
+separately from its host-side example, every one of those numbers cites the artifact it was
+read out of, and `shared/test_resolver.py` asserts the registry against
+`images/router/Dockerfile`, against `compose.yaml` and against both generated files.
+
+Read `PROVENANCE` in `shared/resolver.py` before trusting a listen port. Only the router's
+image ships in this repo, so only the router's port can be checked against the thing that
+actually listens; for the rest the citation names an artifact in the private archive and the
+test can only catch a one-sided edit. `embed` is weaker still and says so — there is no
+container artifact for it at all.
+
+Neither example file should be hand-edited — regenerate both:
+
+```
+python shared/resolver.py --write-examples
+```
+
+That writes the files itself rather than printing for a shell to redirect. The redirect form
+still exists (`--env-example`, `--compose-example`) but on Windows it produces CRLF whatever
+shell runs it — Python's text-mode stdout does the translation, not the shell — so the content
+comes out right and the bytes wrong, which the test comparing file to generator reports as a
+failure with no apparent cause.
 
 ## No egress
 

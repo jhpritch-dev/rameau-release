@@ -86,7 +86,11 @@ services:
       # bitten: an in-container URL built from a host-side port resolves to nothing.
       RAMEAU_ROUTER_URL: http://router:8080
       RAMEAU_ROUTER_CHAT_URL: http://router:8080/v1/chat/completions
-      RAMEAU_ROUTER_HEALTH_URL: http://router:8080/status
+      # /health, not /status: /status answers "online" unconditionally. See the
+      # router_health entry in shared/resolver.py, and note that /health's verdict is in
+      # its BODY -- it returns 200 whether the backends are up or down, which is why this
+      # stack defines no healthcheck.
+      RAMEAU_ROUTER_HEALTH_URL: http://router:8080/health
     volumes:
       # The four runtime JSON files are read as `Path(__file__).parent / "<name>.json"`, so
       # each must land at /app/<name>.json EXACTLY. Mounting a directory onto /app instead

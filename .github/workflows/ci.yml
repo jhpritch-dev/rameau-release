@@ -154,8 +154,10 @@ jobs:
           if [ "$fail" -ne 0 ]; then
             echo "an example env file is out of step with the registry."
             echo "regenerate it rather than editing it by hand:"
-            echo "  python shared/resolver.py --env-example > .env.example"
-            echo "  python shared/resolver.py --compose-example > deploy/profiles/compose.env.example"
+            echo "  python shared/resolver.py --write-examples"
+            echo "(which writes both files as bytes. The '>' redirect used by this step"
+            echo " is fine on Linux, but on Windows python's text-mode stdout emits CRLF"
+            echo " and would fail this same diff for a reason unrelated to the registry.)"
             exit 1
           fi
           echo "both example env files match the registry"
@@ -174,20 +176,51 @@ jobs:
           fi
           echo "no loopback in the in-network profile"
 
-      - name: validate compose, if present
+      - name: validate compose
+        # This step globbed FOUR ROOT-RELATIVE names until 2026-10-27, and both stacks
+        # live in deploy/. So it matched nothing, took the `found -eq 0` branch, and
+        # printed "no compose file yet - skipping (this is expected pre-source)" -- a
+        # green that actively reassures. Anyone reading that log concludes the stack is
+        # unwritten rather than unvalidated, which is worse than a silent pass: a syntax
+        # error in deploy/compose.yaml shipped green.
+        #
+        # Validate by PATH, and fail when a named file is absent. A compose gate that
+        # cannot find its own compose file has nothing to say about the stack, so it must
+        # not be the thing that reports success.
+        env:
+          # RAMEAU_OLLAMA_URL is deliberately REQUIRED with no default -- every plausible
+          # default is wrong, and a guess that resolves is worse than one that does not.
+          # That means `config` cannot interpolate the file without a value, so the parse
+          # needs one. `.invalid` is reserved by RFC 2606 and can never resolve, so this
+          # placeholder cannot accidentally become a working address.
+          RAMEAU_OLLAMA_URL: http://ollama.invalid:11434
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          found=0
-          for f in docker-compose.yml docker-compose.yaml compose.yml compose.yaml; do
-            [ -f "$f" ] || continue
-            found=1
-            echo "validating $f"
-            docker compose -f "$f" config --quiet
+          for f in deploy/compose.yaml deploy/compose.no-egress.yaml; do
+            test -f "$f" || { echo "expected $f and it is not there"; exit 1; }
           done
-          if [ "$found" -eq 0 ]; then
-            echo "no compose file yet - skipping (this is expected pre-source)"
+
+          # Control first, and it is not ceremony: it asserts the required-variable
+          # design still holds. If the stack ever parses with RAMEAU_OLLAMA_URL unset,
+          # something has given it a default, and a deployment would then come up
+          # pointing at whatever that default is instead of refusing.
+          if env -u RAMEAU_OLLAMA_URL docker compose -f deploy/compose.yaml config \
+               --quiet >/dev/null 2>&1; then
+            echo "the stack parsed with RAMEAU_OLLAMA_URL unset: something now supplies"
+            echo "a default for it, which is the opposite of the intended behaviour."
+            exit 1
           fi
+          echo "control ok: the stack refuses to resolve without RAMEAU_OLLAMA_URL"
+
+          echo "validating deploy/compose.yaml"
+          docker compose -f deploy/compose.yaml config --quiet
+
+          # The overlay is not a stack on its own -- it is a single `networks:` key with
+          # no services -- so it is only meaningful validated TOGETHER with the base.
+          echo "validating deploy/compose.yaml + deploy/compose.no-egress.yaml"
+          docker compose -f deploy/compose.yaml -f deploy/compose.no-egress.yaml \
+            config --quiet
+          echo "compose ok"
 
       - name: licence and scope invariants
         # Cheap structural checks that protect the two promises this repo makes about itself.
