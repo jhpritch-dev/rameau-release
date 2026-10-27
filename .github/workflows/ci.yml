@@ -120,6 +120,21 @@ jobs:
           python -m compileall -q .
           echo "byte-compile ok"
 
+      - name: run tests, if any
+        # The byte-compile above proves the tree parses, which is not the same as the
+        # code being correct. The resolver's whole value is a behaviour -- that an unset
+        # endpoint RAISES instead of defaulting to an unreachable literal -- and a
+        # behaviour is only guarded by running it.
+        run: |
+          set -euo pipefail
+          if [ -z "$(find . -name 'test_*.py' -not -path './.git/*' -print -quit)" ]; then
+            echo "no tests yet - skipping (this is expected pre-source)"
+            exit 0
+          fi
+          python -m pip install --quiet --disable-pip-version-check pytest
+          python -m pytest -q --tb=line
+          echo "tests ok"
+
       - name: validate compose, if present
         run: |
           set -euo pipefail
