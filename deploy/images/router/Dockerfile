@@ -32,10 +32,16 @@
 # Layer 1 needs services/router/requirements.txt. The private repository's requirements.txt
 # is dispositioned EXCLUDE_INTERNAL in the allowlist, so no dependency manifest has been
 # selected for the release, and `docker build` will fail on the COPY below until one exists.
-# That is left as a loud failure on purpose. The alternatives were to invent a pin set, which
-# would be 131 dependency decisions made by guesswork and no way for a reviewer to tell which
-# were measured; or to install unpinned, which makes two builds of one commit different
-# images. A missing file that stops the build is the honest state of this gap.
+# That is left as a loud failure on purpose. The alternatives were to invent a pin set, with
+# no way for a reviewer to tell which pins were measured; or to install unpinned, which makes
+# two builds of one commit different images. A missing file that stops the build is the
+# honest state of this gap.
+#
+# This comment quoted "131 dependency decisions" until 2026-11-02. That figure was another
+# service's -- two bifrost-kb files summed, for a service not in this release -- and the
+# router's own manifest is reported to be five range specifiers. Neither number is checkable
+# from this repository, so none is quoted here as measured. The reasoning above never
+# depended on the size.
 #
 # -----------------------------------------------------------------------------------------
 # THE TRAP THIS CONTEXT INTRODUCES -- do not accept this image on /health alone

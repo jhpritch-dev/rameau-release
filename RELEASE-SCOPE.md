@@ -282,6 +282,108 @@ which is why it is recorded here rather than papered over with a note. Still ope
   The registry already keeps it only as a compatibility alias and says why.
 - **The pre-rewrite SHA residue.**
 
+#### OPEN RULING FOR JOHN: which private tree is the release's router source
+
+Two candidates exist in the private platform repository and they are not variants of one
+another. Reported to this session on 2026-11-02, measured there; nothing below is checkable
+from inside this repository.
+
+| | `services/router/` | `bifrost-router/` |
+|---|---|---|
+| `.py` files | 12 | 11 |
+| subdirectories | `backends/` | `backends/`, `skills/` |
+| carries `requirements.txt` | yes | no |
+| distinct third-party imports | 5 | 9 |
+| extra packages it would need | — | four more |
+
+The evidence favours `services/router/`: the path matches this repository's build context
+exactly, it carries the manifest, and its imports are 1:1 with it. But `bifrost-router/`
+imports eight module names that are not files in its own tree, so **the two trees are
+entangled rather than alternatives** — which is why this is a ruling and not an inference.
+It is not to be settled by whoever assembles, and it was not settled here.
+
+If the answer is `bifrost-router/`, the manifest grows by four packages and every count in
+the next section must be re-measured against that tree. The method survives; the numbers do
+not.
+
+#### OBLIGATION: the manifest is a remap, not a copy — and verify it in both directions
+
+What is reported about the private `services/router/requirements.txt`: five lines, each a
+public PyPI range specifier, with **no credential in a URL, no `--index-url` or
+`--extra-index-url`, no VCS or direct reference, no local path, wheel or `-e` install**. So
+there is nothing in it that cannot be published. An `ast` import closure over that tree's
+twelve `.py` files was reported to yield 28 distinct top-level imports — 16 stdlib, 7 local,
+5 third-party — matching the manifest exactly, so for *that* tree it is complete and
+minimal.
+
+**The five package names are deliberately not transcribed here.** Writing them into a scope
+document invites someone to copy them into `requirements.txt` and skip the step below, which
+is the one thing that makes the manifest right *for the release* rather than right for the
+tree it came from.
+
+That step: the release's context is defined by the Dockerfile's `COPY` groups and nothing
+else — `requirements.txt`, `backends/`, `skills/`, and `COPY *.py ./`, which is top level
+only and not recursive — bounded by `Dockerfile.dockerignore`. So:
+
+1. Build the shipping file list from those `COPY` groups with the ignore file applied.
+   Discover it; do not type it.
+2. Take an `ast` import closure over that list, classifying each top-level import as stdlib
+   (`sys.stdlib_module_names`), local (present in the shipping set), or third-party.
+   Relative imports are local by definition.
+3. **Check both directions.** An import with no requirement means the container fails at
+   import time *after a green build*. A requirement nothing imports means a dependency
+   carried for excluded code, which is the remap this obligation exists for.
+4. Map import names to distribution names with
+   `importlib.metadata.packages_distributions()` in an environment where they are installed,
+   never from recall. Note that the metrics client's import name uses an underscore and its
+   distribution a hyphen; pip normalises the two, but the mapping is to be measured.
+5. **Keep extras markers.** One of the five carries one, and dropping it silently removes
+   the parts that server needs in order to serve.
+6. Positive control, or the closure proves nothing: confirm it recovers the five known
+   requirements from the tree they were measured on. A closure that cannot reproduce a
+   manifest measured by hand is measuring something else.
+
+#### DECISION: ranges or pins, and what makes a pin a fact
+
+The five lines are `>=` floors, not pins. Floors are honest about what was tested and leave
+the image unreproducible — two builds a month apart install different versions. Pins are
+reproducible, but a pin asserts that *that* version works, which is only true if measured.
+
+So: do not pin from PyPI's current latest and do not pin from recall. If pinning, the
+versions come from `pip freeze` inside an environment that demonstrably serves traffic,
+filtered to those distributions and their transitive closure, with the source of each pin
+recorded. If no such environment is reachable from the release side, **keep the floors and
+say so** — that is the one case where shipping the weaker guarantee is the honest choice.
+
+#### OBLIGATION: `skills/` and the manifest live in DIFFERENT private trees
+
+`COPY skills/ /app/skills/` needs that directory present in the context or the build fails
+on it, exactly as it currently fails on `requirements.txt`. Reported: `skills/` exists only
+under `bifrost-router/`, holds nine files, all Markdown, zero `.py` — so it contributes no
+third-party import and cannot change the manifest.
+
+The consequence is the point: **the directory the Dockerfile needs and the manifest it needs
+were measured in different trees**, so assembling `services/router/` is not a copy of one
+directory. Whoever runs step 4 has to know that before starting.
+
+**Do not create an empty `skills/` to get past the `COPY`.** It would make the build go green
+while shipping a router with no skills — the same failure shape as every other item in this
+section.
+
+#### A withdrawn figure, recorded because it was load-bearing
+
+Three places in this repository — `README.md`, `deploy/README.md` and
+`deploy/images/router/Dockerfile` — justified the missing manifest with "131 dependency
+decisions made by guesswork". That figure was another service's: reported as the sum of two
+`bifrost-kb` requirements files, for a service not in this release. The router's own manifest
+is five lines.
+
+It is withdrawn in all three rather than replaced, because this repository can check neither
+number. The reasoning it carried is sound and never depended on the size, which is why the
+reasoning stays. But the figure was the stated reason the build is *allowed* to stop, and a
+measurement read off another instrument's output is precisely what `PROVENANCE` in
+`shared/resolver.py` exists to prevent — the `search` endpoint's port was wrong the same way.
+
 ## Rules that outlive the release
 
 - **No credential, key, token, address or hostname from the private deployment appears in

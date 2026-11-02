@@ -224,10 +224,20 @@ landed; it goes in with them.
 
 - **No dependency manifest.** `deploy/images/router/Dockerfile` needs
   `services/router/requirements.txt`, and the private repository's version is excluded from
-  publication. Inventing a pin set would be 131 dependency decisions made by guesswork, with
-  no way for a reviewer to tell which were measured; installing unpinned makes two builds of
-  one commit different images. A missing file that stops the build is the honest state of
-  that gap.
+  publication. The reasoning stands: inventing a pin set gives a reviewer no way to tell
+  which pins were measured, and installing unpinned makes two builds of one commit different
+  images, so a missing file that stops the build is the honest state of that gap.
+
+  **The figure this paragraph used to quote -- "131 dependency decisions" -- is withdrawn.**
+  It was not the router's. Reported to this session on 2026-11-02, measured on the private
+  tree: 131 is the sum of two `bifrost-kb` requirements files, for a service that is not in
+  this release at all, and the router's own manifest is five lines, each a public PyPI range
+  specifier. This repository cannot check either number -- neither tree is in it -- so the
+  figure is removed rather than replaced with another one that reads as measured here. What
+  it means in practice is that the blocker is small: five packages already specified in a
+  file reported to contain no credential, no index directive, no VCS reference and no local
+  path. See RELEASE-SCOPE.md for what must still be verified before any of it is copied in,
+  and for the question of which private tree the release's router source is.
 - **The four runtime JSON files** (`fleet_config.json`, `capability_registry.json`,
   `capability_profiles.json`, `bifrost_shell_policy.json`) are dispositioned as `.example`
   derivations, and **their schemas have not been derived.** `deploy/config/*.example.json`
