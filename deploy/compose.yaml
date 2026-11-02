@@ -160,8 +160,12 @@ services:
       - "${RAMEAU_PORTAL_PUBLISH:-127.0.0.1:13110}:80"
     extra_hosts:
       # The portal's nginx proxies five routes to host.docker.internal (/router/, /kb/,
-      # /broadcaster/, /arbiter/, /prom/). Without this they 502 on Linux while / still serves
-      # the SPA, so the portal looks up and every panel is empty.
+      # /broadcaster/, /arbiter/, /prom/). Without this the portal does NOT come up on Linux:
+      # nginx resolves a literal upstream name when it parses its config, so an unresolvable
+      # one is fatal -- `[emerg] host not found in upstream`, and the container crash-loops.
+      # This comment said "they 502 while / still serves the SPA" until 2026-11-02; that is
+      # what a resolver-plus-variable upstream does, not a literal one. See RELEASE-SCOPE.md:
+      # nginx.conf is not in this repository and its variant is not yet settled.
       - "host.docker.internal:host-gateway"
     depends_on:
       # Ordering only. Compose's plain depends_on waits for the container to start, not for

@@ -71,9 +71,18 @@ GPUs or inference runtimes.
 
 File-level, because "working" is a claim and a file is checkable.
 
-**`shared/resolver.py` -- the one real module (654 lines, stdlib only).** Every service
-address the router talks to is resolved here, from the environment, and nowhere else. Three
-properties, all of them behaviours rather than intentions:
+**`shared/resolver.py` -- the one real module (654 lines, stdlib only).** Every endpoint in
+its registry is resolved here, from the environment, with no fallback to a literal address.
+Three properties, all of them behaviours rather than intentions:
+
+This paragraph claimed "and nowhere else" until 2026-11-02, and that was too strong. The
+session assembling the release reports that `fleet_config.json` -- one of the four runtime
+files the stack bind-mounts, re-read on mtime change -- carries a `tiers[].base_url` per
+tier, each a full `scheme://host:port`. Those are addresses the router talks to, and they
+reach it without passing through the environment or through this registry. So the registry
+covers what it covers; it is not the only address surface. That cannot be verified from this
+repository, because `fleet_config.json` is not in it yet; RELEASE-SCOPE.md records it as an
+assembly obligation rather than leaving the stronger claim standing.
 
 - **No fallback to a literal address, ever.** An unset endpoint raises `ConfigError` at the
   point of resolution, naming the variable, what breaks without it, and a well-formed
@@ -277,8 +286,24 @@ ready. The portal tolerates a router that is not up: those routes 502 until it i
 
 Both services get `extra_hosts: host.docker.internal:host-gateway`. Without it, that name
 does not resolve inside a container on a Linux host, and the symptom is misleading in both
-services: the router starts and every generation request fails, and the portal serves its
-SPA while every panel is empty.
+services -- but not in the same way, and the portal's is worse than this README said until
+2026-11-02.
+
+- **The router starts and every generation request fails.** The address is resolved per
+  request, so the process comes up and the failure arrives later, looking like a model fault.
+- **The portal does not start at all.** nginx resolves a *literal* upstream name at
+  config-load time, so an unresolvable one is fatal: `[emerg] host not found in upstream`,
+  and the container exits and crash-loops rather than serving anything. This README
+  previously said the SPA kept serving while the panels sat empty. That is request-time
+  behaviour, and it is wrong for a literal upstream -- measured by running the pinned
+  `nginx:alpine` against a literal name that does not resolve.
+
+The portal's `nginx.conf` is **not in this repository** -- it arrives with the unassembled
+`services/portal/` build context -- so neither sentence can be checked here. What the above
+rests on is the behaviour of nginx itself, plus a report from the session assembling the
+release that every `host.docker.internal` route in the private original is a literal
+upstream, and that it found no other literal host. RELEASE-SCOPE.md records what remains
+unsettled, including a second variant of that file whose behaviour differs.
 
 ### What you need
 
