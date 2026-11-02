@@ -69,17 +69,33 @@ services:
       # generate. There is no default because every plausible default is wrong: a loopback
       # address means "this container", not "the host", and a guess that resolves is worse
       # than one that does not.
-      RAMEAU_OLLAMA_URL: ${RAMEAU_OLLAMA_URL:?set this to the ollama you run on the host, e.g. http://host.docker.internal:11434 -- a container loopback address reaches the container, not the host}
-      # The embedding endpoint is kept separate so embeddings never contend with generation on
-      # one accelerator. Point it at the same ollama if you have only one.
-      RAMEAU_EMBED_URL: ${RAMEAU_EMBED_URL:-}
-      # --- optional endpoints: blank counts as unset -----------------------------------------
-      # shared/resolver.py records which capability each one unlocks. A blank value is not a
-      # misconfiguration; it means you are not running that capability.
-      RAMEAU_ARBITER_URL: ${RAMEAU_ARBITER_URL:-}
-      RAMEAU_KB_URL: ${RAMEAU_KB_URL:-}
-      RAMEAU_BROADCASTER_URL: ${RAMEAU_BROADCASTER_URL:-}
-      RAMEAU_SEARCH_URL: ${RAMEAU_SEARCH_URL:-}
+      # NOTE WHERE THIS ONE GOES, because it is NOT where the five below go. `:?` is
+      # resolved at INTERPOLATION time, before any env_file is read, so setting it in
+      # profiles/compose.env is not enough -- measured: compose still refuses. It has to
+      # be in the shell or in deploy/.env. The message says so, because the operator who
+      # hits it has just copied compose.env.example, which contains this key.
+      RAMEAU_OLLAMA_URL: ${RAMEAU_OLLAMA_URL:?set this in deploy/.env or your shell -- NOT in profiles/compose.env, which is read too late for this one -- e.g. RAMEAU_OLLAMA_URL=http://host.docker.internal:11434. A container loopback address reaches the container, not the host}
+      # --- THE FIVE OPTIONAL ENDPOINTS ARE DELIBERATELY ABSENT FROM THIS BLOCK -------------
+      # RAMEAU_EMBED_URL, RAMEAU_ARBITER_URL, RAMEAU_KB_URL, RAMEAU_BROADCASTER_URL and
+      # RAMEAU_SEARCH_URL come from `env_file` above -- profiles/compose.env -- and are not
+      # named here. Declaring them here is what stopped that file from working, and the
+      # three available forms were measured with `docker compose config` on 2026-11-02
+      # (Compose v5.6.1), against an env_file that set each one:
+      #
+      #   `VAR: ${VAR:-}`   shell unset -> ""      <- the empty string OVERRIDES the file
+      #   `- VAR`           shell unset -> null    <- unset, and still overrides the file
+      #   absent            shell unset -> the file's value reaches the service
+      #
+      # `environment:` outranks `env_file:`, so the first two forms silently replace whatever
+      # the operator wrote with empty or nothing, and the resolver -- for which "empty means
+      # unset" -- then reports the endpoint as not configured. deploy/README.md step 1 told
+      # operators to create a file that could not reach the service it was for.
+      #
+      # The cost of the fix, stated rather than buried: for these five, the shell and
+      # deploy/.env no longer reach the router -- profiles/compose.env is now the only
+      # surface, which is what step 1 always said it was. There is no form that takes the
+      # file as a fallback UNDER a shell override; one source has to win, and the operator's
+      # own file is the one this stack documents.
       # --- the router's own identity, as other services should address it --------------------
       # 8080 is the port the container listens on (see the Dockerfile's CMD). It is NOT the
       # port the private deployment published, and this is the one place that distinction has
@@ -115,12 +131,13 @@ services:
     networks: [rameau]
     logging: *logging
     restart: "no"
-    # NO healthcheck on /health alone, deliberately. The router's own .dockerignore records
-    # that a minimal build context can drop bifrost_delegate.py -- which is read off disk with
-    # `ast` and imported by nothing, so an import-closure context misses it -- after which the
-    # tool loop refuses every delegated leaf, fail-closed, while /health still returns 200. A
-    # healthcheck on /health would read green on exactly that failure and is therefore worse
-    # than none. The acceptance test must exercise one delegated leaf; see deploy/README.md.
+    # NO healthcheck on /health alone, deliberately. The router's own
+    # Dockerfile.dockerignore records that a minimal build context can drop
+    # bifrost_delegate.py -- which is read off disk with `ast` and imported by nothing, so an
+    # import-closure context misses it -- after which the tool loop refuses every delegated
+    # leaf, fail-closed, while /health still returns 200. A healthcheck on /health would read
+    # green on exactly that failure and is therefore worse than none. The acceptance test
+    # must exercise one delegated leaf; see deploy/README.md.
 
   # =========================================================================================
   # PORTAL -- the existing web UI, ruled in scope by John on 2026-10-27

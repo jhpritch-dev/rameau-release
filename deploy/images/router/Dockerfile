@@ -69,7 +69,9 @@ COPY backends/ /app/backends/
 COPY skills/ /app/skills/
 
 # ---- layer 4: application source --------------------------------------------------------
-# The .dockerignore beside this file is what bounds this; the wildcard cannot widen it.
+# Dockerfile.dockerignore beside this file is what bounds this; the wildcard cannot widen
+# it. That file is named for this one on purpose -- as plain `.dockerignore` it sat outside
+# the build context and Docker read it not at all, which left this wildcard unbounded.
 # Re-run the import-closure check after every source refresh: a module missing from the
 # context does not fail the build, it fails at first use, and /health can still answer 200.
 COPY *.py ./

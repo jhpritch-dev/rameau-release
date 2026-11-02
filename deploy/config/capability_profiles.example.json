@@ -1,0 +1,22 @@
+{
+  "_file": "capability_profiles.json.example",
+  "_status": "PLACEHOLDER -- schema NOT established, purpose NOT established",
+  "_read_this_first": "NOTHING BELOW IS INVENTED. The keys in this file all begin with _ and are prose, not configuration. No field of the real schema is reproduced here, because no artifact in this repository shows one -- and a plausible-looking invented schema is worse than an acknowledged gap, because the next person builds against it.",
+  "_this_will_not_start_the_router": "This file will NOT satisfy the application. It exists so that `docker compose up` has a real file to bind-mount -- Docker silently CREATES AN EMPTY DIRECTORY at a missing bind source, which would mount a directory onto /app/capability_profiles.json and fail as IsADirectoryError far from its cause. Replace the whole object when step 4 of RELEASE-SCOPE.md lands the source that reads it.",
+  "_established_from_this_repository": [
+    "Mounted read-only at /app/capability_profiles.json -- deploy/compose.yaml mounts it as a single FILE, not as a directory, because a directory mounted onto /app would shadow the application code.",
+    "Read by the application as Path(__file__).parent / \"capability_profiles.json\", so it must land at that exact path (deploy/compose.yaml, deploy/README.md).",
+    "Absent from the router build context by design: deploy/images/router/.dockerignore does not re-admit it, and deploy/images/router/Dockerfile note 1 records that the private original baked all four in and the release cannot."
+  ],
+  "_not_established": [
+    "Everything, including what the file is FOR. This is the emptiest of the four: the repository names it in the four-file list, mounts it, and says nothing else.",
+    "Whether 'profiles' here has anything to do with deploy/profiles/, which holds generated endpoint ENV files and is a different kind of thing entirely. The shared word is the only link and it is not evidence.",
+    "Whether it is read together with capability_registry.json, overrides it, or is independent of it."
+  ],
+  "_placeholder_rules_for_whoever_fills_this_in": [
+    "Addresses: documentation range only -- 192.0.2.0/24 (RFC 5737 TEST-NET-1), or a name under example.com / example.invalid. Never a private address (10/8, 172.16/12, 192.168/16) and never a host name from the private deployment.",
+    "Never a credential, key, token or password, not even a placeholder shaped like one. If a field appears to require a real secret, that is a finding, not a value to invent.",
+    "Keep the file LF-terminated and ASCII; .gitattributes normalises *.json to LF.",
+    "The operator's copy of this file (deploy/config/<name>.json, without .example) is ignored by .gitignore on purpose: it describes a specific fleet."
+  ]
+}

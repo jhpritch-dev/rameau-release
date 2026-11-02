@@ -126,7 +126,7 @@ container network -- where loopback is the container itself, so a host-oriented 
 every endpoint at nothing. CI regenerates both and diffs them against what is checked in, so
 "generated from the registry" is a gate rather than a header comment.
 
-**`.github/workflows/ci.yml` -- the CI gate.** Two jobs. The secret scan runs gitleaks over
+**`.github/workflows/ci.yml` -- the CI gate.** Three jobs. The secret scan runs gitleaks over
 the working tree *and* the full history, and before trusting a clean report it plants a
 generated high-entropy AWS-shaped key in a scratch repository outside the workspace and
 requires gitleaks to flag it -- because a scan that cannot be shown to fire is not evidence.
@@ -136,8 +136,15 @@ gitleaks by default, which is how the first version of that control failed. The 
 byte-compiles, runs the tests, regenerates and diffs both env examples, asserts the
 in-network profile contains no loopback, and validates both compose files by path -- with a
 control that asserts the stack still **refuses** to resolve when `RAMEAU_OLLAMA_URL` is
-unset. Every build step is written to pass on an empty tree and to start doing real work the
-moment source appears, so the gate never has to be switched on later.
+unset. The image job builds both images **through compose**, because the thing most likely to
+be wrong at step 5 is the wiring rather than either Dockerfile -- each service's context is
+`../services/<name>` and its Dockerfile is outside that context -- and `docker build` would
+exercise none of it. Today both contexts are absent, so that job prints what is missing, names
+step 4 as the reason and passes; it starts gating the moment the directories appear, with no
+edit. It asserts `compose.yaml` and both Dockerfiles are present *first*, so that "skipped"
+can never be what a broken checkout looks like. Every build step is written to pass on an
+empty tree and to start doing real work the moment source appears, so the gate never has to be
+switched on later.
 
 **`tools/git-hooks/pre-push` -- the fail-closed local secret gate.** GitHub's push
 protection is unavailable while this repository is private on the current plan (secret
@@ -214,7 +221,16 @@ landed; it goes in with them.
   that gap.
 - **The four runtime JSON files** (`fleet_config.json`, `capability_registry.json`,
   `capability_profiles.json`, `bifrost_shell_policy.json`) are dispositioned as `.example`
-  derivations and have not been derived.
+  derivations, and **their schemas have not been derived.** `deploy/config/*.example.json`
+  exist, but each one is a placeholder that records what this repository establishes about the
+  file and what it does not, in `_`-prefixed prose keys; no field of any of the four schemas is
+  reproduced, because this repository contains no sample, loader, test or schema for any of
+  them. Of the four, only `fleet_config.json` has an established *purpose* — it carries the
+  tier mapping and re-reads on mtime change. The other three are named, mounted, and otherwise
+  undescribed, and `bifrost_shell_policy.json` additionally sits on one of the four open scope
+  questions below. Copying the examples into `deploy/config/` will not start the router; what
+  it does is give `compose.yaml`'s bind mounts real files, which matters because Docker creates
+  an empty *directory* at a missing bind source.
 - **`docker/.env.example` must be read line by line before it is copied.** It was classified
   into the release set on its filename alone, and a `.example` suffix is a convention rather
   than a guarantee.
@@ -268,7 +284,8 @@ SPA while every panel is empty.
 
 - Docker with Compose **v2.24 or newer** -- `compose.yaml` uses `env_file: required: false`.
 - An **ollama you already run**, reachable from this host.
-- The four runtime JSON files in `deploy/config/` (see below). They have not been derived yet.
+- The four runtime JSON files in `deploy/config/` (see below). The `.example.json` files exist;
+  their **schemas** do not, so copying them is not yet enough to run.
 
 ### Environment
 
@@ -302,23 +319,46 @@ The other five -- `embed`, `kb`, `arbiter`, `broadcaster`, `search` -- are optio
 blank value counts as unset rather than as a misconfiguration. Each one's `required_for` tag
 in the registry records which capability it unlocks.
 
-**Where to put the values.** `RAMEAU_OLLAMA_URL` and the five optional endpoints must reach
-Compose's *interpolation* environment -- the shell, or a `.env` file in `deploy/`. Measured
-with `docker compose config` on 2026-11-02:
+**Where to put the values, and it is two places.** The split is not elegant and it is not
+avoidable, so it is stated rather than smoothed over. Measured with `docker compose config`
+on 2026-11-02, Compose v5.6.1.
+
+**The five optional endpoints go in `deploy/profiles/compose.env`** -- `RAMEAU_EMBED_URL`,
+`RAMEAU_ARBITER_URL`, `RAMEAU_KB_URL`, `RAMEAU_BROADCASTER_URL`, `RAMEAU_SEARCH_URL`. That is
+what `deploy/README.md` step 1 has always told you to do, and as of this change it is also
+what works. For these five the shell and `deploy/.env` do **not** reach the router.
+
+**`RAMEAU_OLLAMA_URL` goes in the shell or in `deploy/.env`** -- and *not* in
+`profiles/compose.env`, which is read too late for it:
 
 ```
 cd deploy
 printf 'RAMEAU_OLLAMA_URL=http://host.docker.internal:11434\n' > .env   # .gitignore covers it
 ```
 
-Note that `deploy/profiles/compose.env`, which `deploy/README.md` step 1 tells you to create,
-does **not** reach the router. Compose ranks the `environment:` attribute above `env_file:`,
-and the router re-declares each endpoint as `${VAR:-}` in `environment:` -- so with nothing in
-the interpolation environment, all five optional endpoints arrive at the router as the empty
-string, overriding whatever that file says. The file does reach the `portal` service, which
-does not read those variables. This is a defect in the stack rather than a subtlety to work
-around; it is recorded here because a README that repeated the step without it would be
-telling you to configure something that has no effect.
+It is declared `${RAMEAU_OLLAMA_URL:?...}`, and `:?` is resolved at *interpolation* time,
+before any `env_file` is read. Putting it in `profiles/compose.env` leaves Compose still
+refusing, with the registry's own message -- which now names the right file.
+
+**Why the five moved.** Until this change they were re-declared under the router's
+`environment:` key as `${VAR:-}`, and `environment:` outranks `env_file:`. With nothing in
+the interpolation environment each one resolved to the **empty string** and overrode whatever
+the operator had written, and because the resolver treats empty as unset the router then
+reported them as not configured. Nothing failed: the stack came up, `config` parsed, and the
+endpoints were simply absent. Three forms were measured, and only one lets the file through:
+
+| form under `environment:` | shell unset | shell set |
+|---|---|---|
+| `VAR: ${VAR:-}` | `""` -- **overrides the file** | shell wins |
+| `- VAR` (list form) | `null` -- **also overrides it** | shell wins |
+| not declared at all | the file's value reaches the router | the file still wins |
+
+There is no form that takes the file as a *fallback* under a shell override; one source has
+to win, and for these five it is the operator's own file. The router's own three URLs stay
+hardcoded in `compose.yaml` and deliberately keep overriding the file, because the file
+addresses the router by service name on a port a host-side example may have carried over.
+CI asserts all of this directly -- it writes a sentinel into `profiles/compose.env` and
+requires it to survive into the router's resolved environment.
 
 ### Runtime config
 
@@ -335,7 +375,12 @@ the application code. They are mounted read-only, so the container cannot drift 
 edited, and `fleet_config.json` re-reads on mtime change on every request, so editing it
 re-tiers a **running** router with no restart.
 
-The `.example.json` sources do not exist yet. See step 4 above.
+The `.example.json` sources exist, and **each is a placeholder rather than a derived schema.**
+They carry `_`-prefixed prose keys naming what this repository establishes about the file and
+what it does not; no field of any of the four is reproduced, because nothing here shows one.
+Copying them gives the bind mounts real files — which is worth having, since Docker creates an
+empty *directory* at a missing bind source and the resulting `IsADirectoryError` surfaces far
+from its cause — but it will not start the router. The schemas arrive with step 4 above.
 
 ### The command sequence
 
@@ -420,7 +465,7 @@ Measured on this tree on 2026-11-02, Docker 29.4.2 / Compose v5.1.3.
 | the same, with `RAMEAU_OLLAMA_URL` unset | **fails, correctly.** `required variable RAMEAU_OLLAMA_URL is missing a value`. This is the designed behaviour and CI asserts it. |
 | `docker compose build` (either image) | **blocked.** |
 | `docker compose up` | **blocked.** |
-| copying the four runtime JSON files | **blocked.** They have not been derived. |
+| copying the four runtime JSON files | **works, and does not get you a running router.** `deploy/config/*.example.json` exist as placeholders; their schemas have not been derived. |
 
 What a reader actually sees if they try `build` or `up` today:
 
@@ -435,7 +480,11 @@ before any instruction in either Dockerfile is reached -- including the missing
 Both are true; the missing context is simply the one you hit first. Nothing here is a
 misconfiguration to debug: it is step 4 of the assembly order not having happened.
 
-No image was built in producing this document, and no base layer was pulled.
+No image has ever been built **from this tree**, because neither context exists in it. Both
+Dockerfiles have, separately, been exercised against a throwaway stub context that was created
+and then discarded, and all three digest-pinned base images resolved when that was done on
+2026-11-02. Nothing from that stub is in this repository: `services/` is absent here, not
+ignored, so the day it appears it will be the assembled source and nothing else.
 
 ## Provenance, stated plainly
 

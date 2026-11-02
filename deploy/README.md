@@ -10,7 +10,7 @@ the stack's route off the machine.
 | `images/router/` | the router image and its build context list |
 | `images/portal/` | the portal image and its build context list |
 | `profiles/compose.env.example` | endpoint values for inside the container network, generated from `shared/resolver.py` |
-| `config/` | where your four runtime JSON files go (see step 2) |
+| `config/` | the four `*.example.json` placeholders, and where your own copies go (see step 2) |
 
 ## Two things are not ready yet
 
@@ -23,10 +23,20 @@ private repository's version is excluded from publication. `docker build` fails 
 Inventing a pin set was the alternative, and 131 dependency decisions made by guesswork, with
 no way for a reviewer to tell which were measured, is worse than a build that stops.
 
-**2. The router source and the four config examples are not assembled yet.** `services/router/`
-and `services/portal/` are the build contexts this stack expects; the assembly that fills them
-has not run. The four runtime JSON files are dispositioned as `.example` derivations and have
-not been derived.
+**2. The router source is not assembled yet, and the four config examples carry no schema.**
+`services/router/` and `services/portal/` are the build contexts this stack expects; the
+assembly that fills them has not run.
+
+`config/*.example.json` now exist for all four runtime JSON files, but read one before you
+rely on it: **each is a placeholder, not a derived schema.** This repository contains no
+sample, loader, test or schema for any of the four, so no field of any of them could be
+established — and an invented field would be worse than an acknowledged gap, because the next
+reader builds against it. Each file records, in `_`-prefixed prose keys, what the repository
+does establish (its mount path, how it is read, that `fleet_config.json` re-reads on mtime)
+and what it does not. **Copying them into `config/` will not start the router.** What they do
+buy you is that the bind mounts in `compose.yaml` have real files to point at: Docker creates
+an empty *directory* at a missing bind source, so a missing file mounts a directory onto
+`/app/fleet_config.json` and surfaces as an `IsADirectoryError` a long way from its cause.
 
 Everything below is correct for the point at which those land.
 
@@ -88,21 +98,42 @@ the ones you have no service for.
 > example ships service names `compose.yaml` does not define — that belongs to the generator,
 > and it is noted in **Two things are not ready yet** rather than papered over here.
 
-`RAMEAU_OLLAMA_URL` has no default and the stack refuses to start without it. On Docker
-Desktop and on Linux with the stack's `extra_hosts`, `http://host.docker.internal:11434`
-reaches an ollama on the host.
+This file is the **only** place the five optional endpoints are read from — `RAMEAU_EMBED_URL`,
+`RAMEAU_ARBITER_URL`, `RAMEAU_KB_URL`, `RAMEAU_BROADCASTER_URL`, `RAMEAU_SEARCH_URL`. The shell
+and `deploy/.env` do not reach the router for those. (Until 2026-11-02 the reverse was true and
+this file reached nothing: the router re-declared each one under `environment:`, which outranks
+`env_file:`, so they arrived as the empty string. `compose.yaml` now omits them, which is the
+only form that lets this file through, and CI asserts it with a sentinel.)
+
+**`RAMEAU_OLLAMA_URL` is the exception, and putting it in this file will not work.** It has no
+default and the stack refuses to start without it — but it is declared `${RAMEAU_OLLAMA_URL:?}`,
+and `:?` is resolved at *interpolation* time, before any `env_file` is read. So it goes in your
+shell or in `deploy/.env`:
+
+```
+printf 'RAMEAU_OLLAMA_URL=http://host.docker.internal:11434\n' > .env   # .gitignore covers it
+```
+
+On Docker Desktop, and on Linux with the stack's `extra_hosts`,
+`http://host.docker.internal:11434` reaches an ollama on the host. The three router URLs in the
+example file are also ignored: `compose.yaml` sets those itself, on purpose.
 
 **2. Runtime config.**
 
 ```
-mkdir -p config
-cp <the four>.example.json config/   # then drop the .example from each name
+cd config
+for f in *.example.json; do cp "$f" "${f%.example.json}.json"; done
 ```
 
 The four are `fleet_config.json`, `capability_registry.json`, `capability_profiles.json` and
 `bifrost_shell_policy.json`. Each is read as `Path(__file__).parent / "<name>.json"`, so
 `compose.yaml` mounts them one file at a time to exact paths rather than mounting a directory
 — a directory mounted onto `/app` would shadow the application code.
+
+The copies you just made are **placeholders with no schema in them** and will not start the
+router — see "Two things are not ready yet" above. `.gitignore` excludes
+`config/*.json` while keeping `config/*.example.json` tracked, because your copies describe
+your fleet and the examples describe nothing.
 
 They are mounted read-only, so the container cannot drift from what you edited.
 `fleet_config.json` re-reads on mtime change on every request, so editing it re-tiers a
