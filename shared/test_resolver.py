@@ -90,7 +90,7 @@ def test_every_shape_of_redaction_is_rejected(redacted):
     "http://api.eu.example.com",        # four fields, no digits at all
     "http://10.infra.example.com:8089", # ALL-NUMERIC DNS LABEL in a real hostname
     "http://1.example.com:8089",        # three fields, numeric label
-    "http://192.0.2.4:8089",          # a real dotted quad
+    "http://192.0.2.4:8089",            # a real dotted quad (RFC 5737 TEST-NET-1)
     "http://10.1.2.3:80",
     "http://127.0.0.1:11434",
     "http://2026.10.27.9:8089",         # four numerics, one not octet-range
