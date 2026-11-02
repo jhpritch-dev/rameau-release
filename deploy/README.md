@@ -261,7 +261,13 @@ delegates, what a leaf's payload looks like, what a refusal looks like against a
 not knowable from inside this tree. Inventing a plausible request would be worse than leaving
 the gap: it would most likely exercise nothing, pass, and be recorded as acceptance.
 
-So step 4 of the assembly owes this file one concrete invocation, with:
+> **OWED BY: the private side, and accepted there on 2026-11-02.** This is a handoff with a
+> named owner, not an omission. It can only be written by whoever can read the unassembled
+> router source, which is not this repository and will not be until step 4. If you are
+> reading this at step 4 and the invocation below is still missing, it is outstanding from
+> that owner — do not substitute one, for the reason in the paragraph above.
+
+What is owed is one concrete invocation, with:
 
 - the request that causes exactly one leaf to be delegated;
 - the response that means it ran;

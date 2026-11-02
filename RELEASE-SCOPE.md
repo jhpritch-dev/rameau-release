@@ -454,9 +454,25 @@ and the `RAMEAU_COMMIT` result required it.
 #### KNOWN AND NOT RULED: two private-range strings remain reachable in this history
 
 `b465f4a` rebased two redaction-mask test fixtures off the private /24 and onto TEST-NET-1.
-The tip is clean and a sweep confirms it. But both strings entered at `eb31a16`, which is
-published history, and the fix's own commit message quotes the values it removed — so they
-are reachable from the log twice over, not once.
+The tip is clean and a sweep confirms it. The residue behind it is larger than one commit,
+and it is in **two different kinds of object**, which is the part that matters for anyone
+costing a remedy. Measured on `main` at `d28dc87`, counts only:
+
+| object | surface |
+|---|---|
+| the tip's tree | 0 |
+| trees | **20 of 30 commits**, `eb31a16` (where it entered) through `f31be0c` |
+| commit **messages** | **2 commits, 4 lines** — `b465f4a` (3) and `9c96ab1` (1) |
+
+**A rewrite scoped to blobs would leave the messages untouched and would read as
+complete.** That is the trap: the tree surface is the one a filter finds, and the message
+surface is the one that then survives, so a remedy has two kinds of object to reach rather
+than one.
+
+`b465f4a` is the commit that removed the strings, and its message quotes them because it
+explained the rebase by showing before-and-after pairs — which necessarily republished the
+private form in the course of recording its removal. `9c96ab1` predates that work and was
+not previously counted.
 
 Recorded as a decision rather than a non-issue, with the reasoning on both sides, because
 each side is true:
@@ -486,3 +502,10 @@ obeys the rule and the history does not.
 - **No claim in the README or in release material that the code here does not support.**
 - **Verification is never self-reported.** A change is reviewed by something other than
   whatever produced it.
+- **Describe a redaction by its SHAPE, never by quoting the before-and-after literal.** A
+  commit, comment or document that records the removal of a value by showing the value
+  republishes it, in an object that outlives the removal — and a message is not reached by
+  a rewrite aimed at trees. "A last-octet mask became a documentation-range mask" carries
+  everything a reader needs; the pair of literals carries the value as well. This is the
+  rule that `b465f4a` broke while obeying the first one, which is why it is written here
+  and not left as a lesson in a commit nobody will re-read.
