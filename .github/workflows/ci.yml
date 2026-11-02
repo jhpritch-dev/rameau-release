@@ -24,7 +24,7 @@ jobs:
     name: secret scan
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history: a scan of the working tree alone cannot see a value that was
           # committed and later removed, and a removed value is still reachable.
@@ -103,9 +103,9 @@ jobs:
     name: compile and validate
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
@@ -311,7 +311,7 @@ jobs:
     # mean a slow image build gating a fast syntax answer, and the two fail for unrelated
     # reasons.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: the stack's own files must be here before "skipped" can mean anything
         # This step exists because of the defect recorded in `validate compose` above: that
