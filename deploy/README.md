@@ -58,8 +58,9 @@ cp profiles/compose.env.example profiles/compose.env
 
 Then edit it. Every value in it is a **compose service name**, resolved by the container
 network's DNS — loopback is wrong there, because inside a container loopback is the container.
-Endpoints you are not running may be left blank; a blank value counts as unset, and
-`shared/resolver.py` records which capability each one unlocks.
+Endpoints you are not running **must** be left blank — a blank value counts as unset, and
+`shared/resolver.py` records which capability each one unlocks. That was optional until
+2026-11-02; the next paragraph is why it is not.
 
 **Blanking them is now load-bearing, where before it was optional.** The example ships
 **non-empty** values for six names `compose.yaml` does not define — `ollama`, `embed`, `kb`,
