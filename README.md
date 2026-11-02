@@ -236,8 +236,23 @@ landed; it goes in with them.
   figure is removed rather than replaced with another one that reads as measured here. What
   it means in practice is that the blocker is small: five packages already specified in a
   file reported to contain no credential, no index directive, no VCS reference and no local
-  path. See RELEASE-SCOPE.md for what must still be verified before any of it is copied in,
-  and for the question of which private tree the release's router source is.
+  path.
+
+  **Both open questions here are now closed, and the file is still deliberately absent.**
+  John ruled on 2026-11-02 that `services/router/` is the release's router source, and the
+  import closure was run on that tree and verified in both directions -- no import lacks a
+  requirement, no requirement lacks an importer, and the closure recovers the manifest
+  measured by hand, which is the control that it is not measuring something else. So the
+  content is settled and no longer needs deriving.
+
+  What is left is not derivation but **placement**, which belongs to step 4: committing the
+  file alone would create a half-assembled `services/router/` with no `backends/`, no
+  `skills/` and no `*.py`, which measurably turns CI red rather than green -- the `images`
+  job stops skipping and `docker compose build` then fails on the rest. And one decision
+  remains John's: the five lines are `>=` floors, and turning them into exact pins needs a
+  reading from an environment that demonstrably serves traffic, which exists only on the
+  private side. RELEASE-SCOPE.md carries the closure as evidence so step 4 is a
+  transcription rather than a re-derivation.
 - **The four runtime JSON files** (`fleet_config.json`, `capability_registry.json`,
   `capability_profiles.json`, `bifrost_shell_policy.json`) are dispositioned as `.example`
   derivations, and **their schemas have not been derived.** `deploy/config/*.example.json`

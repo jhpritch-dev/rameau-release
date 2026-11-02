@@ -27,8 +27,15 @@ pins were measured.
 another service's. Reported 2026-11-02: 131 is two `bifrost-kb` files summed, and that
 service is not in this release; the router's manifest is five range specifiers. Nothing here
 can check that, so no replacement figure is quoted as if it were measured in this
-repository. RELEASE-SCOPE.md records what has to be verified before the manifest is
-copied in.
+repository.
+
+**What was open here is now closed.** `services/router/` is ruled the release's router
+source, and the import closure over that tree is verified in both directions, so the
+manifest's content is settled. `docker build` still fails on that COPY because the file is
+not here, and that is a **placement** decision belonging to step 4 rather than a gap in
+knowledge: committing it alone would leave `services/router/` holding a manifest and none of
+the source it describes, which turns CI red. RELEASE-SCOPE.md carries the closure as
+evidence, and the one remaining decision -- floors or exact pins -- with it.
 
 **2. The router source is not assembled yet, and the four config examples carry no schema.**
 `services/router/` and `services/portal/` are the build contexts this stack expects; the

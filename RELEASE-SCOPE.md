@@ -282,11 +282,11 @@ which is why it is recorded here rather than papered over with a note. Still ope
   The registry already keeps it only as a compatibility alias and says why.
 - **The pre-rewrite SHA residue.**
 
-#### OPEN RULING FOR JOHN: which private tree is the release's router source
+#### RULED 2026-11-02 BY JOHN: `services/router/` is the release's router source
 
-Two candidates exist in the private platform repository and they are not variants of one
-another. Reported to this session on 2026-11-02, measured there; nothing below is checkable
-from inside this repository.
+The two candidates and their measured differences are kept below, because the ruling is only
+legible against them, and because a later reader should be able to see that it was a decision
+rather than an inference.
 
 | | `services/router/` | `bifrost-router/` |
 |---|---|---|
@@ -294,66 +294,98 @@ from inside this repository.
 | subdirectories | `backends/` | `backends/`, `skills/` |
 | carries `requirements.txt` | yes | no |
 | distinct third-party imports | 5 | 9 |
-| extra packages it would need | — | four more |
 
-The evidence favours `services/router/`: the path matches this repository's build context
-exactly, it carries the manifest, and its imports are 1:1 with it. But `bifrost-router/`
-imports eight module names that are not files in its own tree, so **the two trees are
-entangled rather than alternatives** — which is why this is a ruling and not an inference.
-It is not to be settled by whoever assembles, and it was not settled here.
+**This settles the manifest's contents. It does not settle the assembly.** `skills/` exists
+only under the other tree, and `COPY skills/ /app/skills/` needs it present or the build
+fails on it. So step 4 draws from both trees, and assembling `services/router/` is still not
+a copy of one directory. That obligation stands unchanged below.
 
-If the answer is `bifrost-router/`, the manifest grows by four packages and every count in
-the next section must be re-measured against that tree. The method survives; the numbers do
-not.
+#### DISCHARGED: the import closure, run on the ruled tree and verified in both directions
 
-#### OBLIGATION: the manifest is a remap, not a copy — and verify it in both directions
+Run on the private side on 2026-11-02, because the closure needs the tree this repository
+cannot see. Nothing here can check it; it is recorded so that step 4 is a transcription
+rather than a re-derivation.
 
-What is reported about the private `services/router/requirements.txt`: five lines, each a
-public PyPI range specifier, with **no credential in a URL, no `--index-url` or
-`--extra-index-url`, no VCS or direct reference, no local path, wheel or `-e` install**. So
-there is nothing in it that cannot be published. An `ast` import closure over that tree's
-twelve `.py` files was reported to yield 28 distinct top-level imports — 16 stdlib, 7 local,
-5 third-party — matching the manifest exactly, so for *that* tree it is complete and
-minimal.
+The decisive result is that **the shipping set turns out to be the whole tree**, so the
+closure is a remap that happens to coincide with a copy — which is worth stating precisely,
+because it means no third-party import is reachable only from excluded code:
 
-**The five package names are deliberately not transcribed here.** Writing them into a scope
-document invites someone to copy them into `requirements.txt` and skip the step below, which
-is the one thing that makes the manifest right *for the release* rather than right for the
-tree it came from.
+```
+ignore file   ** deny-all, then re-admit requirements.txt, *.py, backends/, backends/**,
+              skills/, skills/** -- then re-deny .env*, keys, tests/, test_*.py,
+              *_test.py, __pycache__, *.pyc and the rest
+COPY groups   requirements.txt | backends/ | skills/ | *.py  (TOP LEVEL ONLY)
 
-That step: the release's context is defined by the Dockerfile's `COPY` groups and nothing
-else — `requirements.txt`, `backends/`, `skills/`, and `COPY *.py ./`, which is top level
-only and not recursive — bounded by `Dockerfile.dockerignore`. So:
+shipping set  8 top-level .py + 4 under backends/ = 12 files. No .py exists in that
+              tree outside those two groups, and none of the 12 matches test_*.py
+              or *_test.py.
 
-1. Build the shipping file list from those `COPY` groups with the ignore file applied.
-   Discover it; do not type it.
-2. Take an `ast` import closure over that list, classifying each top-level import as stdlib
-   (`sys.stdlib_module_names`), local (present in the shipping set), or third-party.
-   Relative imports are local by definition.
-3. **Check both directions.** An import with no requirement means the container fails at
-   import time *after a green build*. A requirement nothing imports means a dependency
-   carried for excluded code, which is the remap this obligation exists for.
-4. Map import names to distribution names with
-   `importlib.metadata.packages_distributions()` in an environment where they are installed,
-   never from recall. Note that the metrics client's import name uses an underscore and its
-   distribution a hyphen; pip normalises the two, but the mapping is to be measured.
-5. **Keep extras markers.** One of the five carries one, and dropping it silently removes
-   the parts that server needs in order to serve.
-6. Positive control, or the closure proves nothing: confirm it recovers the five known
-   requirements from the tree they were measured on. A closure that cannot reproduce a
-   manifest measured by hand is measuring something else.
+closure       28 top-level imports -> 16 stdlib, 7 local, 5 third-party
+              uncovered imports: 0        unused requirements: 0
+```
 
-#### DECISION: ranges or pins, and what makes a pin a fact
+**Positive control holds:** the closure recovers all five lines of the manifest measured by
+hand. A closure that cannot reproduce that is measuring something else, which is the only
+reason to trust the zeros above.
 
-The five lines are `>=` floors, not pins. Floors are honest about what was tested and leave
-the image unreproducible — two builds a month apart install different versions. Pins are
-reproducible, but a pin asserts that *that* version works, which is only true if measured.
+So the manifest is complete and minimal **for the file set the release actually ships**, not
+merely for the tree it came from. That distinction was the whole point of requiring a remap.
 
-So: do not pin from PyPI's current latest and do not pin from recall. If pinning, the
-versions come from `pip freeze` inside an environment that demonstrably serves traffic,
-filtered to those distributions and their transitive closure, with the source of each pin
-recorded. If no such environment is reachable from the release side, **keep the floors and
-say so** — that is the one case where shipping the weaker guarantee is the honest choice.
+The five package names are still not transcribed here. The earlier reason — that a scope
+document invites someone to copy them and skip the verification — has expired now that the
+verification is done, but the better one remains: release source does not belong in a scope
+document, and the first place those lines should appear is a `requirements.txt` that survived
+this closure. They are parked durably on the private side with this measurement beside them.
+
+#### DECISION NOT TAKEN HERE: the file is not placed yet, and the reason is measured
+
+Placing `services/router/requirements.txt` now would leave that directory holding a manifest
+and none of the source it describes — no `backends/`, no `skills/`, no `*.py`. That is not
+merely untidy. It measurably **turns CI red**:
+
+```
+neither context present (today)      -> present=false, images job skips, green
+a lone requirements.txt in services/router/
+                                     -> present=true, "HALF-ASSEMBLED TREE",
+                                        docker compose build runs and fails
+```
+
+The `images` job's half-assembled-tree branch exists for exactly this and fires correctly, so
+the half-step is caught rather than silently shipped. Selecting a file for the release is an
+assembly decision in any case; this one waits for step 4, with the closure above standing in
+for the work so nothing is lost by waiting.
+
+#### STILL JOHN'S: floors or exact pins
+
+The five lines are `>=` floors. Floors are honest about what was tested and leave the image
+unreproducible; pins are reproducible but assert that a specific version works, which is only
+true if measured. A pin would have to be read from an environment that demonstrably serves
+traffic — a `pip freeze` filtered to those distributions and their transitive closure, with
+each pin's source recorded. No such environment is reachable from the release side, so absent
+one, **keep the floors** rather than invent pins.
+
+#### TWO NAME TRAPS FOR WHOEVER WRITES THE FILE
+
+- The metrics client's **import name uses an underscore and its distribution a hyphen**. pip
+  normalises the two, so a line written either way installs, but the mapping is to be read
+  from `importlib.metadata.packages_distributions()` in an environment where the packages are
+  installed — never from recall. This is the same class as `yaml` → `PyYAML`.
+- **`uvicorn[standard]` is not `uvicorn`.** Dropping the extras marker silently removes the
+  parts that server needs in order to serve, and the Dockerfile's `CMD` already depends on
+  them. Named here because `uvicorn` is already public in this repository; the other three
+  packages are not named for the reason above.
+
+#### HOW IT MUST BE VERIFIED, because a green build proves almost nothing here
+
+A successful `docker build` proves the `COPY` groups resolve. A missing requirement fails at
+**import time inside the container, after a green build**. So:
+
+- start the container and **exercise one delegated leaf**. `/status` returning 200 is
+  explicitly insufficient, for the `bifrost_delegate.py` reason recorded above — it is read
+  off disk with `ast`, imported by nothing, and its absence makes the tool loop refuse every
+  delegated leaf while `/status` still answers 200.
+- keep `--no-cache-dir`, as the Dockerfile already does, so a stale wheel cache cannot make a
+  broken manifest look installable.
 
 #### OBLIGATION: `skills/` and the manifest live in DIFFERENT private trees
 
