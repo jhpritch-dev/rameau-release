@@ -20,8 +20,15 @@ by running it.
 **1. There is no dependency manifest.** `images/router/Dockerfile` needs
 `services/router/requirements.txt`, and no such file has been selected for the release — the
 private repository's version is excluded from publication. `docker build` fails on that COPY.
-Inventing a pin set was the alternative, and 131 dependency decisions made by guesswork, with
-no way for a reviewer to tell which were measured, is worse than a build that stops.
+Inventing a pin set is worse than a build that stops, because a reviewer cannot tell which
+pins were measured.
+
+**The "131 dependency decisions" figure that used to appear here is withdrawn** — it was
+another service's. Reported 2026-11-02: 131 is two `bifrost-kb` files summed, and that
+service is not in this release; the router's manifest is five range specifiers. Nothing here
+can check that, so no replacement figure is quoted as if it were measured in this
+repository. RELEASE-SCOPE.md records what has to be verified before the manifest is
+copied in.
 
 **2. The router source is not assembled yet, and the four config examples carry no schema.**
 `services/router/` and `services/portal/` are the build contexts this stack expects; the
