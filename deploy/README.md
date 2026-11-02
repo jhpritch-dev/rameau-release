@@ -40,16 +40,53 @@ Everything below is correct for the point at which those land.
 
 ## One-time setup
 
-**1. Endpoints.**
+**1. Endpoints.** Put them in `deploy/.env`, or in the shell you run `docker compose` from:
 
 ```
-cp profiles/compose.env.example profiles/compose.env
+cp profiles/compose.env.example .env
 ```
 
-Then edit it. Every value in it is a **compose service name**, resolved by the container
-network's DNS — loopback is wrong there, because inside a container loopback is the container.
-Endpoints you are not running may be left blank; a blank value counts as unset, and
-`shared/resolver.py` records which capability each one unlocks.
+**Then edit `.env`, and the editing is not optional.** Every value in it is a **compose
+service name**, resolved by the container network's DNS — loopback is wrong there, because
+inside a container loopback is the container. **Blank every endpoint you are not running:** a
+blank value counts as unset and `shared/resolver.py` turns that capability off, whereas a
+value naming something that is not there makes the router reach a hostname that does not
+resolve. A wrong endpoint is worse than no endpoint.
+
+That matters more than it looks, because the example ships **non-empty** values for six names
+this compose file does not define — `ollama`, `embed`, `kb`, `arbiter`, `broadcaster` and
+`search`. Copying it and starting the stack without editing gives the router five endpoints
+pointing at nothing. `shared/resolver.py` records which capability each one unlocks, so blank
+the ones you have no service for.
+
+> **Not `profiles/compose.env`, and this is measured, not a style preference.** Compose ranks
+> `environment:` above `env_file:`, and `compose.yaml`'s router re-declares every endpoint as
+> `${VAR:-}` — so a value placed in `profiles/compose.env` is overwritten with an empty string
+> before the router ever sees it. Checked with `docker compose config` on Docker 29.4.2 /
+> Compose v5.1.3, with `profiles/compose.env` copied from the example:
+>
+> | | `RAMEAU_EMBED_URL` and the other four |
+> |---|---|
+> | **router** — the service that reads them | `""` |
+> | **portal** — which does not read them | the file's real values |
+>
+> Exactly inverted. An earlier revision of this step said to copy the example to
+> `profiles/compose.env` and edit it there, which configured a file that cannot reach the
+> service it was for. `.gitignore` already covers `*.env`, so `deploy/.env` is not committed
+> either.
+>
+> `compose.yaml` is deliberately not changed here. Deleting the router's `environment:` block
+> would let `env_file:` through and make `profiles/compose.env` work as it reads, but it would
+> also change which file wins for every other key in that block, in a release whose compose
+> surface is already public. Moving the documented location is the smaller change and it is
+> the one that can be verified from outside the container.
+>
+> **Either way the operator still has to blank what they do not run.** The old behaviour gave
+> the router `""` for these five, which happened to be the safe value; neither this step nor a
+> `compose.yaml` change gives you that for free, which is why the editing instruction above is
+> written as a requirement rather than an option. The underlying defect is that the generated
+> example ships service names `compose.yaml` does not define — that belongs to the generator,
+> and it is noted in **Two things are not ready yet** rather than papered over here.
 
 `RAMEAU_OLLAMA_URL` has no default and the stack refuses to start without it. On Docker
 Desktop and on Linux with the stack's `extra_hosts`, `http://host.docker.internal:11434`
