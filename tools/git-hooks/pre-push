@@ -29,6 +29,56 @@ set -euo pipefail
 
 say() { printf 'pre-push: %s\n' "$1" >&2; }
 
+# --- telling a CRASH apart from a VERDICT ---------------------------------------------
+# gitleaks exits nonzero for two unrelated reasons: it found secrets, or it did not
+# finish. Collapsing them is how this hook once refused a CLEAN push with the message
+# "gitleaks reported ? finding(s)" -- measured on Windows, where `mktemp -d` yields a
+# POSIX path that a native binary cannot write, so the scan ran, found nothing, and then
+# died writing its report. Refusing was right; the reason was invented.
+#
+# So the decision is made from SHAPE, not from the exit code alone, and deliberately
+# WITHOUT an interpreter: a report that exists and is non-empty means gitleaks got far
+# enough to write a verdict, and an absent or empty one means it did not. `[ -s ]` needs
+# nothing but the shell, so the refuse-or-proceed path cannot be broken by a missing
+# python -- which is the second, independent cause of the same `?`.
+scan_completed() { [ -s "$1" ]; }
+
+# Counting is a REFINEMENT, not the decision. Prints the count and returns 0; returns 1
+# when a report exists but does not parse; returns 2 when no interpreter was found.
+# python3 first and `python` second: the original tried bare `python`, which is absent on
+# most Linux boxes, and a count that fails must never become a number.
+count_findings() {
+    _cf_py=""
+    for _cf_c in python3 python; do
+        if command -v "$_cf_c" >/dev/null 2>&1; then _cf_py="$_cf_c"; break; fi
+    done
+    [ -n "$_cf_py" ] || return 2
+    "$_cf_py" -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$1" 2>/dev/null || return 1
+}
+
+# Report paths only. `--source` was measured working as a POSIX path on the box where the
+# report path failed, so converting it too would be a change beyond the measurement.
+# Where cygpath is absent -- every Linux box -- this is the identity function.
+native_path() {
+    if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else printf '%s' "$1"; fi
+}
+
+# One message for the one condition that must never be reported as findings.
+refuse_incomplete() {
+    say ""
+    say "PUSH REFUSED: the scan did NOT COMPLETE, so this push is UNCHECKED."
+    say "  scanner:     $GITLEAKS"
+    say "  report path: $1"
+    say ""
+    say "gitleaks exited nonzero without leaving a readable report, which means it failed"
+    say "rather than found something. Look above for its own error -- a 'could not write'"
+    say "is the common one, and on Windows it means the report path is a POSIX path a"
+    say "native binary cannot write."
+    say ""
+    say "This is NOT a report of findings and no count is shown, because none was measured."
+    say "The push is refused because an unchecked push is what this hook exists to prevent."
+}
+
 if [ "${RAMEAU_SKIP_SECRET_GATE:-0}" = "1" ]; then
     say "SKIPPED by RAMEAU_SKIP_SECRET_GATE=1. You have taken responsibility for this push."
     exit 0
@@ -76,13 +126,34 @@ trap cleanup EXIT
     git -c user.email=hook@example.invalid -c user.name=hook commit -qm canary
 )
 
-# gitleaks exits nonzero on findings, so a ZERO exit means it missed the planted value.
-if "$GITLEAKS" detect --source "$control_dir" --no-banner --redact --exit-code 1 >/dev/null 2>&1; then
+# THE CONTROL MUST RUN THE SAME ARGUMENTS AS THE GATE, and until 2026-11-02 it did not.
+# It omitted --report-format and --report-path -- and --report-path is the one that failed
+# in the field. So the control printed "control ok" truthfully, certifying a scan that
+# then crashed on an argument the control had never passed. A control that cannot fail the
+# way its subject fails cannot detect its subject's failure, and this one was worse than
+# useless: it affirmatively greenlit, so the crash that followed read as a verdict.
+#
+# It also needs the gate's classification, for the same reason the gate does: a crash and
+# a finding both exit nonzero, so "nonzero" alone would read an unwritable report path as
+# a successfully-flagged canary.
+control_report="$control_dir/control.json"
+if "$GITLEAKS" detect \
+        --source "$control_dir" \
+        --no-banner \
+        --redact \
+        --exit-code 1 \
+        --report-format json \
+        --report-path "$(native_path "$control_report")" >/dev/null 2>&1; then
     say "CONTROL FAILED: gitleaks did not flag a generated known-positive."
     say "The scan below would be meaningless, so this push is refused."
     exit 1
 fi
-say "control ok: the scanner flags a planted credential"
+if ! scan_completed "$control_report"; then
+    say "CONTROL FAILED: gitleaks could not complete even the control scan."
+    refuse_incomplete "$control_report"
+    exit 1
+fi
+say "control ok: the scanner flags a planted credential, and can write its report"
 
 # --- the gate: LOCAL HISTORY ----------------------------------------------------------
 # This scans git objects, which is exactly what a push sends. A value that was committed
@@ -97,6 +168,7 @@ say "control ok: the scanner flags a planted credential"
 # success message claimed a check that had not run, which is the defect this repository's
 # own rule exists to prevent.
 repo_root="$(git rev-parse --show-toplevel)"
+findings_report="$control_dir/findings.json"
 
 say "scanning local history -- this is the gate, and it covers everything a push sends..."
 if ! "$GITLEAKS" detect \
@@ -105,10 +177,33 @@ if ! "$GITLEAKS" detect \
         --no-banner \
         --exit-code 1 \
         --report-format json \
-        --report-path "$control_dir/findings.json"; then
-    count="$(python -c "import json,sys;print(len(json.load(open(sys.argv[1]))))" "$control_dir/findings.json" 2>/dev/null || echo '?')"
+        --report-path "$(native_path "$findings_report")"; then
+    # Crash or verdict? Decide from the report, never from the exit code alone.
+    if ! scan_completed "$findings_report"; then
+        refuse_incomplete "$findings_report"
+        exit 1
+    fi
+    _st=0
+    count="$(count_findings "$findings_report")" || _st=$?
     say ""
-    say "PUSH REFUSED: gitleaks reported ${count} finding(s)."
+    if [ "$_st" -eq 0 ] && [ "${count:-0}" -gt 0 ] 2>/dev/null; then
+        say "PUSH REFUSED: gitleaks reported ${count} finding(s)."
+    elif [ "$_st" -eq 0 ]; then
+        # Completed, wrote a report, exited nonzero, and the report holds nothing. That is
+        # a scanner fault rather than a finding, and saying "0 finding(s)" would be the
+        # same mis-description in the other direction.
+        say "PUSH REFUSED: gitleaks exited nonzero but its report contains NO findings."
+        say "That is a scanner fault, not a secret. Read its output above before assuming"
+        say "this tree is dirty; the push is refused because the check is inconclusive."
+        exit 1
+    elif [ "$_st" -eq 2 ]; then
+        say "PUSH REFUSED: gitleaks reported findings. The count is not shown because no"
+        say "python interpreter was found to read the report -- the findings themselves are"
+        say "listed above, which is what matters."
+    else
+        say "PUSH REFUSED: gitleaks reported findings and its report did not parse, so the"
+        say "count is not shown. The findings are listed above."
+    fi
     say ""
     say "Findings are REDACTED above, with the file and line of each. Do not paste a value"
     say "anywhere to investigate it -- open the file and line directly."
@@ -131,15 +226,43 @@ say "clean: no findings in local history"
 # Warning costs nothing here: if any of it is ever committed, the scan above refuses it.
 say ""
 say "advisory pass: scanning the working tree (NOT a gate -- see the note below)..."
-if ! "$GITLEAKS" detect         --no-git         --source "$repo_root"         --redact         --no-banner         --exit-code 1         --report-format json         --report-path "$control_dir/worktree.json"; then
-    wcount="$(python -c "import json,sys;print(len(json.load(open(sys.argv[1]))))" "$control_dir/worktree.json" 2>/dev/null || echo '?')"
+worktree_report="$control_dir/worktree.json"
+if ! "$GITLEAKS" detect \
+        --no-git \
+        --source "$repo_root" \
+        --redact \
+        --no-banner \
+        --exit-code 1 \
+        --report-format json \
+        --report-path "$(native_path "$worktree_report")"; then
+    # The same crash-or-verdict question, and here getting it wrong asserted a FACT ABOUT
+    # THE WORKING TREE that was never measured -- "? finding(s) are in the WORKING TREE".
+    # An unmeasured claim stated as a finding is the thing this repository's rules are most
+    # consistent about refusing, and it is worse here than in the gate above, because this
+    # path does not block: the operator is told their tree is dirty and then waved through.
+    if ! scan_completed "$worktree_report"; then
+        say ""
+        say "NOTE: the advisory working-tree scan DID NOT COMPLETE, so nothing is claimed"
+        say "about the working tree either way. The push is not blocked by this -- the"
+        say "advisory pass never blocks -- but it also told you nothing. See the scanner's"
+        say "own error above."
+    else
+    _wst=0
+    wcount="$(count_findings "$worktree_report")" || _wst=$?
     say ""
-    say "NOTE: the push is NOT blocked by the above. ${wcount} finding(s) are in the WORKING"
-    say "TREE, which a push does not send, so the push proceeds."
+    if [ "$_wst" -eq 0 ]; then
+        say "NOTE: the push is NOT blocked by the above. ${wcount} finding(s) are in the WORKING"
+        say "TREE, which a push does not send, so the push proceeds."
+    else
+        say "NOTE: the push is NOT blocked by the above. There are findings in the WORKING"
+        say "TREE, which a push does not send, so the push proceeds. The count is not shown"
+        say "because the report could not be read."
+    fi
     say ""
     say "That list includes untracked and gitignored files, so a local .env may appear here"
     say "and be entirely correct. Read each one before you commit it: once committed, the"
     say "history gate above refuses the push, and by then rotation is the only remedy."
+    fi
 else
     say "advisory: working tree clean too"
 fi
