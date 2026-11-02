@@ -1,9 +1,9 @@
 """Endpoint resolution for RAMEAU.
 
-Every service address this router talks to is resolved here, from the environment, and
-nowhere else. The module exists because of a specific failure mode found in the source
-archive and recorded in RELEASE-SCOPE.md: the private deployment's addresses had been
-redacted *in place*, leaving code like
+Every endpoint in the registry below is resolved here, from the environment, with no
+fallback to a literal address. The module exists because of a specific failure mode found
+in the source archive and recorded in RELEASE-SCOPE.md: the private deployment's addresses
+had been redacted *in place*, leaving code like
 
     os.getenv("SOME_URL", "http://192.168.x.4:8089")
 
@@ -15,6 +15,16 @@ actually got wrong, which is that they did not configure an endpoint.
 So the rule here is: **no fallback to a literal address, ever.** An unset endpoint raises
 at the point of resolution with the variable's name and an example value in the message.
 Failing immediately and legibly is worth more than starting and misbehaving.
+
+WHAT THIS MODULE DOES *NOT* COVER, stated because the docstring said "and nowhere else"
+until 2026-11-02 and that was too strong. The session assembling the release reports that
+`fleet_config.json` -- bind-mounted by deploy/compose.yaml and re-read on mtime change --
+carries a `tiers[].base_url` per tier, each a full ``scheme://host:port``. Those are
+addresses the router talks to, and they reach it without passing through the environment
+or through this registry. Nothing here can see that file, so this is a limit on the claim
+rather than a defect in the code: the registry governs the nine endpoints it lists, and is
+not the only address surface the router has. RELEASE-SCOPE.md carries it as an assembly
+obligation.
 
 Stdlib only, by design: this is imported by nearly everything.
 """

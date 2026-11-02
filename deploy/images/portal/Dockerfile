@@ -83,9 +83,16 @@ EXPOSE 80
 # HOST COUPLING THAT SURVIVES THIS IMAGE -- the image is portable, the config is not yet
 # -----------------------------------------------------------------------------------------
 # nginx.conf proxies several routes to `host.docker.internal`, a Docker Desktop name that does
-# NOT resolve inside a container on a Linux host. The image builds and starts anyway, nginx
-# returns 502 on those routes, and / still serves the SPA -- so the portal looks up and the
-# affected panels are simply empty, which is a confusing symptom for a DNS cause.
+# NOT resolve inside a container on a Linux host. The IMAGE still builds -- nothing here
+# depends on that name -- but the CONTAINER does not start: nginx resolves a literal upstream
+# when it parses its config, so an unresolvable one is fatal, `[emerg] host not found in
+# upstream`, and it crash-loops serving nothing.
+#
+# This note said the SPA kept serving while the affected panels sat empty, until 2026-11-02.
+# That is what a `resolver` directive with a VARIABLE upstream does, deferring resolution to
+# request time and 502-ing per request. It is the wrong symptom for a literal upstream. The
+# cause -- a Docker Desktop name on a Linux host -- was right either way. nginx.conf is not
+# in this repository, so see RELEASE-SCOPE.md for what is still unsettled about it.
 #
 # deploy/compose.yaml therefore passes `extra_hosts: host.docker.internal:host-gateway`, which
 # is the documented remedy and is enough for the stack to work. It is not the end state: those

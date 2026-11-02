@@ -1,6 +1,6 @@
 {
   "_file": "fleet_config.json.example",
-  "_status": "PLACEHOLDER -- purpose established, schema NOT established",
+  "_status": "PLACEHOLDER -- purpose established, and as of 2026-11-02 ONE field's shape is established too, but from the private tree rather than from this repository. Still not a schema; still to be replaced wholesale at step 4.",
   "_read_this_first": "NOTHING BELOW IS INVENTED. The keys in this file all begin with _ and are prose, not configuration. No field of the real schema is reproduced here, because no artifact in this repository shows one -- and a plausible-looking invented schema is worse than an acknowledged gap, because the next person builds against it.",
   "_this_will_not_start_the_router": "This file will NOT satisfy the application. It exists so that `docker compose up` has a real file to bind-mount -- Docker silently CREATES AN EMPTY DIRECTORY at a missing bind source, which would mount a directory onto /app/fleet_config.json and fail as IsADirectoryError far from its cause. Replace the whole object when step 4 of RELEASE-SCOPE.md lands the source that reads it.",
   "_established_from_this_repository": [
@@ -13,9 +13,9 @@
     "Apparently read by config.py -- stated in passing at deploy/images/router/.dockerignore line 14, inside an illustration of a DIFFERENT mistake (a trailing comment on a pattern line). Weak evidence, cited as weak."
   ],
   "_not_established": [
+    "Every key name and value type EXCEPT tiers[].base_url, described below. The repository still contains no sample, loader, test or schema for this file, so nothing else here is derived from it.",
     "Every key name, every value type, and the nesting. The repository contains no sample, no loader, no test and no schema for this file.",
     "Whether it is keyed by host, by tier, by model, or by something else.",
-    "How a model host is addressed in it -- and in particular whether it carries ADDRESSES at all. If it does, the nine endpoints in shared/resolver.py are resolved from the ENVIRONMENT and nowhere else, so an address here would be a second, unregistered configuration surface and is worth questioning before it is copied in.",
     "What a 'tier' is named or bounded by, and what the cascade order is read from.",
     "Whether the mtime re-read is whole-file or incremental, and what happens on a parse error mid-flight. A file re-read on every request has no restart boundary to fail at."
   ],
@@ -24,5 +24,13 @@
     "Never a credential, key, token or password, not even a placeholder shaped like one. If a field appears to require a real secret, that is a finding, not a value to invent.",
     "Keep the file LF-terminated and ASCII; .gitattributes normalises *.json to LF.",
     "The operator's copy of this file (deploy/config/<name>.json, without .example) is ignored by .gitignore on purpose: it describes a specific fleet."
-  ]
+  ],
+  "_established_from_the_private_tree_NOT_from_this_repository": [
+    "SOURCE AND ITS WEIGHT: reported on 2026-11-02 by the session assembling the release, which can read the private tree. This repository cannot check any of it, which is why it is not filed under _established_from_this_repository. Treat it as a lead to confirm when the file lands, not as a verified schema -- the same distinction PROVENANCE in shared/resolver.py draws between a port read from an artifact that ships here and one read from an artifact that does not.",
+    "The file has 3 top-level keys, one of which is a `tiers` list.",
+    "Each entry in `tiers` carries a `base_url`: a full scheme://host:port URL with an explicit port. Reported as matching ^https?://[^/]+:\\d+$ in both copies seen.",
+    "Counted 9 in the private router's copy and 10 in an older backup of it.",
+    "HOST FORM IS NOT STABLE ACROSS COPIES: the router's copy uses NAMED hosts, the older backup uses DOTTED QUADS. So any assertion that this file holds only service names would be true of one copy and false of the other. Do not write that assertion."
+  ],
+  "_this_file_is_a_second_address_surface": "tiers[].base_url means the router reaches addresses that never pass through the environment or through shared/resolver.py's registry -- and because this file is re-read on mtime change, a tier's address can change under a RUNNING router with no restart and no resolution step. README.md and the resolver's docstring both claimed every address was resolved from the environment 'and nowhere else'; both were corrected on 2026-11-02. Whoever fills this in should decide whether that is the intended design or a surface to fold into the registry, and RELEASE-SCOPE.md records the question rather than answering it here."
 }

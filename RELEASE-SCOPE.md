@@ -155,6 +155,110 @@ they are listed so the next reader sees four open questions rather than a settle
 
 No model weights exist anywhere in the source archive, so none can leak into the release.
 
+### Containerisation findings of 2026-11-02, recorded before step 5 begins
+
+Both Dockerfiles were exercised against a throwaway stub build context, created outside git
+and discarded; no stub reached this repository and `services/` is still absent here rather
+than ignored. Four defects were found and discharged. Two obligations remain, and they
+remain because this repository cannot settle them, which is why they are written here
+rather than left in commit messages.
+
+- **The pre-push credential gate was not running — DISCHARGED in `28f7c82`.** It was stored
+  mode `100644`, so git skipped it and pushed anyway, reporting that as a `hint:` beside a
+  *successful* push. `README.md` and the hook's own header describe it as fail-closed and
+  as the only layer that blocks a credential before the object reaches the remote. It had
+  never run once.
+
+  **This generalises into an obligation on step 4.** This tree is assembled on Windows,
+  which does not carry the executable bit, and `.gitattributes` normalises line endings
+  only — `* text=auto eol=lf` has nothing to say about file modes. So every file arriving
+  at step 4 whose job depends on being executable will arrive `100644` and will fail
+  *silently*. Assert the mode after assembly, and do not infer it from the file working
+  when invoked by hand: `bash <file>` works regardless.
+
+- **Both `.dockerignore` files were read by nothing — DISCHARGED in `97727b8`.** They sat
+  in `deploy/images/<svc>/` while the build contexts are `services/<svc>/`, and Docker
+  reads an ignore-file only from the context root or as `<dockerfile-name>.dockerignore`
+  beside the Dockerfile. Every pattern in both was inert, which left `COPY *.py ./` bounded
+  by nothing and the router list's "never, under any circumstances" block — `.env`,
+  `*.pem`, `*.key`, `.netrc`, `.git-credentials` — not in force at all.
+
+- **`profiles/compose.env` did not reach the router — DISCHARGED in `c4e3620`.** The five
+  optional endpoints were re-declared under `environment:`, which outranks `env_file:`, so
+  each resolved to the empty string and overrode the operator's file; the resolver treats
+  empty as unset, so they were reported as not configured. CI now writes a sentinel into
+  that file and requires it to survive into the router's resolved environment.
+
+- **`npm ci` can exit 0 having installed nothing — GUARDED in `fdf4008`.** A fatal failure
+  in the pinned node image printed `npm error Exit handler never called!` and returned
+  success, after which the build ran three more instructions and died at
+  `sh: vite: not found`.
+
+#### OBLIGATION: settle which `nginx.conf` the release derives from, before any symptom text
+
+`nginx.conf` is **not in this repository** — a sweep for `nginx*.conf` and `*.conf.template`
+finds nothing, and it arrives with the unassembled `services/portal/` context. So every
+statement here about the portal's proxy behaviour was, until 2026-11-02, a prediction about
+a file this repository does not contain. Four of them were wrong, and are corrected in that
+commit; the remaining question is why this obligation exists.
+
+Reported by the session assembling the release, as shapes with no values:
+
+| | the original | the "CORRECTED" variant |
+|---|---|---|
+| live `proxy_pass` | 8 (plus 3 commented out) | 8 |
+| literal upstreams | 5 | 8 |
+| variable + `resolver` | 3, with exactly 1 `resolver` directive | 0, and 0 `set` directives |
+| deferred to request time | those 3 | none |
+
+The two forms **fail in opposite ways**, which is the whole point:
+
+- A **literal** upstream is resolved when nginx parses its config. An unresolvable name is
+  fatal: `[emerg] host not found in upstream`, and the container exits and crash-loops.
+- A **variable** upstream with a `resolver` directive defers resolution to request time, so
+  nginx starts and that route returns 502 while `/` keeps serving.
+
+**What is safe to assert regardless of variant:** every `host.docker.internal` route in the
+original is one of the literal five, and no other literal host was found. The corrected
+variant changes only the three *variable* upstreams. So in both variants, a missing
+`extra_hosts` on Linux is a **startup failure, not empty panels** — which is what the four
+corrections in that commit say, and no more than that.
+
+**What is not safe to assert, and must wait:** any table of which routes 502. In the
+original three can; in the corrected variant none can, because its `${ENVVAR}` tokens are
+substituted by envsubst at container start and are therefore literal by the time nginx
+parses them. Do not write a symptom table until the variant is settled.
+
+One distinction to preserve through any correction: `README.md`'s *other* 502 sentence —
+the `depends_on` one, about a router that has not come up yet — is correct either way,
+because there the name resolves and the connection is refused. It was deliberately left
+alone.
+
+#### OBLIGATION: `fleet_config.json` is a second address surface
+
+Answered 2026-11-02 by the assembling session, as shapes with no values: **yes**, the file
+carries endpoint addresses. Each entry of a top-level `tiers` list has a `base_url`, a full
+`scheme://host:port` with an explicit port, reported as matching `^https?://[^/]+:\d+$`;
+nine in the private router's copy, ten in an older backup. The file has three top-level
+keys.
+
+**The host form is not stable across copies** — the router's copy uses named hosts, the
+older backup uses dotted quads. So any assertion that this file holds only service names
+would be true of one copy and false of the other, and must not be written.
+
+This contradicted a claim this repository was making. `README.md` and
+`shared/resolver.py`'s docstring both said every service address the router talks to is
+resolved from the environment "and nowhere else"; a tier's `base_url` reaches the router
+without passing through the environment or the registry, and because the file is re-read on
+mtime change it can do so under a *running* router with no restart and no resolution step.
+Both claims are scoped in that commit to what the registry actually governs.
+
+The open question, which is a design decision and not a documentation one: whether a second
+address surface is intended, or whether tier addresses should be folded into the registry
+so that one module resolves them all. Recorded, not answered. Note also that the four
+`deploy/config/*.example.json` placeholders say the mtime re-read exists; what none of them
+could say, until now, is that one of those files carries endpoints.
+
 ## Rules that outlive the release
 
 - **No credential, key, token, address or hostname from the private deployment appears in
