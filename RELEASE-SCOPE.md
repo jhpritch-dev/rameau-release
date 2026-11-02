@@ -416,6 +416,67 @@ reasoning stays. But the figure was the stated reason the build is *allowed* to 
 measurement read off another instrument's output is precisely what `PROVENANCE` in
 `shared/resolver.py` exists to prevent — the `search` endpoint's port was wrong the same way.
 
+#### The compose wiring has now been exercised once, against a stub
+
+Recorded because until 2026-11-02 it had never run at all, and because `deploy/compose.yaml`
+names it as the part most likely to be wrong at step 5: each service's build context is
+`../services/<name>` while its `dockerfile` is `../../deploy/images/<name>/Dockerfile` — a
+Dockerfile outside its own context, resolved relative to the context. `docker build`
+exercises none of that, and the `images` CI job that would is skipped until step 4. So the
+one path nobody had run was the one identified as likeliest to break.
+
+Run through `docker compose -f deploy/compose.yaml build` against a throwaway stub context
+created outside git and discarded. Three results, all of them what the stack intends:
+
+- **The wiring resolves.** Both build definitions loaded and both contexts transferred in one
+  invocation — 446 B for the router and 61 kB for the portal, which also shows the ignore
+  files bounding the contexts rather than uploading the trees.
+- **`RAMEAU_COMMIT` reaches the image through compose's own `${RAMEAU_COMMIT:-unknown}`
+  declaration**, not via `--build-arg`, which would have bypassed the declaration and tested
+  nothing. Set, it arrives as both the `ENV` and the
+  `org.opencontainers.image.revision` label; unset, the label reads `unknown`, so the default
+  in the declaration is what applies.
+- **The required-variable control holds for `build`, not only for `config`.** With
+  `RAMEAU_OLLAMA_URL` absent, `docker compose build` refuses during interpolation with the
+  registry's own message. This had only ever been asserted for `config`; `build` is now
+  known to be covered by the same refusal.
+
+What this does NOT establish: anything about the assembled source. A stub proves the wiring
+and the instruction order; the manifest is still decided by the acceptance test in
+deploy/README.md, because a missing requirement fails at import time after a green build.
+
+One environment caveat, so the result is not read as stronger than it is: the container in
+which this was run intercepts TLS, so the dependency-install layers needed a CA shim added to
+a scratch copy of each Dockerfile. The wiring and the required-variable results were obtained
+*without* it — they fail or succeed before any package is fetched. Only the completed builds
+and the `RAMEAU_COMMIT` result required it.
+
+#### KNOWN AND NOT RULED: two private-range strings remain reachable in this history
+
+`b465f4a` rebased two redaction-mask test fixtures off the private /24 and onto TEST-NET-1.
+The tip is clean and a sweep confirms it. But both strings entered at `eb31a16`, which is
+published history, and the fix's own commit message quotes the values it removed — so they
+are reachable from the log twice over, not once.
+
+Recorded as a decision rather than a non-issue, with the reasoning on both sides, because
+each side is true:
+
+- **It grants little.** The range is RFC 1918, non-routable and in use on a very large number
+  of networks, so knowing it identifies nothing and reaches nothing.
+- **It violates this repository's own stated rule**, the first of the rules below: no address
+  from the private deployment appears here. A rule that is suspended once it becomes
+  inconvenient is not a rule, and the whole release is organised around that one.
+
+And unlike a credential, **an address cannot be rotated** — the remedy that this document
+prescribes for a leaked secret has no analogue. The rule immediately below also says a
+rewrite does not un-send what has already left the machine it was on, which cuts against
+rewriting history to fix it: the rewrite would change what a future clone sees without
+changing what has already been distributed.
+
+So: **do not rewrite history on this.** It is John's to rule on, it is recorded here so it is
+not rediscovered as a new finding, and the honest position in the meantime is that the tip
+obeys the rule and the history does not.
+
 ## Rules that outlive the release
 
 - **No credential, key, token, address or hostname from the private deployment appears in
