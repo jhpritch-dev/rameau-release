@@ -245,15 +245,32 @@ removes the directory-mount failure from the list of things that can be going wr
 
 ```
 docker compose -f compose.yaml up -d
-curl -fsS http://127.0.0.1:18080/livez          # liveness, dependency-free by design
 curl -sS  http://127.0.0.1:18080/health | ...   # READ THE BODY: 200 either way
 ```
 
-`/livez` answering proves the image imports and serves. It proves nothing about the manifest
-beyond the modules reached during startup, which is the trap: an import that only happens on
-a request path has not run yet.
+**`/livez` is no longer part of this step.** It was here because `README.md` records it as a
+dependency-free liveness route; a 2026-11-02 measurement of the ruled router source counts
+zero occurrences of `livez`, so curling it would most likely 404 and be read as a broken
+build. Use any route the image actually answers. See RELEASE-SCOPE.md.
 
-**4. Exercise one delegated leaf.** This is the step that is the test.
+A 200 from any route proves the image imports and serves — and for the ruled scope that is
+**more** than it looks, because four of the five requirements resolve at module scope and
+the fifth cannot be absent from a serving process. What it does not prove is anything that
+only happens on a request path, which is what legs 2 and 3 of the staged replacement
+exist for.
+
+**4. Exercise one delegated leaf — SUSPENDED, and it cannot be carried out.**
+
+> Measured on 2026-11-02 against the router source John ruled into scope: the ruled tree
+> contains neither `bifrost_delegate.py` nor `igor_tool_loop.py`, and registers no tool or
+> function-calling surface at all — against a positive control, in the same sweep, that
+> finds FastAPI in two files, so those are absences and not a broken search.
+>
+> **There is no delegated leaf to exercise.** This step is suspended rather than deleted,
+> because the reasoning below is sound and is true of a different artefact; what changed is
+> which artefact the release ships. `RELEASE-SCOPE.md` records the measurement, a staged
+> three-leg replacement, and the ruling it waits on. Do not substitute a request of your
+> own — that was already the rule here, and it now applies to the whole step.
 
 **The specific request is deliberately not written here, because this repository cannot
 supply it.** The router source is not assembled, so the tool-loop surface — which call

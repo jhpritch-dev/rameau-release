@@ -506,6 +506,15 @@ health would read green on exactly that failure and declare the container ready.
 acceptance test has to **exercise one delegated leaf**; anything less tests that the process
 started.
 
+**That criterion is SUSPENDED as of 2026-11-02, and the paragraph above is about an artefact
+this release does not ship.** A measurement of the router source ruled into scope finds no
+`bifrost_delegate.py`, no tool loop and no function-calling surface, against a positive
+control in the same sweep. So there is no delegated leaf to exercise — and the insufficiency
+runs the other way: four of the five requirements resolve at module scope and the fifth
+cannot be absent from a serving process, so for the ruled scope a 200 *does* discharge the
+manifest question. RELEASE-SCOPE.md carries the measurement, a staged replacement that tests
+what a 200 genuinely does not prove, and the scope ruling this waits on.
+
 Note also that `/health` returns 200 whether the backends are up or down -- **the verdict is
 in the body.** A caller that reads the status code (`curl -f`, a container healthcheck) reads
 green while generation is failing. For liveness only, the application serves `/livez`.

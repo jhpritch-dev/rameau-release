@@ -48,6 +48,11 @@
 # delegated leaf, fail-closed, while health still reads green. It is admitted explicitly
 # below, with this comment, because it is the one entry a closure-based regeneration of this
 # file would drop.
+#
+# SUSPENDED 2026-11-02: the ruled router source does not contain bifrost_delegate.py, so
+# there is nothing for this admission to admit. The `!*.py` line already covers it if it
+# ever arrives, so nothing is removed and no pattern changes -- but do not treat this
+# paragraph as evidence the file exists. See RELEASE-SCOPE.md.
 
 # ---- deny everything, then re-admit ----
 **
