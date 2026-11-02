@@ -38,7 +38,19 @@ WORKDIR /app
 # rejects the engine (vite 7 / react 19 want >= 20.19 on the 20 line), move to node:22-alpine
 # and record that you did. Do not reach for --force.
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+# The `&& test -x` is not belt-and-braces, it is a MEASURED DEFECT IN npm ITSELF. In the
+# npm this image pins (10.8.2), a fatal failure during `npm ci` can print
+#     npm error Exit handler never called!
+# and still EXIT 0, having installed nothing at all. The build then runs three more
+# instructions and dies at `npm run build` with `sh: vite: not found` -- a confusing
+# symptom four layers from its cause, and one more case of a step reading green on a real
+# failure, which this stack already refuses to accept elsewhere.
+#
+# Measured on 2026-11-02 under a network fault, not reasoned about. So assert what the
+# NEXT instruction actually needs. It names vite because that is what `npm run build`
+# runs; if the build tool ever changes, this line changes with it.
+RUN npm ci --no-audit --no-fund \
+ && test -x node_modules/.bin/vite
 
 COPY index.html vite.config.js ./
 COPY public/ ./public/
