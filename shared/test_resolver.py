@@ -76,8 +76,8 @@ def test_a_redacted_placeholder_is_rejected():
     "http://192.168.x.4:8089",     # the archive's own convention
     "http://192.168.xx.4:8089",    # a two-letter mask
     "http://192.168.x1.4:8089",    # a mask mixing a letter and a digit
-    "http://192.168.2.x:8089",     # redacted last octet
-    "http://x.168.2.4:8089",       # redacted first octet
+    "http://192.0.2.x:8089",       # redacted last octet (TEST-NET-1 base)
+    "http://x.0.2.4:8089",         # redacted first octet (TEST-NET-1 base)
     "http://192.168.x.y:8089",     # two masked octets
 ])
 def test_every_shape_of_redaction_is_rejected(redacted):

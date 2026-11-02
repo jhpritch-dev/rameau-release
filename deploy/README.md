@@ -61,6 +61,22 @@ network's DNS — loopback is wrong there, because inside a container loopback i
 Endpoints you are not running may be left blank; a blank value counts as unset, and
 `shared/resolver.py` records which capability each one unlocks.
 
+**Blanking them is now load-bearing, where before it was optional.** The example ships
+**non-empty** values for six names `compose.yaml` does not define — `ollama`, `embed`, `kb`,
+`arbiter`, `broadcaster` and `search` — and `compose.yaml` defines only `router` and `portal`.
+So copying the example and starting the stack **without editing** hands the router five
+endpoints that resolve to nothing. Measured with `docker compose config` on Docker 29.4.2 /
+Compose v5.1.3 against this file as shipped: the router receives `http://embed:11434`,
+`http://kb:8090`, `http://arbiter:8082`, `http://broadcaster:8090` and `http://search:8080`,
+none of which is a service here.
+
+Until the `env_file:` fix below, those five arrived as the empty string, which
+`shared/resolver.py` reads as *unset* — so the wrong values were masked by the wrong
+mechanism and the default happened to be the safe one. Making the file reach the router is
+correct and also removes that accident, so **blank every endpoint you do not actually run**:
+a wrong endpoint is worse than no endpoint, which is the same reason `RAMEAU_OLLAMA_URL`
+ships with no default at all.
+
 This file is the **only** place the five optional endpoints are read from — `RAMEAU_EMBED_URL`,
 `RAMEAU_ARBITER_URL`, `RAMEAU_KB_URL`, `RAMEAU_BROADCASTER_URL`, `RAMEAU_SEARCH_URL`. The shell
 and `deploy/.env` do not reach the router for those. (Until 2026-11-02 the reverse was true and
