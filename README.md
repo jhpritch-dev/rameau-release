@@ -299,11 +299,19 @@ services -- but not in the same way, and the portal's is worse than this README 
   `nginx:alpine` against a literal name that does not resolve.
 
 The portal's `nginx.conf` is **not in this repository** -- it arrives with the unassembled
-`services/portal/` build context -- so neither sentence can be checked here. What the above
-rests on is the behaviour of nginx itself, plus a report from the session assembling the
-release that every `host.docker.internal` route in the private original is a literal
-upstream, and that it found no other literal host. RELEASE-SCOPE.md records what remains
-unsettled, including a second variant of that file whose behaviour differs.
+`services/portal/` build context. What the correction rests on is therefore worth stating
+precisely, because the two parts are not equally strong. The nginx behaviour was
+**reproduced here**, by running the pinned `nginx:alpine` against a literal upstream name
+that does not resolve and watching the container exit; that is a measurement, not a report.
+What the assembling session supplied is only *which* routes are literal: of eight live
+`proxy_pass` directives, five are literal `host.docker.internal` upstreams resolved at
+config load, and three are variable upstreams behind a single `resolver` directive, resolved
+per request. No other literal host exists in the file. Three further directives are
+commented out, which is why a bare `grep -c proxy_pass` returns eleven.
+
+The verdict does not actually depend on that split: one unresolvable literal is enough to
+fail config load. And the file's variant is settled -- the release derives from the live
+one. See RELEASE-SCOPE.md.
 
 ### What you need
 
