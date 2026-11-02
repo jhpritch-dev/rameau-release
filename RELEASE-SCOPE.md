@@ -604,6 +604,51 @@ So: **do not rewrite history on this.** It is John's to rule on, it is recorded 
 not rediscovered as a new finding, and the honest position in the meantime is that the tip
 obeys the rule and the history does not.
 
+#### DECIDED by delegation 2026-11-02: do NOT restructure the repository for step 4
+
+Delegated with three constraints that were not mine to relax. The decision is to change no
+paths, and it is a decision rather than inaction: the obvious restructuring was considered
+and is worse than what is here.
+
+**The candidate was moving each Dockerfile into its own build context** — `services/<name>/`
+— which would end the Dockerfile-outside-its-context wiring, let each ignore file be a plain
+`.dockerignore` at a context root, and remove the `../../` in `compose.yaml`. Rejected for
+three reasons, in order of weight:
+
+1. **It would put the release's reviewed packaging inside the directory step 4 assembles.**
+   The assembly would then have to avoid overwriting two files it is otherwise free to fill,
+   and the packaging would stop being reviewable independently of the source. `deploy/` holds
+   the packaging and `services/` holds the assembled tree; that separation is what lets the
+   Dockerfiles be reviewed before the source they will build exists, which is the position
+   this release is actually in.
+2. **There is no defect to fix.** The wiring was exercised on 2026-11-02 through
+   `docker compose build` — both build definitions loaded, both contexts transferred, in one
+   invocation. It is the part `compose.yaml` itself calls most likely to be wrong at step 5,
+   and it is now the part that has been run.
+3. **It would require moving each ignore file with its Dockerfile and re-proving the bound**,
+   which is one of the three constraints. Paying that cost to fix nothing is the wrong trade.
+
+**The `skills/` obligation cannot be fixed by any layout.** The directory one Dockerfile
+needs and the manifest it needs were measured in different private trees. That is a fact
+about the sources, not about where files sit here, so no restructuring makes the assembly a
+copy of one directory.
+
+**What was actually missing, and is now written instead.** Four files decided what each
+context must contain — two Dockerfiles and the two ignore files beside them — so an
+assembler had four places to reconcile and no single statement of the target.
+`deploy/README.md` now carries that layout once, with the deny-then-readmit list, the
+verification commands,
+and one precondition worth repeating here because it is silent in both directions:
+
+> `COPY *.py ./` is top level only, and the ignore file's `!*.py` is top level only too. A
+> router module in any directory other than `backends/` or `skills/` is therefore dropped
+> **twice** — excluded by the ignore file and named by no `COPY` — with no build-time error.
+> It fails at import, inside the container, after a green build. The layout assumes the
+> router's modules are flat; the ruled tree is consistent with that, but that is one
+> snapshot rather than a guarantee, so it is a precondition to check at step 4. Adding a
+> third package directory needs a `COPY` group and an ignore-file admission **together**;
+> adding one without the other is silent either way.
+
 ## Rules that outlive the release
 
 - **No credential, key, token, address or hostname from the private deployment appears in
