@@ -231,3 +231,118 @@ jobs:
           test -f RELEASE-SCOPE.md || { echo "RELEASE-SCOPE.md missing"; exit 1; }
           test -f SECURITY.md || { echo "SECURITY.md missing"; exit 1; }
           echo "invariants ok"
+
+  images:
+    name: build images
+    runs-on: ubuntu-24.04
+    # Separate from `build` on purpose. That job is seconds of python and a compose parse; this
+    # one pulls base layers and runs a pip install and an npm ci. Pinning them together would
+    # mean a slow image build gating a fast syntax answer, and the two fail for unrelated
+    # reasons.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: the stack's own files must be here before "skipped" can mean anything
+        # This step exists because of the defect recorded in `validate compose` above: that
+        # step globbed four root-relative names, matched nothing, and printed "no compose file
+        # yet - skipping" -- a green that actively reassured while a syntax error shipped.
+        #
+        # The same trap is available here and is worse, because the skip condition below is a
+        # MISSING DIRECTORY, which is also exactly what a bad checkout, a renamed deploy/ or a
+        # sparse clone looks like. So assert the artefacts that CANNOT be absent first. If one
+        # of them is gone, the contexts being absent is no longer evidence of anything and
+        # this job must not be the thing reporting success.
+        run: |
+          set -euo pipefail
+          for f in deploy/compose.yaml \
+                   deploy/images/router/Dockerfile \
+                   deploy/images/portal/Dockerfile; do
+            test -f "$f" || {
+              echo "expected $f and it is not there."
+              echo "This job's skip condition is a missing services/ directory, which is"
+              echo "indistinguishable from a broken checkout unless the stack's own files"
+              echo "are known to be present. They are not, so nothing here is trustworthy."
+              exit 1
+            }
+          done
+          echo "ok: compose file and both Dockerfiles present"
+
+      - name: are the build contexts here yet?
+        id: contexts
+        # The two contexts compose.yaml names. They arrive at STEP 4 of the assembly order in
+        # RELEASE-SCOPE.md -- "source lands" -- which has not happened, so today both are
+        # absent and this job has nothing to build. It says so by name rather than printing a
+        # bare "skipping": a reader of this log should be able to tell "not assembled yet"
+        # apart from "the build is broken" without opening another file.
+        #
+        # No condition anywhere needs editing when the source lands. The directories appear,
+        # `present` flips to true, and the build step below starts gating.
+        run: |
+          set -euo pipefail
+          missing=""
+          for d in services/router services/portal; do
+            if [ -d "$d" ]; then
+              echo "present: $d"
+            else
+              echo "absent:  $d"
+              missing="$missing $d"
+            fi
+          done
+
+          if [ -n "$missing" ] && [ ! -d services/router ] && [ ! -d services/portal ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            msg="No image was built: neither build context exists yet."
+            echo "$msg"
+            echo "services/router/ and services/portal/ are assembled at STEP 4 of"
+            echo "RELEASE-SCOPE.md (\"source lands\"), which is gated on step 3, the"
+            echo "credential scrub. Until then \`docker compose build\` cannot reach any"
+            echo "instruction in either Dockerfile: it stops while preparing the context,"
+            echo "with a message that varies by Compose version -- \"unable to prepare"
+            echo "context: path ... not found\" on v2, and a buildx privilege request for"
+            echo "\`fs.read=../services\` on v5 -- so this job does not match on it."
+            echo "That is the documented state of the tree, not a failure to debug, and it"
+            echo "is why this job passes rather than fails."
+            {
+              echo "### build images: skipped"
+              echo ""
+              echo "$msg Both are assembled at **step 4** of RELEASE-SCOPE.md; this job"
+              echo "becomes a real gate automatically when they appear, with no edit here."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "present=true" >> "$GITHUB_OUTPUT"
+          if [ -n "$missing" ]; then
+            echo "HALF-ASSEMBLED TREE: present contexts will be built, and compose will fail"
+            echo "on the missing one(s):$missing. That failure is the correct outcome -- a"
+            echo "stack with one of its two services unbuildable is not a stack."
+          fi
+
+      - name: build both images
+        if: steps.contexts.outputs.present == 'true'
+        # Built THROUGH COMPOSE rather than with `docker build`, deliberately. The thing most
+        # likely to be wrong at step 5 is the wiring rather than either Dockerfile: compose.yaml
+        # gives each service a context of ../services/<name> and a dockerfile of
+        # ../../deploy/images/<name>/Dockerfile, i.e. a Dockerfile OUTSIDE its own build
+        # context, resolved relative to the context. `docker build` would not exercise any of
+        # that. RAMEAU_COMMIT is exported rather than passed with `--build-arg` for the same
+        # reason: compose.yaml declares it as `${RAMEAU_COMMIT:-unknown}`, and that declaration
+        # is the thing worth testing. `--build-arg` would bypass it, and would additionally be
+        # offered to the portal, which declares no such ARG.
+        #
+        # No `docker compose up`: that needs the four runtime JSON files as real files and an
+        # ollama on the host, neither of which a runner has. This job answers "do the images
+        # build", which is the question step 5 asks first.
+        env:
+          # Same placeholder, and the same reason, as the `validate compose` step above:
+          # RAMEAU_OLLAMA_URL is deliberately required with no default, so compose cannot
+          # interpolate the file -- for `build` as much as for `up` -- without a value.
+          # `.invalid` is reserved by RFC 2606 and can never resolve.
+          RAMEAU_OLLAMA_URL: http://ollama.invalid:11434
+        run: |
+          set -euo pipefail
+          export RAMEAU_COMMIT="$(git rev-parse --short HEAD)"
+          echo "building with RAMEAU_COMMIT=$RAMEAU_COMMIT"
+          docker compose -f deploy/compose.yaml build
+          echo "both images built"
+          docker image ls 'rameau/*'

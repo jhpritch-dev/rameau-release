@@ -1,0 +1,28 @@
+{
+  "_file": "fleet_config.json.example",
+  "_status": "PLACEHOLDER -- purpose established, schema NOT established",
+  "_read_this_first": "NOTHING BELOW IS INVENTED. The keys in this file all begin with _ and are prose, not configuration. No field of the real schema is reproduced here, because no artifact in this repository shows one -- and a plausible-looking invented schema is worse than an acknowledged gap, because the next person builds against it.",
+  "_this_will_not_start_the_router": "This file will NOT satisfy the application. It exists so that `docker compose up` has a real file to bind-mount -- Docker silently CREATES AN EMPTY DIRECTORY at a missing bind source, which would mount a directory onto /app/fleet_config.json and fail as IsADirectoryError far from its cause. Replace the whole object when step 4 of RELEASE-SCOPE.md lands the source that reads it.",
+  "_established_from_this_repository": [
+    "Mounted read-only at /app/fleet_config.json -- deploy/compose.yaml mounts it as a single FILE, not as a directory, because a directory mounted onto /app would shadow the application code.",
+    "Read by the application as Path(__file__).parent / \"fleet_config.json\", so it must land at that exact path (deploy/compose.yaml, deploy/README.md).",
+    "Absent from the router build context by design: deploy/images/router/.dockerignore does not re-admit it, and deploy/images/router/Dockerfile note 1 records that the private original baked all four in and the release cannot.",
+    "Re-read on mtime change on EVERY request, so editing the host file re-tiers a running router with no restart (deploy/compose.yaml, deploy/images/router/Dockerfile note 1, deploy/README.md).",
+    "Editing it 're-tiers' the router, so it carries the tier mapping the router routes against -- README.md's shape diagram has 'local model hosts (one or more), each serving one or more tiers' below 'classify -> tier selection -> cascade'.",
+    "The real file 'describes a specific fleet' (deploy/images/router/Dockerfile note 1), which is why the allowlist disposes it as derive-example.",
+    "Apparently read by config.py -- stated in passing at deploy/images/router/.dockerignore line 14, inside an illustration of a DIFFERENT mistake (a trailing comment on a pattern line). Weak evidence, cited as weak."
+  ],
+  "_not_established": [
+    "Every key name, every value type, and the nesting. The repository contains no sample, no loader, no test and no schema for this file.",
+    "Whether it is keyed by host, by tier, by model, or by something else.",
+    "How a model host is addressed in it -- and in particular whether it carries ADDRESSES at all. If it does, the nine endpoints in shared/resolver.py are resolved from the ENVIRONMENT and nowhere else, so an address here would be a second, unregistered configuration surface and is worth questioning before it is copied in.",
+    "What a 'tier' is named or bounded by, and what the cascade order is read from.",
+    "Whether the mtime re-read is whole-file or incremental, and what happens on a parse error mid-flight. A file re-read on every request has no restart boundary to fail at."
+  ],
+  "_placeholder_rules_for_whoever_fills_this_in": [
+    "Addresses: documentation range only -- 192.0.2.0/24 (RFC 5737 TEST-NET-1), or a name under example.com / example.invalid. Never a private address (10/8, 172.16/12, 192.168/16) and never a host name from the private deployment.",
+    "Never a credential, key, token or password, not even a placeholder shaped like one. If a field appears to require a real secret, that is a finding, not a value to invent.",
+    "Keep the file LF-terminated and ASCII; .gitattributes normalises *.json to LF.",
+    "The operator's copy of this file (deploy/config/<name>.json, without .example) is ignored by .gitignore on purpose: it describes a specific fleet."
+  ]
+}

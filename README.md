@@ -126,7 +126,7 @@ container network -- where loopback is the container itself, so a host-oriented 
 every endpoint at nothing. CI regenerates both and diffs them against what is checked in, so
 "generated from the registry" is a gate rather than a header comment.
 
-**`.github/workflows/ci.yml` -- the CI gate.** Two jobs. The secret scan runs gitleaks over
+**`.github/workflows/ci.yml` -- the CI gate.** Three jobs. The secret scan runs gitleaks over
 the working tree *and* the full history, and before trusting a clean report it plants a
 generated high-entropy AWS-shaped key in a scratch repository outside the workspace and
 requires gitleaks to flag it -- because a scan that cannot be shown to fire is not evidence.
@@ -136,8 +136,15 @@ gitleaks by default, which is how the first version of that control failed. The 
 byte-compiles, runs the tests, regenerates and diffs both env examples, asserts the
 in-network profile contains no loopback, and validates both compose files by path -- with a
 control that asserts the stack still **refuses** to resolve when `RAMEAU_OLLAMA_URL` is
-unset. Every build step is written to pass on an empty tree and to start doing real work the
-moment source appears, so the gate never has to be switched on later.
+unset. The image job builds both images **through compose**, because the thing most likely to
+be wrong at step 5 is the wiring rather than either Dockerfile -- each service's context is
+`../services/<name>` and its Dockerfile is outside that context -- and `docker build` would
+exercise none of it. Today both contexts are absent, so that job prints what is missing, names
+step 4 as the reason and passes; it starts gating the moment the directories appear, with no
+edit. It asserts `compose.yaml` and both Dockerfiles are present *first*, so that "skipped"
+can never be what a broken checkout looks like. Every build step is written to pass on an
+empty tree and to start doing real work the moment source appears, so the gate never has to be
+switched on later.
 
 **`tools/git-hooks/pre-push` -- the fail-closed local secret gate.** GitHub's push
 protection is unavailable while this repository is private on the current plan (secret
@@ -214,7 +221,16 @@ landed; it goes in with them.
   that gap.
 - **The four runtime JSON files** (`fleet_config.json`, `capability_registry.json`,
   `capability_profiles.json`, `bifrost_shell_policy.json`) are dispositioned as `.example`
-  derivations and have not been derived.
+  derivations, and **their schemas have not been derived.** `deploy/config/*.example.json`
+  exist, but each one is a placeholder that records what this repository establishes about the
+  file and what it does not, in `_`-prefixed prose keys; no field of any of the four schemas is
+  reproduced, because this repository contains no sample, loader, test or schema for any of
+  them. Of the four, only `fleet_config.json` has an established *purpose* — it carries the
+  tier mapping and re-reads on mtime change. The other three are named, mounted, and otherwise
+  undescribed, and `bifrost_shell_policy.json` additionally sits on one of the four open scope
+  questions below. Copying the examples into `deploy/config/` will not start the router; what
+  it does is give `compose.yaml`'s bind mounts real files, which matters because Docker creates
+  an empty *directory* at a missing bind source.
 - **`docker/.env.example` must be read line by line before it is copied.** It was classified
   into the release set on its filename alone, and a `.example` suffix is a convention rather
   than a guarantee.
@@ -268,7 +284,8 @@ SPA while every panel is empty.
 
 - Docker with Compose **v2.24 or newer** -- `compose.yaml` uses `env_file: required: false`.
 - An **ollama you already run**, reachable from this host.
-- The four runtime JSON files in `deploy/config/` (see below). They have not been derived yet.
+- The four runtime JSON files in `deploy/config/` (see below). The `.example.json` files exist;
+  their **schemas** do not, so copying them is not yet enough to run.
 
 ### Environment
 
@@ -335,7 +352,12 @@ the application code. They are mounted read-only, so the container cannot drift 
 edited, and `fleet_config.json` re-reads on mtime change on every request, so editing it
 re-tiers a **running** router with no restart.
 
-The `.example.json` sources do not exist yet. See step 4 above.
+The `.example.json` sources exist, and **each is a placeholder rather than a derived schema.**
+They carry `_`-prefixed prose keys naming what this repository establishes about the file and
+what it does not; no field of any of the four is reproduced, because nothing here shows one.
+Copying them gives the bind mounts real files — which is worth having, since Docker creates an
+empty *directory* at a missing bind source and the resulting `IsADirectoryError` surfaces far
+from its cause — but it will not start the router. The schemas arrive with step 4 above.
 
 ### The command sequence
 
@@ -420,7 +442,7 @@ Measured on this tree on 2026-11-02, Docker 29.4.2 / Compose v5.1.3.
 | the same, with `RAMEAU_OLLAMA_URL` unset | **fails, correctly.** `required variable RAMEAU_OLLAMA_URL is missing a value`. This is the designed behaviour and CI asserts it. |
 | `docker compose build` (either image) | **blocked.** |
 | `docker compose up` | **blocked.** |
-| copying the four runtime JSON files | **blocked.** They have not been derived. |
+| copying the four runtime JSON files | **works, and does not get you a running router.** `deploy/config/*.example.json` exist as placeholders; their schemas have not been derived. |
 
 What a reader actually sees if they try `build` or `up` today:
 
@@ -435,7 +457,11 @@ before any instruction in either Dockerfile is reached -- including the missing
 Both are true; the missing context is simply the one you hit first. Nothing here is a
 misconfiguration to debug: it is step 4 of the assembly order not having happened.
 
-No image was built in producing this document, and no base layer was pulled.
+No image has ever been built **from this tree**, because neither context exists in it. Both
+Dockerfiles have, separately, been exercised against a throwaway stub context that was created
+and then discarded, and all three digest-pinned base images resolved when that was done on
+2026-11-02. Nothing from that stub is in this repository: `services/` is absent here, not
+ignored, so the day it appears it will be the assembled source and nothing else.
 
 ## Provenance, stated plainly
 
