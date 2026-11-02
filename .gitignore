@@ -27,6 +27,19 @@ auth.json
 kubeconfig
 kubeconfig.*
 
+# --- the operator's runtime config, which is not the example ------------------
+# deploy/README.md tells an operator to copy the four *.example.json into
+# deploy/config/ and drop the `.example` from each name. Those copies land INSIDE this
+# repository and, unlike the examples, they describe a specific fleet -- which is the
+# one thing this release exists not to publish. Nothing else in this file matches them:
+# `fleet_config.json` is not a `.env`, not a key and not a credential by name.
+#
+# The negation is second because a `.gitignore` takes the LAST matching pattern, and it
+# re-admits a sibling file rather than a file under an excluded directory -- the case
+# that does not work.
+/deploy/config/*.json
+!/deploy/config/*.example.json
+
 # --- keys and certificates ---------------------------------------------------
 *.pem
 *.key
