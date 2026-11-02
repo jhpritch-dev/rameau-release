@@ -210,6 +210,78 @@ would read green on exactly that failure, and the container would be declared re
 So the acceptance test has to **exercise one delegated leaf**. Anything less tests that the
 process started.
 
+### The procedure, step by step
+
+Written out rather than left as prose, because this is the test that decides whether the
+dependency manifest is right: **a missing requirement fails at import time inside the
+container, after a green build.** CI cannot host this — it needs the four runtime JSON files
+as real files and an ollama on the host, and a runner has neither — so it is run by hand at
+step 5 and the steps belong here.
+
+**1. Build with no cache**, so a stale wheel cannot make a broken manifest look installable.
+The Dockerfile already passes `--no-cache-dir` to pip; `--no-cache` is the builder's half of
+the same precaution.
+
+```
+cd deploy
+printf 'RAMEAU_OLLAMA_URL=http://host.docker.internal:11434\n' > .env   # .gitignore covers it
+docker compose -f compose.yaml build --no-cache
+```
+
+**2. Put the four runtime files in place.** They are bind-mounted read-only to exact paths,
+so they must exist as *files* — Docker silently creates a *directory* at a missing bind
+source, and the container then fails with `IsADirectoryError` a long way from its cause.
+
+```
+cd config
+for f in *.example.json; do cp "$f" "${f%.example.json}.json"; done
+```
+
+As shipped these are placeholders that carry no schema, so **step 5 cannot pass with them**;
+they come from the assembled source. Copying them is still worth doing first, because it
+removes the directory-mount failure from the list of things that can be going wrong.
+
+**3. Start the stack and confirm the process is up — without believing it.**
+
+```
+docker compose -f compose.yaml up -d
+curl -fsS http://127.0.0.1:18080/livez          # liveness, dependency-free by design
+curl -sS  http://127.0.0.1:18080/health | ...   # READ THE BODY: 200 either way
+```
+
+`/livez` answering proves the image imports and serves. It proves nothing about the manifest
+beyond the modules reached during startup, which is the trap: an import that only happens on
+a request path has not run yet.
+
+**4. Exercise one delegated leaf.** This is the step that is the test.
+
+**The specific request is deliberately not written here, because this repository cannot
+supply it.** The router source is not assembled, so the tool-loop surface — which call
+delegates, what a leaf's payload looks like, what a refusal looks like against a success — is
+not knowable from inside this tree. Inventing a plausible request would be worse than leaving
+the gap: it would most likely exercise nothing, pass, and be recorded as acceptance.
+
+So step 4 of the assembly owes this file one concrete invocation, with:
+
+- the request that causes exactly one leaf to be delegated;
+- the response that means it ran;
+- the response that means it was **refused fail-closed** — which is the failure this whole
+  test exists to catch, because `/status` answers 200 throughout it.
+
+Until that lands, treat step 5 as unverifiable rather than as passing. A green build, a live
+`/livez` and a 200 from `/health` are all consistent with a router that refuses every
+delegated leaf.
+
+**5. If it fails, read it in this order.** The failure modes are layered and the outer ones
+mask the inner:
+
+| symptom | first thing to check |
+|---|---|
+| build stops at a `COPY` | the context is assembled and `Dockerfile.dockerignore` admits what the `COPY` names |
+| build green, container exits immediately | a missing requirement — import-time failure, see the manifest obligations in RELEASE-SCOPE.md |
+| container up, `/livez` fine, leaf refused | `bifrost_delegate.py` absent from the context; it is imported by nothing and read with `ast` |
+| portal crash-loops | an unresolvable literal upstream — see below |
+
 Two more symptoms worth recognising, both of which look like something other than their cause:
 
 - **The portal container crash-loops and serves nothing.** `nginx.conf` proxies **five**

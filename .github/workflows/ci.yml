@@ -299,6 +299,87 @@ jobs:
           done
           echo "ok: the router's own three URLs still come from compose.yaml"
 
+      - name: every script must be executable IN THE INDEX
+        # RELEASE-SCOPE.md carries this as an obligation and until now nothing enforced it,
+        # which is the weaker half of a gate. The obligation is not hypothetical: it is
+        # exactly how tools/git-hooks/pre-push came to have never run once. It was stored
+        # 100644, so git skipped it and reported that as a `hint:` beside a SUCCESSFUL push,
+        # while README.md described it as the only layer blocking a credential before the
+        # object reaches the remote.
+        #
+        # This tree is assembled on Windows, which carries no executable bit, and
+        # .gitattributes normalises line endings only -- `* text=auto eol=lf` has nothing to
+        # say about file modes. So every file arriving at step 4 whose job depends on being
+        # executable will arrive 100644 and fail SILENTLY.
+        #
+        # Two deliberate choices, both of them the point:
+        #
+        # 1. THE INDEX, not the filesystem. `git ls-files -s` reads what git records, and
+        #    git's record is what travels; a checkout can show a mode git does not store.
+        # 2. A SHEBANG, not a filename list. A list would have to be remembered at step 4,
+        #    which is when it matters and when nobody will. Every script that arrives
+        #    carrying `#!` is checked automatically, with no edit here -- so this is correct
+        #    today, when there is exactly one such file, and becomes a real gate the moment
+        #    the source lands.
+        #
+        # Do NOT infer executability from the file working when invoked by hand: `bash
+        # <file>` works regardless, which is the specific mistake the obligation warns about.
+        run: |
+          set -euo pipefail
+
+          # The artefact that cannot be absent, asserted first -- so that "no scripts found"
+          # can never be what a broken checkout looks like. This is the `validate compose`
+          # lesson: a gate that cannot find its subject must not be the thing reporting
+          # success.
+          hook=tools/git-hooks/pre-push
+          test -f "$hook" || {
+            echo "expected $hook and it is not there."
+            echo "This check scans tracked files for shebangs; with the repository's own"
+            echo "documented hook missing, a clean scan would prove nothing."
+            exit 1
+          }
+          git ls-files --error-unmatch "$hook" >/dev/null 2>&1 || {
+            echo "$hook exists on disk but is NOT TRACKED, so its mode never travels."
+            exit 1
+          }
+
+          scanned=0
+          bad=""
+          while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            [ "$(head -c 2 -- "$f" 2>/dev/null || true)" = '#!' ] || continue
+            scanned=$((scanned + 1))
+            mode=$(git ls-files -s -- "$f" | awk '{print $1}')
+            [ "$mode" = 100755 ] || bad="$bad $f"
+          done <<EOF
+          $(git ls-files)
+          EOF
+
+          echo "scripts checked (tracked files beginning #!): $scanned"
+          if [ "$scanned" -eq 0 ]; then
+            echo "no tracked file carries a shebang, yet $hook is present and tracked."
+            echo "That is contradictory -- the hook is a shell script -- so this check is"
+            echo "not reading what it thinks it is reading, and fails rather than passes."
+            exit 1
+          fi
+
+          if [ -n "$bad" ]; then
+            echo "these scripts are recorded 100644 in the index and will NOT be executed:"
+            for f in $bad; do echo "  $f"; done
+            echo
+            echo "They will fail silently, not loudly -- git skips a non-executable hook with"
+            echo "a \`hint:\` beside a successful push, and a non-executable script invoked by"
+            echo "path gives 'Permission denied' only if something invokes it by path at all."
+            echo
+            echo "Fix the mode in the index, which is what travels:"
+            for f in $bad; do echo "  git update-index --chmod=+x $f"; done
+            echo
+            echo "This tree is assembled on Windows, which carries no executable bit, and"
+            echo ".gitattributes normalises line endings only. See RELEASE-SCOPE.md."
+            exit 1
+          fi
+          echo "ok: every tracked script is executable in the index"
+
       - name: licence and scope invariants
         # Cheap structural checks that protect the two promises this repo makes about itself.
         run: |
