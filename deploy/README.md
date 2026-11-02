@@ -61,9 +61,25 @@ network's DNS — loopback is wrong there, because inside a container loopback i
 Endpoints you are not running may be left blank; a blank value counts as unset, and
 `shared/resolver.py` records which capability each one unlocks.
 
-`RAMEAU_OLLAMA_URL` has no default and the stack refuses to start without it. On Docker
-Desktop and on Linux with the stack's `extra_hosts`, `http://host.docker.internal:11434`
-reaches an ollama on the host.
+This file is the **only** place the five optional endpoints are read from — `RAMEAU_EMBED_URL`,
+`RAMEAU_ARBITER_URL`, `RAMEAU_KB_URL`, `RAMEAU_BROADCASTER_URL`, `RAMEAU_SEARCH_URL`. The shell
+and `deploy/.env` do not reach the router for those. (Until 2026-11-02 the reverse was true and
+this file reached nothing: the router re-declared each one under `environment:`, which outranks
+`env_file:`, so they arrived as the empty string. `compose.yaml` now omits them, which is the
+only form that lets this file through, and CI asserts it with a sentinel.)
+
+**`RAMEAU_OLLAMA_URL` is the exception, and putting it in this file will not work.** It has no
+default and the stack refuses to start without it — but it is declared `${RAMEAU_OLLAMA_URL:?}`,
+and `:?` is resolved at *interpolation* time, before any `env_file` is read. So it goes in your
+shell or in `deploy/.env`:
+
+```
+printf 'RAMEAU_OLLAMA_URL=http://host.docker.internal:11434\n' > .env   # .gitignore covers it
+```
+
+On Docker Desktop, and on Linux with the stack's `extra_hosts`,
+`http://host.docker.internal:11434` reaches an ollama on the host. The three router URLs in the
+example file are also ignored: `compose.yaml` sets those itself, on purpose.
 
 **2. Runtime config.**
 

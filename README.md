@@ -319,23 +319,46 @@ The other five -- `embed`, `kb`, `arbiter`, `broadcaster`, `search` -- are optio
 blank value counts as unset rather than as a misconfiguration. Each one's `required_for` tag
 in the registry records which capability it unlocks.
 
-**Where to put the values.** `RAMEAU_OLLAMA_URL` and the five optional endpoints must reach
-Compose's *interpolation* environment -- the shell, or a `.env` file in `deploy/`. Measured
-with `docker compose config` on 2026-11-02:
+**Where to put the values, and it is two places.** The split is not elegant and it is not
+avoidable, so it is stated rather than smoothed over. Measured with `docker compose config`
+on 2026-11-02, Compose v5.6.1.
+
+**The five optional endpoints go in `deploy/profiles/compose.env`** -- `RAMEAU_EMBED_URL`,
+`RAMEAU_ARBITER_URL`, `RAMEAU_KB_URL`, `RAMEAU_BROADCASTER_URL`, `RAMEAU_SEARCH_URL`. That is
+what `deploy/README.md` step 1 has always told you to do, and as of this change it is also
+what works. For these five the shell and `deploy/.env` do **not** reach the router.
+
+**`RAMEAU_OLLAMA_URL` goes in the shell or in `deploy/.env`** -- and *not* in
+`profiles/compose.env`, which is read too late for it:
 
 ```
 cd deploy
 printf 'RAMEAU_OLLAMA_URL=http://host.docker.internal:11434\n' > .env   # .gitignore covers it
 ```
 
-Note that `deploy/profiles/compose.env`, which `deploy/README.md` step 1 tells you to create,
-does **not** reach the router. Compose ranks the `environment:` attribute above `env_file:`,
-and the router re-declares each endpoint as `${VAR:-}` in `environment:` -- so with nothing in
-the interpolation environment, all five optional endpoints arrive at the router as the empty
-string, overriding whatever that file says. The file does reach the `portal` service, which
-does not read those variables. This is a defect in the stack rather than a subtlety to work
-around; it is recorded here because a README that repeated the step without it would be
-telling you to configure something that has no effect.
+It is declared `${RAMEAU_OLLAMA_URL:?...}`, and `:?` is resolved at *interpolation* time,
+before any `env_file` is read. Putting it in `profiles/compose.env` leaves Compose still
+refusing, with the registry's own message -- which now names the right file.
+
+**Why the five moved.** Until this change they were re-declared under the router's
+`environment:` key as `${VAR:-}`, and `environment:` outranks `env_file:`. With nothing in
+the interpolation environment each one resolved to the **empty string** and overrode whatever
+the operator had written, and because the resolver treats empty as unset the router then
+reported them as not configured. Nothing failed: the stack came up, `config` parsed, and the
+endpoints were simply absent. Three forms were measured, and only one lets the file through:
+
+| form under `environment:` | shell unset | shell set |
+|---|---|---|
+| `VAR: ${VAR:-}` | `""` -- **overrides the file** | shell wins |
+| `- VAR` (list form) | `null` -- **also overrides it** | shell wins |
+| not declared at all | the file's value reaches the router | the file still wins |
+
+There is no form that takes the file as a *fallback* under a shell override; one source has
+to win, and for these five it is the operator's own file. The router's own three URLs stay
+hardcoded in `compose.yaml` and deliberately keep overriding the file, because the file
+addresses the router by service name on a port a host-side example may have carried over.
+CI asserts all of this directly -- it writes a sentinel into `profiles/compose.env` and
+requires it to survive into the router's resolved environment.
 
 ### Runtime config
 
