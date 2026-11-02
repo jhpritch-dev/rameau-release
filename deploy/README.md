@@ -181,18 +181,19 @@ process started.
 
 Two more symptoms worth recognising, both of which look like something other than their cause:
 
-- **The portal container crash-loops and serves nothing.** `nginx.conf` proxies several
-  routes to `host.docker.internal`, which does not resolve inside a container on a Linux
-  host, and nginx resolves a *literal* upstream name when it parses its config -- so an
-  unresolvable one is fatal at startup: `[emerg] host not found in upstream`. `compose.yaml`
-  passes `extra_hosts: host.docker.internal:host-gateway` to fix it; if you run the portal
-  image outside this stack, you need the equivalent `--add-host`.
+- **The portal container crash-loops and serves nothing.** `nginx.conf` proxies **five**
+  routes to `host.docker.internal` -- literal upstreams, which nginx resolves when it
+  *parses* its config, so a name that does not resolve is fatal at startup:
+  `[emerg] host not found in upstream`. `compose.yaml` passes
+  `extra_hosts: host.docker.internal:host-gateway`, so inside this stack the name resolves
+  and none of this bites; **it applies to the portal image run outside the stack**, where
+  you need the equivalent `--add-host`.
 
   **This entry said "the portal loads and its panels are empty" until 2026-11-02.** That is
-  what a *deferred* upstream does -- a `resolver` directive with a variable upstream, which
-  fails per request with a 502 while `/` keeps serving. It is the wrong symptom for a
-  literal one, and the cause was right all along. See RELEASE-SCOPE.md: the file itself is
-  not in this repository, and which of its two known variants the release derives from is
-  still open.
+  what the file's *other* three upstreams do -- variable, behind a single `resolver`
+  directive, resolved per request, so they 502 while `/` keeps serving. It is the wrong
+  symptom for the five literal ones, and the cause was right all along. The file is not in
+  this repository; RELEASE-SCOPE.md carries the full split and records that the release
+  derives from the live variant.
 - **Generation times out rather than refusing.** That is the no-egress overlay: the name still
   resolves and the route is gone, so there is no gateway to send a reset.

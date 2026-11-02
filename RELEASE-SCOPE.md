@@ -194,70 +194,93 @@ rather than left in commit messages.
   success, after which the build ran three more instructions and died at
   `sh: vite: not found`.
 
-#### OBLIGATION: settle which `nginx.conf` the release derives from, before any symptom text
+#### SETTLED: the release derives from the LIVE `nginx.conf`, and the symptom table is exact
 
-`nginx.conf` is **not in this repository** — a sweep for `nginx*.conf` and `*.conf.template`
-finds nothing, and it arrives with the unassembled `services/portal/` context. So every
-statement here about the portal's proxy behaviour was, until 2026-11-02, a prediction about
-a file this repository does not contain. Four of them were wrong, and are corrected in that
-commit; the remaining question is why this obligation exists.
+`nginx.conf` is **not in this repository** — a sweep for `nginx*.conf` and
+`*.conf.template` finds nothing, and it arrives with the unassembled `services/portal/`
+context. Four statements here were therefore predicting the behaviour of a file this
+repository does not contain, and four of them were wrong about the symptom. The shapes
+below were reported by the session assembling the release, with no values; the nginx
+behaviour they are read against was reproduced here against the pinned `nginx:alpine`.
 
-Reported by the session assembling the release, as shapes with no values:
+Eight live `proxy_pass` directives. Three more are commented out, which is why a bare
+`grep -c proxy_pass` returns eleven and misleads.
 
-| | the original | the "CORRECTED" variant |
+| form | count | resolved |
 |---|---|---|
-| live `proxy_pass` | 8 (plus 3 commented out) | 8 |
-| literal upstreams | 5 | 8 |
-| variable + `resolver` | 3, with exactly 1 `resolver` directive | 0, and 0 `set` directives |
-| deferred to request time | those 3 | none |
+| `proxy_pass http://host.docker.internal:<port>;` — literal | 5 | at config load |
+| `set $up_X http://${ENVVAR}:<port>;` then `proxy_pass $up_X;` | 3 | at request time, via the single `resolver` |
 
-The two forms **fail in opposite ways**, which is the whole point:
+Swept for any other literal host: there is none. So only the three deferred routes can 502
+while the SPA keeps serving, and an unresolvable literal is fatal when nginx parses its
+config. **The verdict does not depend on the 5/3 split** — one unresolvable literal is
+enough to fail config load, so "the portal does not start at all" holds even if someone
+disputes the counts. Note that `deploy/compose.yaml`'s own comment independently names five
+`host.docker.internal` routes, which agrees.
 
-- A **literal** upstream is resolved when nginx parses its config. An unresolvable name is
-  fatal: `[emerg] host not found in upstream`, and the container exits and crash-loops.
-- A **variable** upstream with a `resolver` directive defers resolution to request time, so
-  nginx starts and that route returns 502 while `/` keeps serving.
+**Which variant: the live one.** The private tree holds two and they are not byte-identical.
+The live file carries one `resolver` directive and three `set $` directives; the
+`.CORRECTED` candidate, which sits in a `_defect-fixes/` directory, carries neither and
+**was never applied**. So the release derives from the live variant and this table does not
+flip. A divergent unapplied variant exists and would change it if adopted — adopting it is a
+decision separate from the release, and is not taken here.
 
-**What is safe to assert regardless of variant:** every `host.docker.internal` route in the
-original is one of the literal five, and no other literal host was found. The corrected
-variant changes only the three *variable* upstreams. So in both variants, a missing
-`extra_hosts` on Linux is a **startup failure, not empty panels** — which is what the four
-corrections in that commit say, and no more than that.
+**Scope of the failure mode, so no one reads it as the shipped stack being broken.**
+`deploy/compose.yaml` passes `extra_hosts: host.docker.internal:host-gateway`, so inside
+this stack the name resolves and none of this bites. It applies to the portal image run
+*outside* the stack without the equivalent `--add-host`.
 
-**What is not safe to assert, and must wait:** any table of which routes 502. In the
-original three can; in the corrected variant none can, because its `${ENVVAR}` tokens are
-substituted by envsubst at container start and are therefore literal by the time nginx
-parses them. Do not write a symptom table until the variant is settled.
+#### SETTLED: `fleet_config.json` is a second address surface BY INTENT — fold nothing
 
-One distinction to preserve through any correction: `README.md`'s *other* 502 sentence —
-the `depends_on` one, about a router that has not come up yet — is correct either way,
-because there the name resolves and the connection is refused. It was deliberately left
-alone.
+Answered 2026-11-02 by the assembling session, as shapes with no values: the file carries
+endpoint addresses. Each entry of a top-level `tiers` list has a `base_url`, a full
+`scheme://host:port` with an explicit port; nine in the private router's copy, ten in an
+older backup. The file has three top-level keys.
 
-#### OBLIGATION: `fleet_config.json` is a second address surface
+**This is deliberate, and the registry structurally cannot do this file's job.** The router
+`stat`s the file and reloads it when its mtime changes. Environment variables are fixed at
+process start, so an environment-resolved registry cannot re-tier a running router — and
+re-tiering without a restart is the entire point of the mtime re-read. The boundary:
 
-Answered 2026-11-02 by the assembling session, as shapes with no values: **yes**, the file
-carries endpoint addresses. Each entry of a top-level `tiers` list has a `base_url`, a full
-`scheme://host:port` with an explicit port, reported as matching `^https?://[^/]+:\d+$`;
-nine in the private router's copy, ten in an older backup. The file has three top-level
-keys.
+- `shared/resolver.py`'s registry owns **endpoints fixed at deploy time**.
+- `fleet_config.json` owns **backends re-tiered at run time**.
 
-**The host form is not stable across copies** — the router's copy uses named hosts, the
-older backup uses dotted quads. So any assertion that this file holds only service names
-would be true of one copy and false of the other, and must not be written.
+Two surfaces, two lifetimes, both intended. So the registry's guarantee is **bounded, not
+defective**, and no text in this repository should imply it ought to have absorbed the other
+— the earlier "and nowhere else" wording did imply that, and was corrected rather than
+softened. Nothing is to be folded.
 
-This contradicted a claim this repository was making. `README.md` and
-`shared/resolver.py`'s docstring both said every service address the router talks to is
-resolved from the environment "and nowhere else"; a tier's `base_url` reaches the router
-without passing through the environment or the registry, and because the file is re-read on
-mtime change it can do so under a *running* router with no restart and no resolution step.
-Both claims are scoped in that commit to what the registry actually governs.
+**One detail that bounds what a test may assert.** The same key has carried two host forms:
+named hosts in the router's copy, dotted quads in an older backup. An assertion that the
+file holds only service names would be true of one copy and false of the other. The shape
+that holds for both is `^https?://[^/]+:\d+$`.
 
-The open question, which is a design decision and not a documentation one: whether a second
-address surface is intended, or whether tier addresses should be folded into the registry
-so that one module resolves them all. Recorded, not answered. Note also that the four
-`deploy/config/*.example.json` placeholders say the mtime re-read exists; what none of them
-could say, until now, is that one of those files carries endpoints.
+#### OPEN: the generated compose example addresses six services the stack does not define
+
+Verified in this repository, not reported: `shared/resolver.py`'s `COMPOSE_SERVICE` maps its
+nine endpoints onto seven service names, and `deploy/compose.yaml` defines two. Six are
+addressed and undefined — `arbiter`, `broadcaster`, `embed`, `kb`, `ollama`, `search`.
+
+```
+resolver COMPOSE_SERVICE targets: arbiter broadcaster embed kb ollama router search
+compose.yaml defines:             portal router
+addressed but NOT defined:        arbiter broadcaster embed kb ollama search  (6 of 7)
+```
+
+`compose.yaml` explains at length why those services are absent — none of their images is
+part of v0.1 — and the generated example is correct for a deployment that *does* run them.
+But an operator who copies it unedited into this stack gets six names the container network
+cannot resolve. **This belongs to whatever generates
+`deploy/profiles/compose.env.example` from the registry, not to the deploy documentation**,
+which is why it is recorded here rather than papered over with a note. Still open.
+
+#### Three decisions left deliberately untaken, recorded so nobody takes them quietly
+
+- **The `BIFROST_HOST` rename.** It changes the deploy surface of a public repository.
+- **The `HEARTH_VEGA8_URL` alias** in `shared/resolver.py`. Not the same class as the above:
+  an alias *accepts* an old name, whereas a compose variable *asks an operator to set* one.
+  The registry already keeps it only as a compatibility alias and says why.
+- **The pre-rewrite SHA residue.**
 
 ## Rules that outlive the release
 
