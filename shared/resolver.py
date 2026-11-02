@@ -129,8 +129,16 @@ ENDPOINTS: Dict[str, Endpoint] = {
     # dependencies are up or down; the verdict is the JSON. A caller that treats the
     # status code as the answer -- `curl -f`, or a container healthcheck -- reads green
     # while generation is failing, which is the exact class of failure this module
-    # exists to remove. For liveness only, the application serves `/livez`, which is
-    # dependency-free by design.
+    # exists to remove.
+    #
+    # This comment claimed until 2026-11-02 that the application serves `/livez` for
+    # liveness. A measurement of the router source ruled into scope counts ZERO
+    # occurrences of `livez` or `readyz`, so that claim is suspended: it describes an
+    # artefact this release may not ship. It does not affect anything this module does,
+    # and `/health` is still the right probe target for the reason above -- the
+    # `example` here is unchanged and the test asserting it is unaffected. The claim is
+    # inventoried in RELEASE-SCOPE.md, because the remedy depends on a scope ruling that
+    # has not been made.
     "router_health": Endpoint(
         env="RAMEAU_ROUTER_HEALTH_URL",
         purpose="readiness probe target; reports backend reachability in its BODY",

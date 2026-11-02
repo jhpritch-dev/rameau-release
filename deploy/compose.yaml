@@ -138,6 +138,12 @@ services:
     # leaf, fail-closed, while /health still returns 200. A healthcheck on /health would read
     # green on exactly that failure and is therefore worse than none. The acceptance test
     # must exercise one delegated leaf; see deploy/README.md.
+    #
+    # SUSPENDED 2026-11-02: the ruled router source contains no delegate and no tool loop,
+    # so there is no leaf to exercise. The reasoning above is kept because it is sound and
+    # describes a different artefact, and the no-healthcheck decision stands on its own
+    # second reason -- /health answers 200 whether the backends are up or down, so a
+    # healthcheck on it reads green while generation fails. See RELEASE-SCOPE.md.
 
   # =========================================================================================
   # PORTAL -- the existing web UI, ruled in scope by John on 2026-10-27

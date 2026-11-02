@@ -451,6 +451,117 @@ a scratch copy of each Dockerfile. The wiring and the required-variable results 
 *without* it — they fail or succeed before any package is fetched. Only the completed builds
 and the `RAMEAU_COMMIT` result required it.
 
+#### SUSPENDED: the delegated-leaf criterion — that capability is not in the ruled tree
+
+Reported 2026-11-02 by the session that can read the private tree, measured against the
+source John ruled into scope on that date, `services/router/`. Nothing here is checkable
+from inside this repository; the counts are counts.
+
+```
+bifrost_delegate.py in the ruled tree   : NO
+igor_tool_loop.py   in the ruled tree   : NO
+files mentioning delegate / tool_loop   : 0 / 0
+files mentioning subtask / tool_calls   : 0 / 0
+files mentioning tools= / "tools"       : 0 / 0
+function_call                           : 0
+POSITIVE CONTROL -- FastAPI              : 2 files
+```
+
+**The positive control is what makes those zeros mean anything.** The same sweep over the
+same tree finds FastAPI in two files, so the instrument works and the zeros are absences
+rather than a broken search. The ruled router registers 16 routes and no tool or
+function-calling surface, with no `add_api_route`, `APIRouter` or `include_router`, so there
+is no second registration path hiding one.
+
+So **there is no delegated leaf to exercise.** The delegate exists in the live private
+checkout and a July snapshot; it is in neither candidate tree of the release's own source
+snapshot.
+
+**What this breaks here.** Measured in this repository: six files instruct a reader to
+exercise a delegated leaf, or explain the acceptance criterion in terms of it —
+`README.md`, `deploy/README.md`, `deploy/compose.yaml`,
+`deploy/images/router/Dockerfile`, `deploy/images/router/Dockerfile.dockerignore`, and this
+document. Each is now an instruction that cannot be carried out. **An unsatisfiable
+instruction is worse than an open question**, because a reader at step 5 will assume they
+have misread it, so each one is marked suspended and points here. The *reasoning* is kept
+rather than deleted: it is sound, and it is true of a different artefact.
+
+This is a claim that was true when written and was invalidated by a later ruling, in
+documents with no way to notice — the same class as a gate certifying a stale claim.
+
+**And the insufficiency runs the other way now.** The criterion existed because a 200 was
+said to prove nothing. Reported module-scope measurement of the ruled tree:
+
+```
+main.py module-scope local imports      : classifier, backends (all three),
+                                          strategies, commands, metrics
+main.py LAZY local imports of those     : 0
+lazy imports of the five requirements,
+  across the whole ruled tree           : exactly ONE -- `import uvicorn`, inside a
+                                          function that cannot run without it
+```
+
+Four of the five requirements resolve before the app can answer anything, and the fifth
+cannot be absent from a process that is serving. **For the ruled scope, if the container
+answers any request at all, every requirement resolved** — so a 200 *is* sufficient for the
+manifest question, and the stated reason it is not names a file the artefact does not
+contain.
+
+#### The replacement, STAGED AND NOT ADOPTED
+
+If the ruling is that v0.1 ships no delegation, acceptance becomes three legs with distinct
+failure modes. Recorded so the work is not re-derived; **not adopted, because the ruling has
+not been made.**
+
+1. **The manifest.** Start the container; any 200 discharges all five requirements, for the
+   reason measured above. Keep `--no-cache-dir`, as the Dockerfile does.
+2. **A real backend call.** `httpx` is imported at startup and never exercised by it, so a
+   wrong endpoint URL, a TLS interception or a wrong tier name fails only on a real request.
+   `POST /v1/chat/completions` with a trivial prompt, asserting a **non-empty completion**
+   rather than a 200 — this router has a measured 200-with-empty-content mode when a
+   thinking model's output lands in a side channel, so "200" and "answered" are different
+   claims. That distinction is already in `README.md` as a design property; here it is the
+   difference between a test and a formality.
+3. **The runtime config files.** The four runtime JSON files are read at run time rather than
+   imported, which is exactly why CI cannot host this. `GET /classify` exercises the
+   classifier against that config and `GET /cascade/{band}` the tier table; a missing or
+   unparseable config is invisible to legs 1 and 2.
+
+Leg 1 **replaces** the delegated-leaf test. Legs 2 and 3 are what a 200 genuinely does not
+prove, and neither was in the original criterion — so the replacement is not a weakening.
+
+The three routes named in legs 2 and 3 are proposed by the measuring session; this
+repository cannot confirm they are among the 16.
+
+#### The ruling this waits on, with the options as reported
+
+It is the `bifrost_delegate.py` scope question, already open above. What is new is that it
+now blocks a deliverable and makes live documents wrong rather than leaving a question open.
+
+| option | consequence |
+|---|---|
+| accept the ruled scope, restate acceptance as the three legs | smallest; the delegate is simply not in v0.1 |
+| extend the ruling to include the delegate and tool loop | pulls in the entangled sibling tree, four more packages, and eight module names it imports without containing — manifest and closure both need re-measuring |
+| test against the live router | tests the private system, so it cannot discharge the release's acceptance at all |
+
+The measuring session recommends the first, and so do I, for a reason this document already
+holds: the release's acceptance must be discharged by the release's artefact. The third
+option fails that on its face, and the second reopens a closure that was verified in both
+directions. **Recorded; none adopted.**
+
+#### A second claim the same measurement strands: `/livez`
+
+`livez` and `readyz` both count 0 in the ruled tree, yet this repository asserts in several
+places that the application serves `/livez` for liveness. Measured here, it appears in:
+`shared/resolver.py`'s `router_health` comment, the failure message of
+`test_the_health_probe_target_is_not_the_unfalsifiable_route`, `README.md`, and
+`deploy/README.md`'s acceptance procedure, which curls it.
+
+The test does not break — it asserts the probe target is `/health`, which is correct and
+unaffected — but its message repeats the claim, so the inventory is recorded here rather
+than churned now. The primary claims are marked; the correct remedy depends on the same
+ruling, because a tree that gains the delegate may gain `/livez` with it.
+
 #### KNOWN AND NOT RULED: two private-range strings remain reachable in this history
 
 `b465f4a` rebased two redaction-mask test fixtures off the private /24 and onto TEST-NET-1.
