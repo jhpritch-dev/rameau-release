@@ -1,6 +1,25 @@
-# .dockerignore -- RAMEAU portal build context
+# Dockerfile.dockerignore -- RAMEAU portal build context
 #
 # Context root: services/portal/ in this repository (the app root, not the repo root).
+#
+# -----------------------------------------------------------------------------------------
+# THE FILENAME IS LOAD-BEARING, AND IT WAS WRONG UNTIL 2026-11-02
+# -----------------------------------------------------------------------------------------
+# Docker reads an ignore-file from the BUILD CONTEXT ROOT, or as
+# `<dockerfile-name>.dockerignore` beside the Dockerfile -- and nowhere else. This file lives
+# in deploy/images/portal/ while the context is services/portal/, so for as long as it was
+# named plain `.dockerignore` it was read by NOTHING and every pattern below was inert:
+# node_modules/, dist/ and the stale `index-*.js` build output were all uploaded with the
+# context.
+#
+# This image escaped the worst of that only by luck. Its Dockerfile COPYs an explicit list
+# rather than a wildcard, so a planted `index-stale.js` reached neither stage because no COPY
+# names it -- whereas the router's `COPY *.py ./` had nothing bounding it. Luck is not the
+# design this file describes, and `public/` and `src/` are copied wholesale, which only this
+# list bounds.
+#
+# So do not rename this file back, and do not move it without moving the Dockerfile with it.
+# `git mv`-ing either one alone disarms this entire file, silently.
 #
 # Deny-by-default, then re-admit. Same two syntax rules as the router's list: a '#' is a
 # comment only at the start of a line, so never put one after a pattern; and a negation

@@ -18,10 +18,12 @@
 # this context.
 #
 # A previously-committed build output (an index-*.js / index-*.css pair) also existed at the
-# app root in the original. The .dockerignore beside this file excludes that pattern. If such
-# files reached the BUILD stage they would be harmless; if they reached the SERVE stage they
-# would shadow the fresh bundle and the portal would silently serve a stale build under a
-# stale asset hash. Do not re-include them.
+# app root in the original. The Dockerfile.dockerignore beside this file excludes that
+# pattern -- and is NAMED for this Dockerfile on purpose, because as plain `.dockerignore` it
+# sat outside the build context and Docker read it not at all. If such files reached the BUILD
+# stage they would be harmless; if they reached the SERVE stage they would shadow the fresh
+# bundle and the portal would silently serve a stale build under a stale asset hash. Do not
+# re-include them.
 #
 # =========================================================================================
 # STAGE 1 -- build

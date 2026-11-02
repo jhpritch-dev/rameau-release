@@ -1,6 +1,25 @@
-# .dockerignore -- RAMEAU router build context
+# Dockerfile.dockerignore -- RAMEAU router build context
 #
 # Context root: services/router/ in this repository.
+#
+# -----------------------------------------------------------------------------------------
+# THE FILENAME IS LOAD-BEARING, AND IT WAS WRONG UNTIL 2026-11-02
+# -----------------------------------------------------------------------------------------
+# Docker reads an ignore-file from the BUILD CONTEXT ROOT, or as
+# `<dockerfile-name>.dockerignore` beside the Dockerfile -- and nowhere else. This file lives
+# in deploy/images/router/ while the context is services/router/, so for as long as it was
+# named plain `.dockerignore` it was read by NOTHING, and every pattern below was inert:
+# `COPY *.py ./` was bounded by nothing, and the "never, under any circumstances" block at
+# the end of this file -- .env, *.pem, *.key, .netrc, .git-credentials -- was not in force at
+# all.
+#
+# Measured rather than reasoned about. A `test_probe.py`, which the list below excludes, was
+# planted in a stub context: it arrived in /app of the built image. Named to match the
+# Dockerfile, as it now is, the same probe is excluded.
+#
+# So do not rename this file back, and do not move it without moving the Dockerfile with it.
+# `git mv`-ing either one alone disarms this entire file, silently -- and the warning further
+# down, that a green build is not evidence this list is right, applies to its NAME first.
 #
 # Deny-by-default, then re-admit. The point is not image size, it is that a narrow context is
 # the only thing that makes the COPY groups in the Dockerfile mean anything: `COPY *.py ./`

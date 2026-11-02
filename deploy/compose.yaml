@@ -115,12 +115,13 @@ services:
     networks: [rameau]
     logging: *logging
     restart: "no"
-    # NO healthcheck on /health alone, deliberately. The router's own .dockerignore records
-    # that a minimal build context can drop bifrost_delegate.py -- which is read off disk with
-    # `ast` and imported by nothing, so an import-closure context misses it -- after which the
-    # tool loop refuses every delegated leaf, fail-closed, while /health still returns 200. A
-    # healthcheck on /health would read green on exactly that failure and is therefore worse
-    # than none. The acceptance test must exercise one delegated leaf; see deploy/README.md.
+    # NO healthcheck on /health alone, deliberately. The router's own
+    # Dockerfile.dockerignore records that a minimal build context can drop
+    # bifrost_delegate.py -- which is read off disk with `ast` and imported by nothing, so an
+    # import-closure context misses it -- after which the tool loop refuses every delegated
+    # leaf, fail-closed, while /health still returns 200. A healthcheck on /health would read
+    # green on exactly that failure and is therefore worse than none. The acceptance test
+    # must exercise one delegated leaf; see deploy/README.md.
 
   # =========================================================================================
   # PORTAL -- the existing web UI, ruled in scope by John on 2026-10-27
