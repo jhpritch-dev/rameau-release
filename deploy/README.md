@@ -50,53 +50,32 @@ Everything below is correct for the point at which those land.
 
 ## One-time setup
 
-**1. Endpoints.** Put them in `deploy/.env`, or in the shell you run `docker compose` from:
+**1. Endpoints.**
 
 ```
-cp profiles/compose.env.example .env
+cp profiles/compose.env.example profiles/compose.env
 ```
 
-**Then edit `.env`, and the editing is not optional.** Every value in it is a **compose
-service name**, resolved by the container network's DNS — loopback is wrong there, because
-inside a container loopback is the container. **Blank every endpoint you are not running:** a
-blank value counts as unset and `shared/resolver.py` turns that capability off, whereas a
-value naming something that is not there makes the router reach a hostname that does not
-resolve. A wrong endpoint is worse than no endpoint.
+Then edit it. Every value in it is a **compose service name**, resolved by the container
+network's DNS — loopback is wrong there, because inside a container loopback is the container.
+Endpoints you are not running may be left blank; a blank value counts as unset, and
+`shared/resolver.py` records which capability each one unlocks.
 
-That matters more than it looks, because the example ships **non-empty** values for six names
-this compose file does not define — `ollama`, `embed`, `kb`, `arbiter`, `broadcaster` and
-`search`. Copying it and starting the stack without editing gives the router five endpoints
-pointing at nothing. `shared/resolver.py` records which capability each one unlocks, so blank
-the ones you have no service for.
+**Blanking them is now load-bearing, where before it was optional.** The example ships
+**non-empty** values for six names `compose.yaml` does not define — `ollama`, `embed`, `kb`,
+`arbiter`, `broadcaster` and `search` — and `compose.yaml` defines only `router` and `portal`.
+So copying the example and starting the stack **without editing** hands the router five
+endpoints that resolve to nothing. Measured with `docker compose config` on Docker 29.4.2 /
+Compose v5.1.3 against this file as shipped: the router receives `http://embed:11434`,
+`http://kb:8090`, `http://arbiter:8082`, `http://broadcaster:8090` and `http://search:8080`,
+none of which is a service here.
 
-> **Not `profiles/compose.env`, and this is measured, not a style preference.** Compose ranks
-> `environment:` above `env_file:`, and `compose.yaml`'s router re-declares every endpoint as
-> `${VAR:-}` — so a value placed in `profiles/compose.env` is overwritten with an empty string
-> before the router ever sees it. Checked with `docker compose config` on Docker 29.4.2 /
-> Compose v5.1.3, with `profiles/compose.env` copied from the example:
->
-> | | `RAMEAU_EMBED_URL` and the other four |
-> |---|---|
-> | **router** — the service that reads them | `""` |
-> | **portal** — which does not read them | the file's real values |
->
-> Exactly inverted. An earlier revision of this step said to copy the example to
-> `profiles/compose.env` and edit it there, which configured a file that cannot reach the
-> service it was for. `.gitignore` already covers `*.env`, so `deploy/.env` is not committed
-> either.
->
-> `compose.yaml` is deliberately not changed here. Deleting the router's `environment:` block
-> would let `env_file:` through and make `profiles/compose.env` work as it reads, but it would
-> also change which file wins for every other key in that block, in a release whose compose
-> surface is already public. Moving the documented location is the smaller change and it is
-> the one that can be verified from outside the container.
->
-> **Either way the operator still has to blank what they do not run.** The old behaviour gave
-> the router `""` for these five, which happened to be the safe value; neither this step nor a
-> `compose.yaml` change gives you that for free, which is why the editing instruction above is
-> written as a requirement rather than an option. The underlying defect is that the generated
-> example ships service names `compose.yaml` does not define — that belongs to the generator,
-> and it is noted in **Two things are not ready yet** rather than papered over here.
+Until the `env_file:` fix below, those five arrived as the empty string, which
+`shared/resolver.py` reads as *unset* — so the wrong values were masked by the wrong
+mechanism and the default happened to be the safe one. Making the file reach the router is
+correct and also removes that accident, so **blank every endpoint you do not actually run**:
+a wrong endpoint is worse than no endpoint, which is the same reason `RAMEAU_OLLAMA_URL`
+ships with no default at all.
 
 This file is the **only** place the five optional endpoints are read from — `RAMEAU_EMBED_URL`,
 `RAMEAU_ARBITER_URL`, `RAMEAU_KB_URL`, `RAMEAU_BROADCASTER_URL`, `RAMEAU_SEARCH_URL`. The shell
