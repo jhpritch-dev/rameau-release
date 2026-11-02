@@ -222,6 +222,77 @@ jobs:
             config --quiet
           echo "compose ok"
 
+      - name: profiles/compose.env must actually reach the router
+        # The regression this guards shipped once, and it was invisible: compose.yaml gave the
+        # router `env_file: profiles/compose.env` AND re-declared five optional endpoints in
+        # `environment:` as ${VAR:-}. `environment:` outranks `env_file:`, so with nothing in
+        # the interpolation environment all five arrived as the EMPTY STRING and overrode the
+        # operator's file -- and because the resolver treats empty as unset, the router then
+        # reported them as not configured. deploy/README.md step 1 was telling operators to
+        # create a file that could not reach the service it was for.
+        #
+        # Nothing failed. The stack came up, `config` parsed, and the endpoints were simply
+        # not there. So this asserts the property directly: write a sentinel into the file and
+        # require it to survive into the router's resolved environment.
+        env:
+          RAMEAU_OLLAMA_URL: http://ollama.invalid:11434
+        run: |
+          set -euo pipefail
+          f=deploy/profiles/compose.env
+          [ -e "$f" ] && { echo "$f already exists; refusing to overwrite it"; exit 1; }
+          trap 'rm -f "$f"' EXIT
+
+          # Documentation-range names only, and a sentinel that cannot occur by accident.
+          cat > "$f" <<'ENVFILE'
+          RAMEAU_EMBED_URL=http://embed.example.com:11434
+          RAMEAU_ARBITER_URL=http://arbiter.example.com:8082
+          RAMEAU_KB_URL=http://kb-reaches-the-router.example.com:8090
+          RAMEAU_BROADCASTER_URL=http://broadcaster.example.com:8090
+          RAMEAU_SEARCH_URL=http://search.example.com:8080
+          ENVFILE
+          sed -i 's/^ *//' "$f"
+
+          cfg=$(docker compose -f deploy/compose.yaml config --format json)
+
+          got=$(printf '%s' "$cfg" | jq -r '.services.router.environment.RAMEAU_KB_URL // "<<absent>>"')
+          if [ "$got" != "http://kb-reaches-the-router.example.com:8090" ]; then
+            echo "profiles/compose.env does NOT reach the router."
+            echo "  RAMEAU_KB_URL resolved to: $got"
+            echo "Almost certainly an endpoint was re-declared under the router's"
+            echo "\`environment:\` key, which outranks \`env_file:\`. See the comment block in"
+            echo "deploy/compose.yaml: the three forms are measured there, and only OMITTING"
+            echo "the variable lets the file through."
+            exit 1
+          fi
+          echo "ok: the operator's file reaches the router (RAMEAU_KB_URL = $got)"
+
+          # The same defect, caught from the other side: no RAMEAU_* endpoint may resolve to
+          # the empty string or to null while the file sets it.
+          blank=$(printf '%s' "$cfg" | jq -r '
+            .services.router.environment | to_entries
+            | map(select(.key | startswith("RAMEAU_")))
+            | map(select(.value == "" or .value == null) | .key) | join(",")')
+          if [ -n "$blank" ]; then
+            echo "these router variables resolved to empty/null despite the file setting them: $blank"
+            exit 1
+          fi
+          echo "ok: no router endpoint is clobbered to empty"
+
+          # Control: the three router URLs are hardcoded in compose.yaml ON PURPOSE and MUST
+          # keep overriding the file, because the file addresses the router by service name on
+          # a port that a host-side example may have carried over. shared/test_resolver.py
+          # asserts those three values against compose.yaml.
+          for pair in "RAMEAU_ROUTER_URL=http://router:8080" \
+                      "RAMEAU_ROUTER_HEALTH_URL=http://router:8080/health"; do
+            k=${pair%%=*}; want=${pair#*=}
+            have=$(printf '%s' "$cfg" | jq -r --arg k "$k" '.services.router.environment[$k] // "<<absent>>"')
+            [ "$have" = "$want" ] || {
+              echo "$k is $have, expected $want -- compose.yaml must keep winning for these"
+              exit 1
+            }
+          done
+          echo "ok: the router's own three URLs still come from compose.yaml"
+
       - name: licence and scope invariants
         # Cheap structural checks that protect the two promises this repo makes about itself.
         run: |
