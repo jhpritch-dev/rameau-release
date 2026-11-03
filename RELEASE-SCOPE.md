@@ -194,6 +194,136 @@ rather than left in commit messages.
   success, after which the build ran three more instructions and died at
   `sh: vite: not found`.
 
+### Containerisation findings of 2026-11-03
+
+Found and discharged in this repository, with Docker 29.4.2 / Compose v5.1.3 available, so
+the compose claims below are measured rather than parsed by eye. Two further items are left
+open at the end, and they are open because taking them would be deciding something rather
+than fixing something.
+
+- **Both `.dockerignore` "never, under any circumstances" blocks were root-anchored and
+  could not reach the directories the same files re-admit wholesale — DISCHARGED.** This is
+  the second defect in these two files and it is sharper than the first. The filename fix of
+  `97727b8` made them *read*; it did not make the credential block *cover* anything.
+
+  Docker matches an ignore pattern against the whole context-relative path and a single `*`
+  does not cross a `/`, so `*.pem` matches `foo.pem` and not `backends/foo.pem`. Both files
+  re-admit directories wholesale — `backends/**` and `skills/**` on the router, `src/**` and
+  `public/**` on the portal — which is precisely where the block was needed and the one place
+  it did not apply. Each file's own comment says the block exists so that "a future edit
+  which re-admits a directory cannot sweep one of these in as a side effect"; the
+  re-admissions were already there.
+
+  Measured in throwaway stub contexts built outside git and discarded, not reasoned about.
+  With the previous patterns, `backends/inner.pem`, `backends/inner.key`, `skills/inner.pem`,
+  `public/leaked.pem`, `public/leaked.key` and `src/leaked.key` all arrived in the built
+  image, while `root.pem` and `root.key` were correctly excluded. The portal also admitted
+  `src/BifrostPortal_fixed.jsx` and `src/BifrostPortal_v2.jsx`, which defeats its two
+  stale-copy patterns outright — an editor's `_fixed` copy lives next to the original, in
+  `src/`, which is the only place those patterns were ever meant to guard.
+
+  **On the portal this reaches further than the image.** Vite copies `public/` verbatim into
+  `dist/`, and the serve stage does `COPY --from=build /app/dist/ /usr/share/nginx/html/`, so
+  a key under `public/` would not merely enter the context — nginx would serve it.
+
+  Both blocks are now recursive (`**/`), which was measured to subsume the root-anchored
+  form, so no twin is kept beside it. The router's `**/__pycache__/` and `**/*.pyc` lines were
+  already in that form, which is the evidence the rule was known and simply not applied to the
+  credential shapes. After the change the same probes exclude all eight planted files while
+  `main.py`, `bifrost_delegate.py`, `requirements.txt`, `backends/mod.py`, `skills/guide.md`,
+  `index.html`, `nginx.conf`, `package.json`, `vite.config.js`, `src/main.jsx`,
+  `src/BifrostPortal.jsx`, `public/logo.svg` and `public/assets/font.woff2` still arrive.
+
+  **One pattern block was deliberately NOT made recursive**, and the font above is why. The
+  portal's stale-build-output block (`assets/`, `index-*.js`, `index-*.css`, `dist/`) guards a
+  build output committed at the app root. Recursive, `assets/` would also exclude
+  `public/assets/` — an ordinary place for static files, and this release set carries nine
+  `.woff2` faces. That would silently drop legitimate content to guard a file never seen
+  anywhere but the root.
+
+- **Nothing enforced the filename coupling the fix of `97727b8` depends on — DISCHARGED.**
+  Both files warn in prose that `git mv`-ing either one alone disarms the other silently. CI
+  now asserts it, driven from `docker compose config` rather than from a glob, so it follows
+  the Dockerfile compose actually names: for every service with a `build:` stanza the
+  `<dockerfile-name>.dockerignore` beside it must exist, be tracked, and begin with a bare
+  `**`. Verified both ways — it passes on the tree as it stands, and renaming
+  `deploy/images/portal/Dockerfile.dockerignore` back to `.dockerignore` makes it fail with
+  the reason named.
+
+- **The `env_file` control asserted two of the three router URLs it claimed — DISCHARGED.**
+  The step's comment said three and its loop listed `RAMEAU_ROUTER_URL` and
+  `RAMEAU_ROUTER_HEALTH_URL`, so removing `RAMEAU_ROUTER_CHAT_URL` from `compose.yaml`'s
+  `environment:` would have let the operator's file reach it with the step still green.
+  `shared/test_resolver.py` checks all three against the file's text, so the property was
+  covered elsewhere; the control was not. Verified with a `compose.env` setting a sentinel
+  chat URL: compose.yaml wins for all three.
+
+- **Five citations named a file that no longer exists — DISCHARGED.** All four
+  `deploy/config/*.example.json` cited `deploy/images/router/.dockerignore`, the name that was
+  disarmed and renamed on 2026-11-02, and `fleet_config.example.json` additionally cited a
+  line number in it. It is now cited by block rather than by line, because a line number in a
+  citation rots. The same file carried two `_not_established` entries that contradicted each
+  other — a superseded one left beside its replacement — and the superseded one is removed.
+
+- **`deploy/README.md` said the build "fails on that COPY", and today it stops earlier —
+  CORRECTED.** With neither context assembled the build never reaches an instruction in either
+  Dockerfile: `docker compose -f compose.yaml build` returns `unable to prepare context: path
+  ".../services/portal" not found`. The COPY failure is the *next* one, reached once step 4
+  lands the source with the manifest still absent. Both statements are now in the file, in
+  that order.
+
+- **`BIFROST_HOST` could not be set from `profiles/compose.env`, and nothing said so —
+  CORRECTED in documentation only.** It is declared under the portal's `environment:`, which
+  outranks `env_file:`; measured with the file setting it, the portal still resolved the
+  default. This is not the router's defect repeated: the variable needs a working default,
+  because `${VAR:-}` would blank the one name the envsubst filter exists for. The behaviour is
+  right and was undocumented, so `deploy/README.md` and `compose.yaml` now name the shell and
+  `deploy/.env` as its home.
+
+#### Verified unchanged, so that a later reader need not re-measure
+
+- `.env.example` and `deploy/profiles/compose.env.example` are **byte-identical** to what
+  `shared/resolver.py` generates. The header comment claiming they are generated is true, and
+  CI's regenerate-and-diff step is what keeps it true.
+- The no-egress overlay changes **exactly one key** and nothing else. Diffed resolved against
+  resolved: `networks.rameau.internal: true` is added, `driver: bridge` survives the merge, and
+  the two services are identical between base and overlay.
+- `shared/test_resolver.py`: 87 passed.
+
+#### OPEN after 2026-11-03, and deliberately not taken here
+
+- **The six addressed-but-undefined services, re-confirmed and still open.** Measured again
+  from `docker compose config` rather than from the file text: the registry's `COMPOSE_SERVICE`
+  targets seven service names, the stack defines `router` and `portal`, and `arbiter`,
+  `broadcaster`, `embed`, `kb`, `ollama` and `search` are addressed and undefined.
+
+  The obvious fix — have `describe("compose")` emit those six commented out, so a file copied
+  unedited is safe by default — is **not taken, because the repository has pinned the opposite
+  contract**. `test_both_profiles_define_EXACTLY_the_same_keys` asserts that the loopback and
+  compose profiles define the same keys, so commenting six out in one of them requires editing
+  that test. A test is where this repository records a decision, and changing one to permit a
+  change is how a decision gets taken quietly. It needs the owner of the deploy surface, not a
+  reviewer.
+
+  Stated so the decision is a choice between two named things: **(a)** keep both profiles
+  key-identical and keep the blanking instruction load-bearing in `deploy/README.md`, which is
+  today's state; **(b)** emit the six as commented-out lines with their derived values intact,
+  which makes an unedited copy safe and preserves the reference value, at the cost of the
+  key-identity property and the test that holds it.
+
+- **Both services share one `env_file:` anchor, so each receives the other's variables.**
+  Measured: with `profiles/compose.env` setting a `BIFROST_*` name, that name reaches the
+  *router*; the portal receives all six `RAMEAU_*` endpoints. Neither is read — nginx
+  substitutes only `^BIFROST_` and the router resolves only `RAMEAU_*` — so nothing misbehaves
+  and no documented claim is false. Splitting the anchor is a deploy-surface change with a real
+  argument on each side (a future `BIFROST_*` the portal *should* read from the file would need
+  the anchor to stay), so it is recorded rather than taken.
+
+- **The step-5 acceptance test still cannot be run here**, for the reason already recorded: the
+  one delegated-leaf invocation is owed by the private side, and the four runtime JSON files are
+  placeholders with no schema. `docker compose build` was run and stops at context preparation,
+  as above. Nothing in this session's changes moves that.
+
 #### SETTLED: the release derives from the LIVE `nginx.conf`, and the symptom table is exact
 
 `nginx.conf` is **not in this repository** — a sweep for `nginx*.conf` and
@@ -273,6 +403,11 @@ But an operator who copies it unedited into this stack gets six names the contai
 cannot resolve. **This belongs to whatever generates
 `deploy/profiles/compose.env.example` from the registry, not to the deploy documentation**,
 which is why it is recorded here rather than papered over with a note. Still open.
+
+**Re-confirmed 2026-11-03, and the two candidate remedies are now named** -- see
+"OPEN after 2026-11-03" above, which also records why neither was taken there: the
+repository pins the current contract in a test, and editing a test to permit a change
+is how a decision gets taken quietly.
 
 #### Three decisions left deliberately untaken, recorded so nobody takes them quietly
 

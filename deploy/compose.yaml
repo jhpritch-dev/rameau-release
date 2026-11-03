@@ -155,6 +155,22 @@ services:
       # runtime variables ($host, $uri, $remote_addr ...) and an unfiltered substitution
       # blanks every one of them, producing a config that starts and proxies wrongly, which
       # is worse than a config that refuses to start.
+      #
+      # WHERE THIS ONE IS SET, because it is NOT profiles/compose.env. Declaring it here
+      # means `environment:` outranks `env_file:` for it -- the same precedence rule
+      # written out at length in the router above. Measured 2026-11-03 with
+      # profiles/compose.env setting BIFROST_HOST=file-wins-bifrost.example.com: the
+      # portal still resolved host.docker.internal, so the file was overridden silently.
+      #
+      # That is the intended shape rather than the router's defect repeated. This variable
+      # needs a working DEFAULT -- `${VAR:-}` with no default would blank the one name the
+      # envsubst filter is for, and a config that templates to an empty upstream starts
+      # and proxies nowhere. The five router endpoints had no default to lose, which is
+      # why OMITTING them there was the fix and is not the fix here.
+      #
+      # So: the shell or deploy/.env, beside RAMEAU_OLLAMA_URL. deploy/README.md says so
+      # now; it did not until 2026-11-03, and an operator following step 1 would
+      # reasonably have put it in the file that step 1 is about.
       BIFROST_HOST: ${BIFROST_HOST:-host.docker.internal}
     ports:
       - "${RAMEAU_PORTAL_PUBLISH:-127.0.0.1:13110}:80"
