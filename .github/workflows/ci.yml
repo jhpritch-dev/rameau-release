@@ -134,8 +134,10 @@ jobs:
           # OUTSIDE the canary repository, for the reason given at `git add` above.
           report=/tmp/canary-report/control.sarif
           st=0
+          # MATCHER: gitleaks-ruleset
           gitleaks detect --source . --no-banner --redact --exit-code 1 \
             --report-format sarif --report-path "$report" >/dev/null 2>&1 || st=$?
+          # /MATCHER
 
           if [ "$st" -eq 0 ]; then
             echo "CONTROL FAILED: gitleaks did not flag a generated known-positive."
@@ -189,6 +191,7 @@ jobs:
         # --redact so a finding never prints the value into a public CI log.
         run: |
           set -euo pipefail
+          # MATCHER: gitleaks-ruleset
           gitleaks detect \
             --source "$GITHUB_WORKSPACE" \
             --redact \
@@ -196,6 +199,7 @@ jobs:
             --report-format sarif \
             --report-path gitleaks.sarif \
             --exit-code 1
+          # /MATCHER
 
       - name: upload findings
         if: always()
@@ -324,10 +328,12 @@ jobs:
           # 1 no match, and 2 ERROR. Measured: `if grep` treats 2 as "no match", so an
           # unreadable profile used to report "no loopback in the in-network profile" --
           # a clean verdict produced by a failure to look. RELEASE-SCOPE.md, finding E.
+          # MATCHER: loopback-regex
           loopback_hits() {
             st=0
             hits=$(grep -nE '127\.0\.0\.1|localhost' "$1") || st=$?
           }
+          # /MATCHER
 
           plant="$(mktemp -d)"
           trap 'rm -rf "$plant"' EXIT
@@ -374,6 +380,7 @@ jobs:
           trap - EXIT
 
           loopback_hits "$f"
+          # MATCHER: grep-three-way-exit
           case "$st" in
             0)
               printf '%s\n' "$hits"
@@ -391,6 +398,7 @@ jobs:
               exit 1
               ;;
           esac
+          # /MATCHER
 
       - name: validate compose
         # This step globbed FOUR ROOT-RELATIVE names until 2026-10-27, and both stacks
@@ -474,15 +482,19 @@ jobs:
           # keys whose value is empty. A selector that matches nothing and a clean
           # environment produce the same output, which is the whole reason these plants
           # exist.
+          # MATCHER: jq-key-selector
           getvar() {
             printf '%s' "$1" | jq -r --arg k "$2" '.services.router.environment[$k] // "<<absent>>"'
           }
+          # /MATCHER
+          # MATCHER: jq-blank-value-selector
           blank_rameau() {
             printf '%s' "$1" | jq -r '
               .services.router.environment | to_entries
               | map(select(.key | startswith("RAMEAU_")))
               | map(select(.value == "" or .value == null) | .key) | sort | join(",")'
           }
+          # /MATCHER
 
           # The fixture carries one of each case the selectors must tell apart: a set key,
           # an EMPTY RAMEAU_ key, a NULL RAMEAU_ key, an empty key that is NOT RAMEAU_
@@ -575,7 +587,9 @@ jobs:
           # for something incompatible would pass this step. Measured: the three near-miss
           # texts below are not matched, and lowercase is not either, so this is
           # case-sensitive by measurement rather than by assumption.
+          # MATCHER: apache-licence-substring
           is_apache() { grep -q "Apache License" "$1"; }
+          # /MATCHER
           plant="$(mktemp -d)"
           trap 'rm -rf "$plant"' EXIT
           printf 'Apache License\nVersion 2.0, January 2004\n'            > "$plant/pos"
@@ -678,6 +692,49 @@ jobs:
 
           plant() { for p in $2; do mkdir -p "$1/$(dirname "$p")"; : > "$1/$p"; done; }
 
+          # ---- CAN THE PROBE RUN AT ALL? ITS OWN NAMED OUTCOME. -------------------------
+          # A probe that cannot run and a probe that found something must never reach a
+          # reader the same way. That is the defect class this repository has chased through
+          # three rounds, and leaving an instance of it inside the instrument that found the
+          # others would be a poor joke. So BUILDKIT TOO OLD is a state with its own name,
+          # reported before any pattern set is read.
+          #
+          # NOT A VERSION COMPARISON. `--output type=local` with the plain docker driver was
+          # measured working on docker 29.9.2 / buildkit v0.34.0 and on this runner; the
+          # version at which it became available is NOT something this repository has
+          # measured, so gating on a number would mean inventing one -- which is the mistake
+          # the withdrawn "131" and the withdrawn byte ceiling both were. The CAPABILITY is
+          # tested instead: a one-file context through the same exporter the probe uses.
+          echo "docker:  $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo unknown)"
+          echo "buildx:  $(docker buildx version 2>/dev/null || echo unknown)"
+          cap="$pl/cap"
+          mkdir -p "$cap/ctx" "$cap/df" "$cap/out"
+          : > "$cap/ctx/probe-marker"
+          printf 'FROM scratch\nCOPY . /ctx/\n' > "$cap/df/Dockerfile"
+          if ! docker buildx build --progress=plain -f "$cap/df/Dockerfile" \
+                 --output "type=local,dest=$cap/out" "$cap/ctx" > "$cap/log" 2>&1; then
+            echo "STATE: BUILDKIT TOO OLD"
+            echo "This runner's buildkit cannot export a build context to a local directory,"
+            echo "so the ignore-pattern probe CANNOT RUN. Nothing whatever is claimed about"
+            echo "either pattern set -- this is NOT \"CONTEXT VIOLATED\" and must never be"
+            echo "read as one. The remedy is to read the transferred list out of a"
+            echo "base-image RUN step's log instead of using the local exporter. The"
+            echo "exporter's own error follows:"
+            cat "$cap/log"
+            exit 1
+          fi
+          if [ ! -f "$cap/out/ctx/probe-marker" ]; then
+            echo "STATE: BUILDKIT TOO OLD"
+            echo "The export reported SUCCESS and produced no file. A silent export is worse"
+            echo "than a failed one -- it would make every pattern set below look as though"
+            echo "it denied everything -- so this fails too, and again nothing is claimed"
+            echo "about either ignore file."
+            exit 1
+          fi
+          echo "capability ok: the local exporter round-trips a one-file context, so a"
+          echo "               mismatch below is a finding about an ignore file rather than"
+          echo "               about this runner"
+
           # ---- router: what MUST arrive, and what MUST NOT ----
           R_WANT="backends/nested/inner.py backends/ollama.py backends/tests/helper.py config.py main.py requirements.txt skills/registry.md skills/sub/deep.md"
           # backends/tests/helper.py is in the WANT list deliberately. `tests/` is top-level
@@ -702,6 +759,7 @@ jobs:
                   .git-credentials src/.env src/leak.pem public/leak.key app.log
                   src/sub.log old.bak old.bak-1 App_fixed.jsx App_v2.jsx"
 
+          # MATCHER: ignore-pattern-probe
           probe() {
             svc="$1"; want="$2"
             ctx="$pl/$svc-ctx"; dfd="$pl/$svc-df"; out="$pl/$svc-out"
@@ -741,6 +799,7 @@ jobs:
             echo "         transferred, three of them credential names planted INSIDE a"
             echo "         re-admitted subtree, which is where this file was blind until today"
           }
+          # /MATCHER
 
           plant "$pl/router-ctx" "$R_WANT $R_DENY"
           plant "$pl/portal-ctx" "$P_WANT $P_DENY"
@@ -915,9 +974,15 @@ jobs:
           #      otherwise be invisible to A2 and nothing else in CI would look.
           #   2. IT DOES NOT MATCH EVERYTHING. `notajar.jarx`, a file literally named
           #      `jar`, and `notes.gguf.txt` are planted as near-misses.
+          # MATCHER: jar-pathspec
           tracked_jars()    { git ls-files -- '*.jar'; }
+          # /MATCHER
+          # MATCHER: weights-pathspec
           tracked_weights() { git ls-files -- '*.gguf' '*.safetensors' '*.onnx' '*.pt' '*.pth'; }
+          # /MATCHER
+          # MATCHER: fonts-pathspec
           tracked_fonts()   { git ls-files -- '*.woff2' '*.woff' '*.otf' '*.ttf'; }
+          # /MATCHER
 
           ps_plant="$(mktemp -d)"
           (
@@ -1026,6 +1091,7 @@ jobs:
           # to be remembered at step 4, which is when it matters and when nobody will.
           # Do NOT infer executability from the file working when invoked by hand -- `bash
           # <file>` works regardless, which is the specific mistake the obligation warns of.
+          # MATCHER: shebang-index-mode
           scan_modes() {
             scanned=0
             bad=""
@@ -1044,6 +1110,7 @@ jobs:
           $(git ls-files)
           MODES
           }
+          # /MATCHER
 
           # Control: a check with no control is weaker than one with it, and `scanned -eq 0`
           # proves only that the loop read something -- not that it flags a wrong mode.
@@ -1162,6 +1229,7 @@ jobs:
           # of each pattern, because a control that retypes the pattern tests a different
           # pattern, and the quoting path out of this YAML block scalar is part of what is
           # under test.
+          # MATCHER: stray-flat-module-find
           stray_modules() { sm_r="$1"
             find "$sm_r" -mindepth 2 -name '*.py' -type f \
               -not -path "$sm_r/backends/*" \
@@ -1171,17 +1239,30 @@ jobs:
               -not -name '*_test.py' \
               -not -path '*/__pycache__/*' 2>/dev/null | sort | tr '\n' ' '
           }
+          # /MATCHER
+          # MATCHER: top-level-py-count
           top_py_count() { find "$1" -maxdepth 1 -name '*.py' -type f 2>/dev/null | wc -l; }
+          # /MATCHER
+          # MATCHER: py-count
           py_count()     { find "$1" -name '*.py' -type f 2>/dev/null | wc -l; }
+          # /MATCHER
+          # MATCHER: non-empty-directory
           has_no_files() { [ -z "$(find "$1" -type f -print -quit 2>/dev/null)" ]; }
+          # /MATCHER
+          # MATCHER: credential-shaped-find
           cred_shaped()  {
             find "$1" \( -name '.env' -o -name '.env.*' -o -name '*.pem' \
               -o -name '*.key' -o -name '*.p12' -o -name '*.pfx' -o -name '.netrc' \
               -o -name '.git-credentials' -o -name 'id_rsa' -o -name 'id_ed25519' \) \
               -type f 2>/dev/null | sort | tr '\n' ' '
           }
+          # /MATCHER
+          # MATCHER: bare-uvicorn-regex
           names_bare_uvicorn()   { grep -qiE '^[[:space:]]*uvicorn[[:space:]]*([=<>!~;#].*)?$' "$1"; }
+          # /MATCHER
+          # MATCHER: uvicorn-extras-regex
           names_uvicorn_extras() { grep -qiE '^[[:space:]]*uvicorn\[' "$1"; }
+          # /MATCHER
 
           # ============================ THE PLANTS ====================================
           fail_control() { echo "CONTROL FAILED: $1"; exit 1; }
@@ -1211,7 +1292,8 @@ jobs:
             clean tree produces. Hence -mindepth 2 plus subtree exclusions, and hence this
             plant, which runs whether or not services/ exists."
 
-          [ "$(top_py_count "$PR")" -eq 1 ] || fail_control "top_py_count missed a top-level module"
+          got=$(top_py_count "$PR")
+          [ "$got" -eq 1 ] || fail_control "top_py_count returned $got for a tree with exactly one top-level module -- it either missed it or is no longer bounded to the top level"
           mkdir -p "$pl/nested/sub" && : > "$pl/nested/sub/only.py"
           [ "$(top_py_count "$pl/nested")" -eq 0 ] || fail_control "top_py_count counted a .py one directory down, so -maxdepth 1 is not in force and \`COPY *.py ./\` would look satisfied by a module it cannot copy"
 
@@ -1423,7 +1505,9 @@ jobs:
           SRC_D: ${{ steps.src.outputs.src_deferred }}
         run: |
           set -euo pipefail
+          # MATCHER: violation-printer
           show() { printf '%s' "$1" | tr '|' '\n' | awk 'NF{print "    - " $0}'; }
+          # /MATCHER
           # awk, NOT `wc -l`. These lists are '|'-separated with no trailing separator, so
           # after `tr` the final entry carries no newline and `wc -l` -- which counts
           # NEWLINES, not lines -- returns one less than the truth.
@@ -1440,7 +1524,9 @@ jobs:
           # the old comment to be wrong; the planted sets below carry both separator shapes
           # for exactly that reason. `awk 'NF{c++} END{print c+0}'` always prints an integer
           # and exits 0.
+          # MATCHER: violation-counter
           nz()   { printf '%s' "$1" | tr '|' '\n' | awk 'NF{c++} END{print c+0}'; }
+          # /MATCHER
 
           # THE COUNTER IS PLANTED AGAINST, from 2026-11-03. Fixing the one off-by-one I
           # happened to find is not the same as knowing the counter counts: `wc -l` lost the
@@ -1499,7 +1585,19 @@ jobs:
           if [ "$rv" -gt 0 ]; then echo "  violated (repository):"; show "${REPO_V:-}"; fi
           if [ "$sv" -gt 0 ]; then echo "  violated (assembled source):"; show "${SRC_V:-}"; fi
           if [ "$rd" -gt 0 ]; then echo "  not yet due:"; show "${REPO_D:-}"; fi
-          if [ "$sd" -gt 0 ]; then echo "  deferred until services/ exists:"; show "${SRC_D:-}"; fi
+          if [ "$sd" -gt 0 ]; then
+            # DEFERRED, WITH THE ARM ALREADY WRITTEN. That is a materially different state
+            # from "deferred" and is said differently on purpose: through three rounds these
+            # seven were correctly reported as not-yet-checkable, but the work of writing
+            # their arms was deferred with them, so step 4 would have inherited a round of
+            # work rather than a command. Each now has an arm in tools/ci/arms.sh that
+            # plants the minimal services/ shape, shows the obligation firing, and shows it
+            # passing once the fixture is corrected. The census job asserts that every
+            # obligation the preflight carries has one, by name.
+            echo "  deferred until services/ exists -- EACH WITH ITS ARM ALREADY WRITTEN AND"
+            echo "  SHOWN TO FIRE (bash tools/ci/arms.sh, and see the census job):"
+            show "${SRC_D:-}"
+          fi
 
           # A REPOSITORY VIOLATION IS A FAILURE TODAY, whether or not the source is
           # assembled. The first version of this job named only three states and failed only
@@ -1515,7 +1613,7 @@ jobs:
             note="services/ is absent, so the $sd source-dependent obligations are deferred -- but $rv repository obligation(s) above do not hold NOW, and that is a failure today rather than something step 4 inherits."
           elif [ "$PRESENT" != "true" ]; then
             state="NOT ASSEMBLED YET"
-            note="services/router and services/portal are assembled at step 4 of RELEASE-SCOPE.md. The $sd source-dependent obligations listed above CANNOT be checked until they exist, and are NOT reported as satisfied. This job becomes a real gate automatically when they appear, with no edit here."
+            note="services/router and services/portal are assembled at step 4 of RELEASE-SCOPE.md. The $sd source-dependent obligations listed above CANNOT be checked until they exist, and are NOT reported as satisfied -- but each one's ARM IS WRITTEN AND HAS BEEN SHOWN TO FIRE against a planted fixture, so step 4 runs a command rather than repeating a round of work. This job becomes a real gate automatically when the directories appear, with no edit here."
           elif [ "$total_v" -eq 0 ]; then
             state="ASSEMBLED AND CLEAN"
             note="Every obligation this job can assert holds."
@@ -1558,3 +1656,339 @@ jobs:
           # Fail on any violation in either bucket, not on the state name. Deciding this
           # from the name is what let a repository violation exit 0.
           [ "$total_v" -eq 0 ] || exit 1
+
+  census:
+    name: matcher census
+    runs-on: ubuntu-24.04
+    # THE JOB THIS ROUND EXISTS FOR, and the reason is a defect in my own reporting rather
+    # than in the code. On 2026-11-03 the sweep that armed every matcher in this workflow
+    # reported "twelve matchers". The real number was 21. The list had been hand-typed beside
+    # the instruments it described and had drifted from them, so every per-matcher claim made
+    # from it was true of twelve and silent about nine.
+    #
+    # That is the SAME defect the sweep itself had just found in the two
+    # Dockerfile.dockerignore files, wearing different clothes. There, `.env` denied the
+    # context root and said nothing about `backends/.env`: a pattern believed to cover a set
+    # that covered a prefix of it. Here, a list believed to name the population named a
+    # prefix of it. A count about a set you own must be DERIVED from the set.
+    #
+    # So this job builds the population from the source and asserts the correspondence BY
+    # NAME, never by count:
+    #
+    #   UNARMED CHECK   a matcher with no arm. A check nobody has shown can fail.
+    #   STALE ARM       an arm naming a matcher that no longer exists. A test of nothing.
+    #
+    # They are different bugs and are reported separately. Any number this job prints is the
+    # length of a list it built, and the floors below exist only to catch a SHRINK, which set
+    # equality cannot see: deleting a matcher together with its arm satisfies every set
+    # comparison here.
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: prove the discovery library's own instruments fire
+        # Every function in tools/ci/census.sh fails by returning an EMPTY SET, which is
+        # indistinguishable from "there is nothing to find". An empty registry would make the
+        # correspondence below pass vacuously and this job would certify a population it
+        # never enumerated -- the most convincing inert instrument in the repository. So each
+        # is exercised against a planted fixture first, positive and near-miss, and the
+        # fixture is discarded.
+        run: |
+          set -euo pipefail
+          . tools/ci/census.sh
+          fail() { echo "CONTROL FAILED: $1"; exit 1; }
+
+          d="$(mktemp -d)"
+          trap 'rm -rf "$d"' EXIT
+          mkdir -p "$d/.github/workflows/sub" "$d/deploy/images/probe"
+
+          # The fixture: one construct inside a declared span, one construct outside every
+          # span, and four decoys that must each be ignored -- a plural tag, a lower-case
+          # tag, a construct inside an echo, and an arm tag that is not a matcher tag.
+          {
+            printf '# %s: fixture-covered\n' MATCHER
+            printf 'fixture_covered() { grep -q x "$1"; }\n'
+            printf '# /%s\n' MATCHER
+            printf 'fixture_naked() { grep -q y "$1"; }\n'
+            printf '# %sS: not-an-id\n' MATCHER
+            printf '# %s: lower-case-is-not-an-id\n' matcher
+            printf 'echo "grep here is prose about a matcher, not a matcher"\n'
+            printf '# %s: fixture-covered\n' ARM
+          } > "$d/fixture.sh"
+
+          got=$(marker_spans "$d/fixture.sh" | tr '\n' ';')
+          [ "$got" = "1 3 fixture-covered;" ] \
+            || fail "marker_spans returned [$got], expected [1 3 fixture-covered;]"
+
+          # The three marker errors, each its own arm. A convention that merely asks you to
+          # remember the closing marker leaves exactly the hole these close.
+          printf '# %s: never-closed\nx() { grep -q a "$1"; }\n' MATCHER > "$d/unclosed.sh"
+          says "$(marker_spans "$d/unclosed.sh")" "ERROR unclosed" \
+            || fail "marker_spans did not report an unclosed MATCHER, so a span could swallow the rest of a file"
+          printf '# /%s\n' MATCHER > "$d/unopened.sh"
+          says "$(marker_spans "$d/unopened.sh")" "ERROR unopened-close" \
+            || fail "marker_spans did not report a close with no open"
+          printf '# %s: a\n# %s: b\n# /%s\n' MATCHER MATCHER MATCHER > "$d/nested.sh"
+          says "$(marker_spans "$d/nested.sh")" "ERROR nested-marker" \
+            || fail "marker_spans did not report a nested MATCHER"
+
+          got=$(declared_ids MATCHER "$d/fixture.sh" | tr '\n' ' ')
+          [ "$got" = "fixture-covered " ] \
+            || fail "declared_ids MATCHER returned [$got], expected [fixture-covered ] -- a plural or lower-case tag must not register, and an id that fails to register is a matcher this job cannot see"
+          got=$(declared_ids ARM "$d/fixture.sh" | tr '\n' ' ')
+          [ "$got" = "fixture-covered " ] \
+            || fail "declared_ids ARM returned [$got], expected [fixture-covered ]"
+
+          got=$(construct_hits "$d/fixture.sh" | awk 'NF{c++} END{print c+0}')
+          [ "$got" -eq 2 ] \
+            || fail "construct_hits found $got constructs in the fixture, expected 2 -- the two matcher lines, and neither the prose line nor the comments"
+
+          got=$(uncovered construct_hits "$d/fixture.sh")
+          says "$got" "fixture_naked" \
+            || fail "uncovered did not report the construct that sits outside every span, so an undeclared matcher would be invisible to this job"
+          if says "$got" "fixture_covered"; then
+            fail "uncovered reported a construct that IS inside a declared span, so this check would reject every correctly declared matcher"
+          fi
+
+          : > "$d/deploy/images/probe/Dockerfile.dockerignore"
+          : > "$d/deploy/images/probe/dockerignore.txt"
+          got=$( cd "$d" && ignore_pattern_files | tr '\n' ' ')
+          [ "$got" = "deploy/images/probe/Dockerfile.dockerignore " ] \
+            || fail "ignore_pattern_files returned [$got] -- a pattern set it cannot see is a pattern set with no arm, which is how 97727b8 survived"
+
+          {
+            printf 'gitleaks detect --source .\n'
+            printf '# gitleaks detect, commented out\n'
+            printf 'echo "gitleaks detect, in prose"\n'
+          } > "$d/scan.sh"
+          got=$(scanner_sites "$d/scan.sh" | awk 'NF{c++} END{print c+0}')
+          [ "$got" -eq 1 ] \
+            || fail "scanner_sites found $got invocation sites, expected 1 -- the comment and the echo are not invocations"
+
+          : > "$d/.github/workflows/a.yml"
+          : > "$d/.github/workflows/b.yaml"
+          : > "$d/.github/workflows/c.txt"
+          : > "$d/.github/workflows/sub/d.yml"
+          got=$( cd "$d" && workflow_files | tr '\n' ' ')
+          [ "$got" = ".github/workflows/a.yml .github/workflows/b.yaml " ] \
+            || fail "workflow_files returned [$got] -- it must match both YAML extensions, and neither a .txt nor a file in a subdirectory"
+
+          mkdir -p "$d/tools/ci/sub"
+          : > "$d/tools/ci/helper.sh"
+          : > "$d/tools/ci/notes.txt"
+          : > "$d/tools/ci/sub/deeper.sh"
+          got=$( cd "$d" && scanned_files | tr '\n' ' ')
+          [ "$got" = ".github/workflows/a.yml .github/workflows/b.yaml tools/ci/helper.sh " ] \
+            || fail "scanned_files returned [$got] -- it must match the workflows and every tools/ci script, and neither a .txt nor a script in a subdirectory. A file this set misses is a file whose matchers nothing censuses."
+
+          printf 'jobs:\n  alpha:\n    steps: []\n  beta:\n    steps: []\n' > "$d/two.yml"
+          got=$(job_names "$d/two.yml" | tr '\n' ' ')
+          [ "$got" = "alpha beta " ] || fail "job_names returned [$got], expected [alpha beta ]"
+          printf 'name: nojobs\non: push\n' > "$d/none.yml"
+          got=$(job_names "$d/none.yml" | awk 'NF{c++} END{print c+0}')
+          [ "$got" -eq 0 ] || fail "job_names found jobs in a workflow that declares none"
+
+          {
+            printf '          [ -z "$x" ] || v "A9 planted violation"\n'
+            printf '          d "B9 planted deferral"\n'
+            printf '          deferred="B%s already seen|C1 not an A or B id"\n' 9
+            printf '          echo "v \\"A1 this line is prose\\""\n'
+          } > "$d/obl.sh"
+          got=$(obligation_ids "$d/obl.sh" | tr '\n' ' ')
+          [ "$got" = "A9 B9 " ] \
+            || fail "obligation_ids returned [$got], expected [A9 B9 ] -- C1 is not an A/B id and the echo line is prose about an obligation rather than one"
+
+          {
+            printf 'a() { grep -q p "$1"; }\n'
+            printf '# CENSUS-EXEMPT-BELOW: quoted data follows, not decisions\n'
+            printf 'b() { grep -q q "$1"; }\n'
+          } > "$d/exempt.sh"
+          got=$(exempt_line "$d/exempt.sh")
+          [ "$got" = "2" ] || fail "exempt_line returned [$got], expected [2]"
+          got=$(construct_hits "$d/exempt.sh" | awk 'NF{c++} END{print c+0}')
+          [ "$got" -eq 1 ] \
+            || fail "construct_hits found $got constructs in the exemption fixture, expected 1 -- a marker that truncates too early silently shrinks the census, which is the unsafe direction"
+          got=$(exempt_line "$d/fixture.sh")
+          [ -z "$got" ] \
+            || fail "exempt_line reported an exemption at line [$got] in a file that carries none"
+
+          # THE THREE STATUSES, both ways. These two controls exist because the census
+          # step died silently while being written: scanner_sites over a file with no
+          # scanner invocation returned grep's 1, pipefail propagated it and set -e killed
+          # the step with no message. And with a directory as the target, awk failed, grep
+          # saw empty input and the whole thing read as "nothing to find" -- a clean census
+          # produced by a failure to look, which is finding E inside the instrument built to
+          # prevent it.
+          printf 'nothing here decides anything\n' > "$d/plain.txt"
+          st=0
+          out=$(construct_hits "$d/plain.txt") || st=$?
+          [ "$st" -eq 0 ] && [ -z "$out" ] \
+            || fail "construct_hits over a file with no constructs returned status $st and [$out]; a legitimate empty result must not be an error"
+          st=0
+          out=$(scanner_sites "$d/plain.txt") || st=$?
+          [ "$st" -eq 0 ] && [ -z "$out" ] \
+            || fail "scanner_sites over a file with no invocations returned status $st and [$out]"
+          st=0
+          out=$(construct_hits "$d" 2>&1) || st=$?
+          [ "$st" -eq 2 ] && says "$out" "ERROR construct_hits cannot read" \
+            || fail "construct_hits over an unreadable target returned status $st and [$out]; a target that cannot be read is not a file with nothing in it"
+          st=0
+          out=$(scanner_sites "$d" 2>&1) || st=$?
+          [ "$st" -eq 2 ] && says "$out" "ERROR scanner_sites cannot read" \
+            || fail "scanner_sites over an unreadable target returned status $st and [$out]"
+
+          # The two REGISTRY readers, same discipline. An empty registry is the condition
+          # that would make every correspondence in the next step pass vacuously, so it has
+          # to be reportable rather than fatal: with grep's statuses collapsed, both of these
+          # killed the census step with no output at all, and their own arms found it.
+          st=0
+          out=$(declared_ids MATCHER "$d/plain.txt") || st=$?
+          [ "$st" -eq 0 ] && [ -z "$out" ] \
+            || fail "declared_ids over a file with no tags returned status $st and [$out]; an EMPTY registry must be reportable, not fatal"
+          st=0
+          out=$(obligation_ids "$d/plain.txt") || st=$?
+          [ "$st" -eq 0 ] && [ -z "$out" ] \
+            || fail "obligation_ids over a file with no obligations returned status $st and [$out]"
+
+          echo "control ok: all eleven instruments in tools/ci/census.sh fire on a planted"
+          echo "            positive and stay quiet on a near-miss, all three marker errors"
+          echo "            are reported rather than absorbed, and the census exemption"
+          echo "            truncates where it says and nowhere earlier. An empty result and"
+          echo "            a failure to look are told apart, in both directions."
+
+      - name: discover the population, and assert every matcher has an arm
+        run: |
+          set -euo pipefail
+          . tools/ci/census.sh
+          n() { printf '%s\n' "$1" | awk 'NF{c++} END{print c+0}'; }
+          problems=0
+          blame() { echo; echo "$1"; printf '%s\n' "$2" | awk 'NF{print "    " $0}'; problems=$((problems + 1)); }
+
+          # ---- the files and the jobs, discovered rather than named ----------------------
+          # A census that hard-coded ci.yml, or a glob that happened to match today's one
+          # file, would go quiet the day a second workflow landed -- and the quiet would be
+          # indistinguishable from a clean result.
+          WFS=$(workflow_files)
+          NWF=$(n "$WFS")
+          [ "$NWF" -ge 1 ] || {
+            echo "NO WORKFLOW FILES FOUND. Every set below would be empty and every"
+            echo "correspondence would pass vacuously, so this fails instead."
+            exit 1
+          }
+          echo "workflow files discovered: $NWF"
+          printf '%s\n' "$WFS" | awk 'NF{print "  - " $0}'
+
+          NJOBS=0
+          for f in $WFS; do
+            JN=$(job_names "$f")
+            nj=$(n "$JN")
+            [ "$nj" -ge 1 ] || {
+              echo "$f declares NO jobs. Either it is not a workflow or the parse failed;"
+              echo "either way a population derived from it would be a fiction."
+              exit 1
+            }
+            echo "jobs in $f: $nj -- $(printf '%s' "$JN" | tr '\n' ' ')"
+            NJOBS=$((NJOBS + nj))
+          done
+          echo "jobs discovered: $NJOBS"
+
+          # DISCOVERED, not listed. A hand-typed list of the files whose hand-typed lists
+          # this job exists to replace would be the same defect one level up, and a third
+          # script under tools/ci/ would have been scanned by nothing.
+          SCANNED=$(scanned_files)
+          echo "files scanned for matchers and arms: $(n "$SCANNED")"
+          printf '%s\n' "$SCANNED" | awk 'NF{print "  - " $0}'
+
+          # ---- span integrity, before anything is derived from the spans -----------------
+          for f in $SCANNED; do
+            errs=$(marker_spans "$f" | awk '$1 == "ERROR"')
+            [ -z "$errs" ] || blame "MARKER ERRORS in $f -- no population can be derived from an unbalanced registry:" "$errs"
+          done
+          [ "$problems" -eq 0 ] || exit 1
+
+          # ---- the population: a registry UNION a discovery ------------------------------
+          # Declared ids come from the `# MATCHER:` registry. Derived ids come from the
+          # ignore-file census, where the FILE'S EXISTENCE is the declaration -- so a third
+          # service's pattern set cannot be added without an arm, registry or no registry.
+          DECLARED=$(declared_ids MATCHER $SCANNED)
+          DERIVED=$(ignore_pattern_files | sed -E 's|.*/images/([^/]+)/[^/]+$|\1-ignore-patterns|' | sort -u)
+          MATCHERS=$(printf '%s\n%s\n' "$DECLARED" "$DERIVED" | awk 'NF' | sort -u)
+          ARMS=$(declared_ids ARM tools/ci/arms.sh)
+          OBLIGATIONS=$(obligation_ids $WFS)
+          OARMS=$(declared_ids OBLIGATION-ARM tools/ci/arms.sh)
+
+          UNARMED=$(comm -23 <(printf '%s\n' "$MATCHERS") <(printf '%s\n' "$ARMS"))
+          STALE=$(comm -13 <(printf '%s\n' "$MATCHERS") <(printf '%s\n' "$ARMS"))
+          OUNARMED=$(comm -23 <(printf '%s\n' "$OBLIGATIONS") <(printf '%s\n' "$OARMS"))
+          OSTALE=$(comm -13 <(printf '%s\n' "$OBLIGATIONS") <(printf '%s\n' "$OARMS"))
+
+          [ -z "$UNARMED" ] || blame "UNARMED CHECK -- these matchers exist and no arm names them. Nobody has shown they can fail:" "$UNARMED"
+          [ -z "$STALE" ] || blame "STALE ARM -- these arms name a matcher that no longer exists. Each is a test of nothing:" "$STALE"
+          [ -z "$OUNARMED" ] || blame "UNARMED OBLIGATION -- the preflight asserts these and no arm shows the assertion firing:" "$OUNARMED"
+          [ -z "$OSTALE" ] || blame "STALE OBLIGATION ARM -- these arms name an obligation the preflight no longer carries:" "$OSTALE"
+
+          # ---- coverage: the registry is not optional ------------------------------------
+          # Without this, `# MATCHER:` is a convention anyone can decline to follow, and a
+          # pattern added without a declaration would be invisible above. That is exactly
+          # how the population came to be read as twelve.
+          for f in $SCANNED; do
+            u=$(uncovered construct_hits "$f")
+            [ -z "$u" ] || blame "UNDECLARED MATCHER in $f -- a pattern that decides something and sits outside every declared span:" "$u"
+            u=$(uncovered scanner_sites "$f")
+            [ -z "$u" ] || blame "UNDECLARED SCANNER in $f -- an external scanner's ruleset is a matcher and this invocation is in no span:" "$u"
+          done
+
+          # ---- the totals, each the length of a list built above --------------------------
+          NM=$(n "$MATCHERS"); NA=$(n "$ARMS"); NO=$(n "$OBLIGATIONS"); NOA=$(n "$OARMS")
+          echo
+          echo "matchers discovered:            $NM"
+          echo "arms discovered:                $NA"
+          echo "step-4 obligations discovered:  $NO"
+          echo "obligation arms discovered:     $NOA"
+          echo
+          printf '%s\n' "$MATCHERS" | awk 'NF{print "  matcher  " $0}'
+          printf '%s\n' "$OBLIGATIONS" | awk 'NF{print "  obligation  " $0}'
+
+          # ---- FLOORS, NOT PINS ----------------------------------------------------------
+          # Set equality above is the real gate and it fails by name. These catch the one
+          # thing it cannot see: deleting a matcher TOGETHER with its arm satisfies every
+          # comparison above. A floor goes red only on a SHRINK, so the population may grow
+          # freely -- a pin would go red on exactly the growth this gate exists to permit.
+          # Raising a floor is a one-line deliberate act; lowering one should need an
+          # argument in the pull request that does it.
+          MATCHER_FLOOR=34
+          OBLIGATION_FLOOR=12
+          [ "$NM" -ge "$MATCHER_FLOOR" ] || blame "POPULATION SHRANK: $NM matchers against a floor of $MATCHER_FLOOR. Set equality cannot see a matcher deleted together with its arm, which is what this floor is for. If the removal was deliberate, lower the floor in the same change and say why." ""
+          [ "$NO" -ge "$OBLIGATION_FLOOR" ] || blame "OBLIGATIONS SHRANK: $NO against a floor of $OBLIGATION_FLOOR." ""
+
+          echo
+          if [ "$problems" -ne 0 ]; then
+            echo "CENSUS FAILED: $problems problem(s) above."
+            exit 1
+          fi
+          echo "census ok: every matcher has an arm, every arm names a live matcher, every"
+          echo "           pattern-decision construct sits inside a declared span, and both"
+          echo "           totals are the length of a list derived from the source."
+          {
+            echo "### matcher census"
+            echo ""
+            echo "$NM matchers, $NA arms, $NO step-4 obligations, $NOA obligation arms."
+            echo "Discovered from $NWF workflow file(s) and $NJOBS job(s); no list was read."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  arms:
+    name: arms
+    runs-on: ubuntu-24.04
+    # THE ARMS RUN IN CI, not only by hand. The census job proves every matcher HAS an arm;
+    # it cannot prove the arm still works, because existence and efficacy are different
+    # properties and a committed arm that quietly stopped firing would satisfy the census
+    # perfectly. Running them is the only thing that closes that.
+    #
+    # It takes under a minute. Each arm clones this repository locally, mutates the clone,
+    # runs one CI step against it and requires the check to catch the mutation -- so this job
+    # is the repository testing its own gates, including the gates added in this change.
+    steps:
+      - uses: actions/checkout@v7
+      - name: every gate catches its own mutation
+        run: |
+          set -euo pipefail
+          bash tools/ci/arms.sh
