@@ -620,3 +620,114 @@ obeys the rule and the history does not.
   everything a reader needs; the pair of literals carries the value as well. This is the
   rule that `b465f4a` broke while obeying the first one, which is why it is written here
   and not left as a lesson in a commit nobody will re-read.
+
+## The gate audit of 2026-11-03, and what it found
+
+Every check in `.github/workflows/ci.yml` and `tools/` was read against two questions, and
+**nothing was changed while reading**: a sweep that fixes as it goes cannot afterwards say
+how many checks were sound, and that number is the point of the exercise.
+
+1. Is a non-zero exit anywhere read as a **verdict**, when it could also be a **crash**?
+2. Does a control exercise only a **subset** of its subject's arguments, inputs or
+   environment — so that it cannot fail the way its subject fails?
+
+**23 checks audited: 13 sound, 1 weak, 9 carrying a defect.** Nine distinct defects, one of
+which (D) accounts for four of those nine rows.
+
+The result is lopsided and the shape of it matters more than the count: **every defect is in
+`ci.yml`, and the hook is clean.** `tools/git-hooks/pre-push` was rewritten on 2026-11-02 for
+exactly this class of fault. `ci.yml` carries the same control, written the same way, and was
+not revisited — so the fix landed on one of two instances of one defect. That is the
+generalisable lesson here, and it is why this audit was asked for as a sweep rather than as a
+second look at the hook.
+
+### The nine findings
+
+**A — `ci.yml`'s canary reads a crash as a fired canary.** `prove the scanner fires` treats
+any non-zero exit as "the planted credential was flagged". Measured: gitleaks exits **1** both
+when it finds a secret and when it cannot write its report, so the two are indistinguishable
+from the exit code. A stub scanner that finds nothing and exits 1 makes the step print
+`control ok: gitleaks flags a generated known-positive` and exit 0. The same stub makes the
+hook refuse, by name, with the reason. Proposal: classify by report shape, as the hook does.
+
+**B — that canary runs a subset of its subject's arguments.** The gate passes
+`--report-format sarif --report-path`; the control passes neither. This is verbatim the
+asymmetry the hook's own comment records as having been worse than useless. Proposal: give
+the control the gate's reporting arguments. A and B are one row and one fix.
+
+**C — a step named for coverage it does not have.** `scan working tree and full history`
+runs `gitleaks detect --source`, which traverses **history only**. Measured: an uncommitted
+credential exits 0 under `--source` and 1 under `--no-git`. On a clean CI checkout the
+working tree is a subset of history, so the **effect** is correct and nothing is unscanned —
+but the name asserts a check that did not run, which is the defect the hook was corrected for
+in the same breath. Proposal: rename. Do not add `--no-git` to a gate; see H7 below.
+
+**D — four skip conditions that a broken checkout satisfies.** `byte-compile python, if any`,
+`run tests, if any`, `the example env files must be GENERATED` and `the in-network profile
+must not contain loopback` each skip, green, when they cannot find their subject, with no
+presence assertion first. This is the `validate compose` defect of 2026-10-27, which printed
+`no compose file yet - skipping` while a syntax error shipped. It is now **strictly** a
+false-green path, because the tree does contain python, 87 tests, a resolver and a profile: in
+a healthy tree those branches are unreachable, so reaching one means something is wrong and
+the step says "expected pre-source". Proposal: the presence guard the `images` job already
+uses — assert what cannot be absent, then skip only on what legitimately can.
+
+**E — `if grep` reads grep's error as a clean result.** The loopback check. Measured: grep
+exits **2** on an error and `if grep` treats that as no match, so an unreadable profile
+reports `no loopback in the in-network profile`. Proposal: branch on the three statuses.
+
+**F — a control whose comment claims more than its loop checks.** `profiles/compose.env must
+actually reach the router` says "the three router URLs are hardcoded in compose.yaml ON
+PURPOSE and MUST keep overriding the file" and then iterates **two**, omitting
+`RAMEAU_ROUTER_CHAT_URL`. `compose.yaml` hardcodes all three. Severity is genuinely low —
+`shared/test_resolver.py` asserts the omitted one — so the defect is the overclaim, not a
+coverage hole. Proposal: add the third to the loop.
+
+**G — `|| true` swallowing a read error, in the check added for this very class.** `every
+script must be executable IN THE INDEX` does `head -c 2 -- "$f" 2>/dev/null || true`.
+Measured as an unprivileged user: an unreadable file passes `[ -f ]`, `head` fails, the
+substitution is empty, the shebang test is false, and the file is **skipped silently** — and
+not counted, so the `scanned -eq 0` backstop does not see it either. This is mine, and it is
+the same `|| echo '?'` shape that was removed from the hook two days earlier. Proposal:
+distinguish "not a script" from "could not be read", and fail on the second.
+
+**H — that check has no control.** Nothing plants a `100644` file with a shebang and confirms
+it is flagged. The `scanned -eq 0` assertion proves the loop read *something*, which is a
+partial control and not the same thing. Recorded as an obligation rather than a defect: the
+check is correct today by inspection, and an uncontrolled check is weaker than a controlled
+one without being wrong.
+
+**I — `export` masking a failed command substitution.** `build both images` runs
+`export RAMEAU_COMMIT="$(git rev-parse --short HEAD)"`. Measured: `export V="$(false)"` exits
+**0** under `set -euo pipefail` and leaves `V` empty, where the bare assignment `V="$(false)"`
+exits 1. So a failed `rev-parse` yields an empty value, `${RAMEAU_COMMIT:-unknown}` resolves
+to `unknown`, and the image is labelled with a plausible wrong provenance instead of the build
+failing. Proposal: assign, then export.
+
+### The one weak check, recorded as weak rather than as a defect
+
+`validate compose`'s required-variable control asserts that the stack refuses to resolve with
+`RAMEAU_OLLAMA_URL` unset, by treating any non-zero `docker compose config` as confirmation.
+Measured: it prints `control ok` for a compose file that does not mention the variable and does
+not parse. But it correctly **fails** for a parseable file that has no required variable —
+which is the direction the control exists to protect — and the gate on the next line catches
+the unparseable case, so there is no green anywhere. It certifies for the wrong reason without
+certifying a falsehood. Proposal, optional: match the interpolation error text.
+
+### Two things this audit deliberately does not propose
+
+- **The advisory working-tree pass stays advisory.** `--no-git` reports untracked *and*
+  gitignored files, so a local `.env` — the file `.gitignore` exists to keep out — would
+  refuse every push. A gate people disable protects nothing. It has no control, and an
+  advisory pass needs none; it is the only check here whose correct form is "warn and
+  proceed", and it must not be promoted on the strength of appearing in a defect list.
+- **The hook scanning all local history rather than the pushed refs.** It ignores the ref
+  information on stdin, so a finding on an unpushed local branch refuses the push. That
+  over-blocks, which is the safe direction, and narrowing it would trade a false refusal for
+  a possible miss. Left as it is, named so it is not rediscovered as a defect.
+
+### The obligation this leaves
+
+The nine fixes are **not in this change**, by instruction: the audit is the deliverable and a
+verdict per check is only meaningful if it predates the edits. They land next, A and B
+together, and each one carries the measurement recorded above rather than a fresh assertion.
