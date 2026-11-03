@@ -373,10 +373,50 @@ jobs:
             fi
             # Deny-by-default is the property the COPY groups rest on: `COPY *.py ./`
             # cannot narrow a context, only the ignore-file can.
-            if ! grep -qx '\*\*' "$ign"; then
-              echo "    $ign does not deny-all first: no bare line of two asterisks."
-              echo "    Without it the re-admissions below it are decoration, and the"
-              echo "    context is everything in the directory."
+            #
+            # THE FIRST pattern line, not merely a present one. A `**` sitting BELOW the
+            # re-admissions denies them instead of preceding them, and the context is then
+            # empty rather than unbounded -- a different failure, equally silent, and one a
+            # presence check cannot see. This step asserted presence until 2026-11-03 while
+            # its own message said "first", which is the defect this very commit's
+            # neighbours exist to stop: a control that cannot fail the way it claims to.
+            #
+            # NORMALISED THE WAY DOCKER NORMALISES, measured rather than recalled: a stub
+            # context was built three times with the pattern written `**`, `  **  ` and
+            # `**` plus a CR, and all three denied identically with `!keep.txt` re-admitted.
+            # So Docker strips leading and trailing whitespace and tolerates the CR, and a
+            # gate comparing raw text would refuse a file Docker accepts. The CR case is not
+            # hypothetical here: .gitattributes normalises to LF in THIS tree, and a clone
+            # made under different EOL translation is exactly where it would appear.
+            #
+            # DO NOT CONCLUDE THE CR STRIP IS DEAD CODE FROM A WINDOWS TEST. gawk on
+            # Windows opens in text mode and removes the CR before any rule sees the
+            # record, so there the line provably does nothing -- measured, gawk 5.3.2.
+            # On this job's ubuntu runner gawk keeps it, and then `[ 	]+$` cannot match a
+            # record ending in CR, so without this sub the value stays `**` plus a CR and
+            # the step fails on a file Docker accepts. That half is reasoned from the two
+            # platforms' documented record handling, not measured on the runner.
+            #
+            # awk rather than `grep ... | head -1`: `head` closing the pipe early sends
+            # SIGPIPE upstream, which `set -o pipefail` turns into a failure of the whole
+            # step. This repository has already been bitten by that once -- see the
+            # `cut`-not-`head` note in the canary step above -- so awk reads the file
+            # directly and there is no upstream producer to signal.
+            first=$(awk '
+              { line = $0
+                sub(/\r$/,       "", line)
+                sub(/^[ \t]+/,    "", line)
+                sub(/[ \t]+$/,    "", line)
+                if (line == "" || line ~ /^#/) next
+                print line; exit }
+            ' "$ign")
+            if [ "$first" != '**' ]; then
+              echo "    $ign does not deny-all FIRST."
+              echo "    Its first pattern line is: ${first:-<none>}"
+              echo "    Expected a bare line of two asterisks. Before it, nothing is"
+              echo "    excluded, so the re-admissions are decoration and the context is"
+              echo "    everything in the directory; after it, the re-admissions above are"
+              echo "    themselves denied and the context is empty. Both are silent."
               bad=1; continue
             fi
             echo "    ok: ignore-file present, tracked, deny-by-default"
