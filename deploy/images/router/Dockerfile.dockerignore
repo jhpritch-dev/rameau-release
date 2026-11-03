@@ -76,30 +76,53 @@
 # detail into a published image is the thing the release exists to avoid.
 
 # ---- never, under any circumstances ----
-# Belt and braces. Everything here is already excluded by `**`, and it is restated so that a
-# future edit which re-admits a directory cannot sweep one of these in as a side effect.
-.env
-.env.*
-*.pem
-*.key
-*.p12
-*.pfx
-id_rsa
-id_ed25519
-.netrc
-.git-credentials
-.git/
-.github/
+# Every pattern here is RECURSIVE (`**/`), and that is the whole point of the block rather
+# than a style choice. The stated purpose is that a re-admission above cannot sweep one of
+# these in as a side effect -- and `backends/**` and `skills/**` above are exactly such
+# re-admissions, wholesale.
+#
+# A ROOT-ANCHORED pattern cannot reach into them. Docker matches an ignore pattern against
+# the whole context-relative path and a single `*` does not cross a `/`, so `*.pem` matches
+# `foo.pem` and NOT `backends/foo.pem`. Until 2026-11-03 every line below except the two
+# __pycache__/pyc ones was root-anchored, so the block was in force only at the top level --
+# which is the one place `**` already covered it. Where it was actually needed it did nothing.
+#
+# MEASURED, not reasoned about, in a throwaway stub context built outside git and discarded:
+# with the previous root-anchored set, `backends/inner.pem`, `backends/inner.key` and
+# `skills/inner.pem` all arrived in the built image, while `root.pem` and `root.key` were
+# correctly excluded. With the recursive set below the same five are excluded and
+# `backends/mod.py`, `main.py` and `requirements.txt` still arrive. `**/X` was confirmed to
+# subsume `X`, so the root-anchored twins are not kept alongside: they would be redundant,
+# and two spellings of one rule invite an edit to half of it.
+#
+# The two `**/__pycache__/` and `**/*.pyc` lines were already in this form, which is the
+# evidence that the rule was known and simply not applied to the credential shapes.
+#
+# The test patterns are recursive for the same reason. RELEASE-SCOPE.md's import closure
+# records the shipping set as 8 top-level `.py` plus 4 under `backends/`, with none of the
+# 12 matching `test_*.py` or `*_test.py`, so this excludes nothing the release ships.
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/id_rsa
+**/id_ed25519
+**/.netrc
+**/.git-credentials
+**/.git/
+**/.github/
 **/__pycache__/
 **/*.pyc
-*.log
-*.bak
-*.bak-*
-*.sqlite
-*.db
-.venv/
-venv/
-node_modules/
-tests/
-test_*.py
-*_test.py
+**/*.log
+**/*.bak
+**/*.bak-*
+**/*.sqlite
+**/*.db
+**/.venv/
+**/venv/
+**/node_modules/
+**/tests/
+**/test_*.py
+**/*_test.py

@@ -53,22 +53,58 @@
 # stale build under a stale asset hash -- silently, with no error anywhere. Excluded by `**`
 # already, and named here so that a future edit re-admitting the app root cannot sweep them
 # back in.
+#
+# DELIBERATELY ROOT-ANCHORED, unlike the credential block below. What this guards is a build
+# output committed at the APP ROOT, which is where the source tree carried it. Making it
+# recursive would exclude `public/assets/`, an ordinary place for static files that Vite
+# copies into `dist/` -- so the recursive form would silently drop legitimate content to
+# guard against a file that has never been seen anywhere but the root.
 assets/
 index-*.js
 index-*.css
 dist/
 
 # ---- never, under any circumstances ----
-.env
-.env.*
-*.pem
-*.key
-.netrc
-.git-credentials
-.git/
-node_modules/
-*.log
-*.bak
-*.bak-*
-*_fixed.jsx
-*_v2.jsx
+# RECURSIVE (`**/`), and on this image that matters more than on the router's. `src/**` and
+# `public/**` above are wholesale re-admissions, and a root-anchored pattern cannot reach
+# into either: Docker matches against the whole context-relative path and a single `*` does
+# not cross a `/`, so `*.pem` matches `foo.pem` and NOT `public/foo.pem`.
+#
+# WHY IT IS WORSE HERE. Vite copies `public/` verbatim into `dist/`, and the Dockerfile's
+# serve stage does `COPY --from=build /app/dist/ /usr/share/nginx/html/`. So a key under
+# `public/` does not merely enter the build context -- it is SERVED OVER HTTP by nginx.
+#
+# MEASURED in a throwaway stub context built outside git and discarded. With the previous
+# root-anchored set, `public/leaked.pem`, `public/leaked.key` and `src/leaked.key` all
+# arrived in the built image while `root.pem` was correctly excluded; so did
+# `src/BifrostPortal_fixed.jsx` and `src/BifrostPortal_v2.jsx`, which defeats the two
+# stale-copy patterns entirely -- an editor's `_fixed` copy lives in `src/`, next to the
+# original, which is the only place those patterns were ever meant to guard and the one
+# place they did not reach. With the recursive set below all of those are excluded and
+# `public/logo.svg`, `src/main.jsx`, `index.html`, `nginx.conf`, `package.json` and
+# `vite.config.js` still arrive. `**/X` was confirmed to subsume `X`, so no root-anchored
+# twin is kept beside it.
+#
+# The credential shapes are now the same set as the router's list. They diverged for no
+# recorded reason, and a context that admits `public/` wholesale has more need of them, not
+# less.
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/id_rsa
+**/id_ed25519
+**/.netrc
+**/.git-credentials
+**/.git/
+**/.github/
+**/*.sqlite
+**/*.db
+**/node_modules/
+**/*.log
+**/*.bak
+**/*.bak-*
+**/*_fixed.jsx
+**/*_v2.jsx
