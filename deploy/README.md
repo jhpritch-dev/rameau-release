@@ -140,10 +140,24 @@ goes in your shell or in `deploy/.env`, beside `RAMEAU_OLLAMA_URL`.
 
 One more thing that measurement showed, recorded because it reads as a mistake and is not one
 worth acting on blind: both services share one `env_file:` anchor, so the portal also receives
-the six `RAMEAU_*` endpoint variables and the router also receives whatever `BIFROST_*` the
-file sets. Neither is read — nginx substitutes only names matching `^BIFROST_`, and the router
-resolves only `RAMEAU_*` — so nothing misbehaves today. Splitting the anchor is a deploy-surface
-change and is left to whoever owns that decision; RELEASE-SCOPE.md carries it as open.
+the `RAMEAU_*` endpoint variables, and the router also receives whatever `BIFROST_*` the file
+sets. **How many the portal receives depends on what you put in the file, so the count is
+quoted with its condition or not at all** — measured on Docker 29.4.2 / Compose v5.1.3:
+
+| what `profiles/compose.env` contains | `RAMEAU_*` the portal receives |
+|---|---|
+| `compose.env.example` copied verbatim — 9 keys | **9** |
+| only the five non-router endpoints | **5** |
+
+Neither is read — nginx substitutes only names matching `^BIFROST_`, and the router resolves
+only `RAMEAU_*` — so nothing misbehaves today. Splitting the anchor is a deploy-surface change
+and is left to whoever owns that decision; RELEASE-SCOPE.md carries it as open.
+
+**This paragraph said "six" until 2026-11-03, and six is not reachable in either case.** It
+was read off a throwaway test file that happened to set the five optional endpoints plus
+`RAMEAU_ROUTER_CHAT_URL`, and then written up as though it were a property of the shipped
+example. The first row above is the case an operator actually meets, because step 1 of this
+section tells them to copy that file.
 
 **2. Runtime config.**
 

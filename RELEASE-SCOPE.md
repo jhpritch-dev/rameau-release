@@ -313,11 +313,25 @@ than fixing something.
 
 - **Both services share one `env_file:` anchor, so each receives the other's variables.**
   Measured: with `profiles/compose.env` setting a `BIFROST_*` name, that name reaches the
-  *router*; the portal receives all six `RAMEAU_*` endpoints. Neither is read — nginx
-  substitutes only `^BIFROST_` and the router resolves only `RAMEAU_*` — so nothing misbehaves
-  and no documented claim is false. Splitting the anchor is a deploy-surface change with a real
+  *router*; the portal receives the `RAMEAU_*` endpoints. The count depends on the file and
+  is therefore quoted with its condition: **9** when `compose.env.example` is copied
+  verbatim, which is the case an operator meets because `deploy/README.md` step 1 says
+  to copy it, and **5** when only the five non-router endpoints are set. Neither is read — nginx
+  substitutes only `^BIFROST_` and the router resolves only `RAMEAU_*` — so nothing misbehaves.
+  Splitting the anchor is a deploy-surface change with a real
   argument on each side (a future `BIFROST_*` the portal *should* read from the file would need
   the anchor to stay), so it is recorded rather than taken.
+
+  **This entry said "all six" and "no documented claim is false", and both were wrong
+  in the same sentence: the second was falsified by the first. CORRECTED 2026-11-03.**
+  Six is not reachable in either case. The figure came from a throwaway test file that
+  set the five optional endpoints plus `RAMEAU_ROUTER_CHAT_URL`, and was then
+  generalised as a property of the shipped example rather than read off it. **That is
+  the same defect as the withdrawn "131 dependency decisions"** and the one
+  `PROVENANCE` in `shared/resolver.py` exists to prevent: a number lifted from the
+  wrong instrument and quoted without the configuration it was measured on. Found by
+  the independent review of 2026-11-03, not by the session that wrote it, which is an
+  argument for the review rather than a footnote to it.
 
 - **The step-5 acceptance test still cannot be run here**, for the reason already recorded: the
   one delegated-leaf invocation is owed by the private side, and the four runtime JSON files are
