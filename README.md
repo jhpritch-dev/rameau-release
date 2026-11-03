@@ -135,8 +135,11 @@ container network -- where loopback is the container itself, so a host-oriented 
 every endpoint at nothing. CI regenerates both and diffs them against what is checked in, so
 "generated from the registry" is a gate rather than a header comment.
 
-**`.github/workflows/ci.yml` -- the CI gate.** Three jobs. The secret scan runs gitleaks over
-the working tree *and* the full history, and before trusting a clean report it plants a
+**`.github/workflows/ci.yml` -- the CI gate.** Four jobs. The secret scan runs gitleaks over
+every object in the full history -- not the working tree, which needs `--no-git` and is the
+hook's separate advisory pass; on a clean CI checkout history is a superset, so nothing goes
+unscanned, and this sentence said "working tree *and* full history" until 2026-11-03, which
+was a claim about a check that had not run. Before trusting a clean report it plants a
 generated high-entropy AWS-shaped key in a scratch repository outside the workspace and
 requires gitleaks to flag it -- because a scan that cannot be shown to fire is not evidence.
 The canary is generated rather than written literally for two reasons: a literal key would
@@ -154,6 +157,19 @@ edit. It asserts `compose.yaml` and both Dockerfiles are present *first*, so tha
 can never be what a broken checkout looks like. Every build step is written to pass on an
 empty tree and to start doing real work the moment source appears, so the gate never has to be
 switched on later.
+
+**The step-4 preflight** is the fourth job, and it exists because `RELEASE-SCOPE.md` had
+accumulated a page of obligations on the moment the source lands -- each measured, each
+correct, and each enforced by nothing but a reader remembering them. It asserts them in one
+place: that both ignore files sit where Docker actually reads one, that no GPL `.jar` or model
+weight is tracked, that `NOTICE` appears the moment any font does, and that every tracked file
+carrying a shebang is `100755` *in the index* -- git's record is what travels, and this tree is
+assembled on Windows, which has no executable bit. Seven further obligations need the
+assembled source and are reported **deferred by name** rather than counted as satisfied, among
+them the one that is silent in both directions: a router module outside `backends/` or
+`skills/` is dropped twice, by the ignore file and by no `COPY` naming it, and fails at import
+after a green build. The job reports one of four states by name, and says in its own output
+which obligations it *cannot* check so that they fall to step 5 rather than passing quietly.
 
 **`tools/git-hooks/pre-push` -- the fail-closed local secret gate.** GitHub's push
 protection is unavailable while this repository is private on the current plan (secret
