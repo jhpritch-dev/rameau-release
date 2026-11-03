@@ -1336,6 +1336,22 @@ that.
   removing `-maxdepth 1` makes `top_py_count` over-count, and the control said it "missed a
   top-level module". The message now reads correctly in both directions.
 
+### What the first CI run of the arms job found
+
+The job failed on its first run, and correctly: it drove the secret-scan canary step without
+having installed gitleaks, which exited 127. Everything downstream behaved as designed — the
+canary's own control reported *"exited 127 WITHOUT writing a report, which means it crashed
+rather than found the canary"*, and the harness scored the arm **WRONG-REASON** rather than
+counting it. But one arm reading WRONG-REASON for a missing binary is a far worse diagnosis
+than the whole suite refusing and naming it.
+
+So the harness now asserts its dependencies first and **fails closed** — git, python3 with
+PyYAML, a reachable docker daemon, and gitleaks — for the reason `tools/git-hooks/pre-push`
+fails closed: a harness that quietly skips the arms whose tool is missing manufactures the
+appearance of coverage. The `arms` job installs the same gitleaks version the `secrets` job
+does, because an arm exercising a different gitleaks than the gate would be testing a
+different matcher.
+
 ### The three demonstrations the census rests on
 
 Tagged `DEMO` rather than `ARM`, because they exercise the correspondence logic rather than a

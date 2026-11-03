@@ -44,6 +44,35 @@ trap 'rm -rf "$WORK"' EXIT
 note()   { printf '%s\n' "$*" >&2; }
 record() { RESULTS="$RESULTS$1"$'\n'; }
 
+# ---------------------------------------------------------------------------------------
+# DEPENDENCIES, ASSERTED AND NAMED, BEFORE ANY ARM RUNS
+# ---------------------------------------------------------------------------------------
+# FAILS CLOSED, for the same reason tools/git-hooks/pre-push fails closed when gitleaks is
+# absent: a harness that quietly skips the arms whose tool is missing manufactures the
+# appearance of coverage.
+#
+# Not hypothetical. The first CI run of this file scored the gitleaks arm as WRONG-REASON,
+# because the `arms` job had not installed gitleaks and the canary step it drives exited 127.
+# Everything downstream behaved correctly -- the canary's control reported "exited 127 WITHOUT
+# writing a report, which means it crashed rather than found the canary", and the harness
+# reported WRONG-REASON rather than scoring it -- but one arm reading WRONG-REASON is a far
+# worse diagnosis than the whole suite refusing and naming the binary. Each arm runs a real CI
+# step against a mutated clone, so the arms need what those steps need.
+arms_missing=""
+for arms_dep in git python3 docker gitleaks; do
+  command -v "$arms_dep" >/dev/null 2>&1 || arms_missing="$arms_missing $arms_dep"
+done
+python3 -c 'import yaml' >/dev/null 2>&1 || arms_missing="$arms_missing python3-yaml"
+docker info >/dev/null 2>&1 || arms_missing="$arms_missing docker-daemon"
+if [ -n "$arms_missing" ]; then
+  note "ARMS REFUSED: needed and not available:$arms_missing"
+  note ""
+  note "Every arm runs one real CI step against a mutated clone, so the arms need what those"
+  note "steps need. Skipping the arms whose tool is missing would report coverage this run"
+  note "does not have, so this refuses instead and names what is absent."
+  exit 2
+fi
+
 # MATCHER: arm-expectation-match
 # THE HARNESS'S OWN MATCHER, and the most load-bearing one in this file: were it to match
 # unconditionally, every arm below would score ARMED whatever actually happened, and this

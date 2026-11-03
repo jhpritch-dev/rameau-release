@@ -1988,6 +1988,24 @@ jobs:
     # is the repository testing its own gates, including the gates added in this change.
     steps:
       - uses: actions/checkout@v7
+
+      - name: install gitleaks
+        # THE ARMS NEED WHAT THE STEPS THEY DRIVE NEED. The first run of this job did not
+        # install it, the canary arm drove a step that exited 127, and the harness reported
+        # WRONG-REASON -- correct, and a much worse diagnosis than naming the binary. The
+        # harness now refuses outright when a dependency is absent; this step is why it has
+        # one to find. Same version as the `secrets` job, deliberately: an arm that exercised
+        # a different gitleaks than the gate would be testing a different matcher.
+        env:
+          GITLEAKS_VERSION: 8.21.2
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
       - name: every gate catches its own mutation
         run: |
           set -euo pipefail
