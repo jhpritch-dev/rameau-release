@@ -419,7 +419,53 @@ jobs:
               echo "    themselves denied and the context is empty. Both are silent."
               bad=1; continue
             fi
-            echo "    ok: ignore-file present, tracked, deny-by-default"
+            # AND THE NEVER-BLOCK MUST BE LAST, which is a SECOND and independent
+            # position property. The first-line check above asks whether the file starts by
+            # denying everything. This asks whether anything re-admits after it stops.
+            #
+            # A .dockerignore is LAST-MATCH-WINS. 1d69a59 made the never-block REACH into
+            # the directories this file re-admits wholesale; nothing made it LAST. Measured
+            # on the committed portal file with one plausible later edit -- `!public/` and
+            # `!public/**` appended below the block -- `public/leaked.pem` and
+            # `public/leaked.key` came straight back into the built image, and the gate as
+            # of 21577b1 PASSED that file, because it inspected only the first line.
+            #
+            # These files' own prose promises the block survives "a future edit which
+            # re-admits a directory". That promise rests entirely on being last, and until
+            # now it was a promise rather than a property.
+            #
+            # Located by the block's marker comment, and ABSENT MARKER IS A FAILURE rather
+            # than a skip: a gate that cannot find the block it is checking must not be the
+            # thing that reports success. That is the `validate compose` lesson again.
+            marker='# ---- never, under any circumstances ----'
+            if ! grep -qxF "$marker" "$ign"; then
+              echo "    $ign has no \"never, under any circumstances\" marker line, so the"
+              echo "    final-deny block cannot be located and its position cannot be"
+              echo "    checked. Restore the marker or teach this step the new structure."
+              bad=1; continue
+            fi
+            after=$(awk -v marker="$marker" '
+              { line = $0
+                sub(/\r$/,    "", line)
+                sub(/^[ \t]+/, "", line)
+                sub(/[ \t]+$/, "", line)
+                if (line == marker) { seen = 1; next }
+                if (!seen)                      next
+                if (line == "" || line ~ /^#/)  next
+                n++
+                if (line ~ /^!/) print "      line " FNR ": " line }
+              END { if (n == 0) print "      <<the never-block has no patterns at all>>" }
+            ' "$ign")
+            if [ -n "$after" ]; then
+              echo "    $ign re-admits below its never-block, or has emptied it:"
+              echo "$after"
+              echo "    .dockerignore is last-match-wins, so a negation below that block"
+              echo "    re-admits exactly what it denies -- silently, and on the portal"
+              echo "    anything under public/ is then SERVED, not merely shipped."
+              echo "    Move the re-admission ABOVE the block."
+              bad=1; continue
+            fi
+            echo "    ok: ignore-file present, tracked, deny-by-default, never-block last"
           done < <(printf '%s' "$cfg" | jq -r '
             .services | to_entries
             | map(select(.value.build))

@@ -69,11 +69,26 @@
 !skills/**
 
 # ---- NOT admitted, and deliberately so ----
-# The four runtime JSON files (fleet_config.json, capability_registry.json,
-# capability_profiles.json, bifrost_shell_policy.json) are absent from this context by
-# design. The release ships them as *.example.json and the stack bind-mounts the operator's
-# copies; see the Dockerfile and deploy/compose.yaml. Do not re-admit them: baking fleet
-# detail into a published image is the thing the release exists to avoid.
+# The four runtime JSON files are absent from this context by design. The release ships them
+# as *.example.json and the stack bind-mounts the operator's copies; see the Dockerfile and
+# deploy/compose.yaml. Do not re-admit them: baking fleet detail into a published image is
+# the thing the release exists to avoid.
+#
+# NAMED AS PATTERNS, not left to `**`, and recursive -- added 2026-11-03. This section was
+# prose only, which meant the four files were kept out at the CONTEXT ROOT and nowhere else:
+# `backends/**` and `skills/**` above re-admit wholesale, and `**` has already been
+# overridden by the time a file inside them is considered. Measured on the committed file,
+# `backends/fleet_config.json`, `backends/capability_profiles.json`,
+# `backends/bifrost_shell_policy.json` and `skills/capability_registry.json` all arrived in
+# the built image while the root `fleet_config.json` was correctly excluded.
+#
+# A blanket `**/*.json` would NOT do: it would sit below the `!requirements.txt`-style
+# re-admissions and, on the portal's list, below `!package.json` -- so the four are named
+# one by one, which is also the only form that says which files this is about.
+**/fleet_config.json
+**/capability_registry.json
+**/capability_profiles.json
+**/bifrost_shell_policy.json
 
 # ---- never, under any circumstances ----
 # Every pattern here is RECURSIVE (`**/`), and that is the whole point of the block rather
