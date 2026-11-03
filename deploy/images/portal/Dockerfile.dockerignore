@@ -64,21 +64,30 @@
 #
 # THE OTHER THREE ARE NOW RECURSIVE, and the previous comment was wrong to cover them with
 # the same sentence. An `index-<hash>.js` is a build OUTPUT shape, never a Vite input, so
-# recursion costs nothing there -- whereas root-anchoring cost plenty. Measured on the
-# committed file: `public/index-a1b2c3.js`, `public/assets/index-a1b2c3.js`,
-# `public/assets/index-a1b2c3.css`, `public/assets/nested/index-deep.js` and
-# `public/dist/index-a1b2c3.js` were all admitted. `public/` copies verbatim into `dist/`,
-# so those land at the document root AND in `dist/assets/`, the exact directory Vite writes
-# the real bundle into -- a stale bundle shadowing a fresh one, which is the harm the
-# previous comment named and then failed to prevent.
+# recursion costs nothing there -- whereas root-anchoring cost plenty. Measured AT COMMIT
+# 48fd5d1, i.e. on this file BEFORE the change below -- a reader testing the current file
+# will and should see the opposite: `public/index-a1b2c3.js`,
+# `public/assets/index-a1b2c3.js`, `public/assets/index-a1b2c3.css`,
+# `public/assets/nested/index-deep.js` and `public/dist/index-a1b2c3.js` were all admitted.
+# `public/` copies verbatim into `dist/`, so those land at the document root AND in
+# `dist/assets/`, the exact directory Vite writes the real bundle into -- a stale bundle
+# shadowing a fresh one, which is the harm the previous comment named and then failed to
+# prevent.
 #
 # SCOPED TO `public/` RATHER THAN FULLY RECURSIVE, which is a deliberate narrowing of what
-# the review proposed. `**/index-*.js` would also exclude `src/index-helpers.js` -- the
-# pattern is `index-*`, not `index-<hash>`, and a hyphenated module name under `src/` is
-# perfectly ordinary. Under `public/` there is no legitimate `index-*.js` at all, because
-# `public/` is verbatim static content, so scoping there removes the harm at no cost. A file
-# of that name under `src/` reaches only the BUILD stage and is harmless unless imported, in
-# which case it is a real source file somebody wants.
+# the 2026-11-03 review proposed, accepted by it on the pricing below. `**/index-*.js` would
+# also exclude `src/index-helpers.js` -- the pattern is `index-*`, not `index-<hash>`, and a
+# hyphenated module name under `src/` is perfectly ordinary. A file of that name under `src/`
+# reaches only the BUILD stage and can only reach the document root by being imported, at
+# which point Vite renames it and it is a real module somebody wants.
+#
+# THE COST THIS DOES INCUR, stated rather than asserted away. `public/` carries no
+# `index-*.js` THIS RELEASE SHIPS -- which is not the same as none being legitimate, and an
+# earlier draft of this comment claimed the stronger thing. A hand-written
+# `public/index-legacy.js` would now be dropped SILENTLY and show up as a 404 at runtime
+# rather than as a build failure. That is the one real price of the narrowing, it is the same
+# shape as the `public/assets/` font above, and it is why this is scoped to a directory whose
+# contents the release controls rather than applied to `src/`.
 assets/
 index-*.js
 index-*.css
@@ -92,14 +101,29 @@ public/**/index-*.css
 # serve stage copies into the nginx document root, so fleet detail under `public/` would be
 # SERVED. Measured on the committed file: `public/fleet_config.json`,
 # `public/bifrost_shell_policy.json` and `src/capability_registry.json` were all admitted.
-# Named one by one rather than as `**/*.json`, which would sit below `!package.json` above
-# and deny the portal its own manifest.
+# Named one by one rather than as `**/*.json`, which would sit below `!package.json` and
+# `!package-lock.json` above and deny the portal its own manifest.
 **/fleet_config.json
 **/capability_registry.json
 **/capability_profiles.json
 **/bifrost_shell_policy.json
 
 # ---- never, under any circumstances ----
+# THIS BLOCK'S GUARANTEE RESTS ON THREE PROPERTIES, AND ONLY TWO OF THEM ARE GATED.
+#   REACH     -- the patterns are recursive, so they apply inside the directories this file
+#                re-admits wholesale.            Fixed 1d69a59; gated by the probes.
+#   FINALITY  -- nothing re-admits below this block, because a .dockerignore is
+#                last-match-wins.                Fixed and GATED in 04a4eb1.
+#   SHAPE COVERAGE -- the shapes listed below are the ones worth denying. NOT GATED, and
+#                resting on prose. The heading says "never, under any circumstances" and
+#                what follows is a list of about a dozen shapes, which is a weaker thing
+#                than the heading claims. This repository's own .gitignore names shapes
+#                this list does not, and `docker build` reads the WORKING TREE rather than
+#                the index, so a gitignored credential is invisible to every git-based gate
+#                here and still enters the image. Recorded in RELEASE-SCOPE.md as the top
+#                residual risk rather than patched in passing, because closing it is a
+#                decision about what this list is FOR.
+#
 # RECURSIVE (`**/`), and on this image that matters more than on the router's. `src/**` and
 # `public/**` above are wholesale re-admissions, and a root-anchored pattern cannot reach
 # into either: Docker matches against the whole context-relative path and a single `*` does

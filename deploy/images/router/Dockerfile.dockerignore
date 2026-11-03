@@ -77,20 +77,42 @@
 # NAMED AS PATTERNS, not left to `**`, and recursive -- added 2026-11-03. This section was
 # prose only, which meant the four files were kept out at the CONTEXT ROOT and nowhere else:
 # `backends/**` and `skills/**` above re-admit wholesale, and `**` has already been
-# overridden by the time a file inside them is considered. Measured on the committed file,
-# `backends/fleet_config.json`, `backends/capability_profiles.json`,
-# `backends/bifrost_shell_policy.json` and `skills/capability_registry.json` all arrived in
-# the built image while the root `fleet_config.json` was correctly excluded.
+# overridden by the time a file inside them is considered. Measured AT COMMIT 48fd5d1, i.e.
+# on this file BEFORE the patterns below existed: `backends/fleet_config.json`,
+# `backends/capability_profiles.json`, `backends/bifrost_shell_policy.json` and
+# `skills/capability_registry.json` all arrived in the built image while the root
+# `fleet_config.json` was correctly excluded. A reader testing the current file will and
+# should see the opposite.
 #
-# A blanket `**/*.json` would NOT do: it would sit below the `!requirements.txt`-style
-# re-admissions and, on the portal's list, below `!package.json` -- so the four are named
-# one by one, which is also the only form that says which files this is about.
+# The four are named ONE BY ONE rather than as a blanket `**/*.json`, for two reasons and
+# only the second applies to this list. First, on the PORTAL's list a blanket would sit
+# below `!package.json` and `!package-lock.json` and deny the portal its own manifest --
+# this list re-admits no JSON at all, so that hazard is the other file's, and an earlier
+# draft of this comment wrongly generalised it to both by citing the `!requirements.txt`
+# re-admission, which is not JSON. Second, and the reason here: naming them is the only
+# form that says WHICH files this is about, and the four are the subject of note 1 in the
+# Dockerfile and of all four deploy/config/*.example.json.
 **/fleet_config.json
 **/capability_registry.json
 **/capability_profiles.json
 **/bifrost_shell_policy.json
 
 # ---- never, under any circumstances ----
+# THIS BLOCK'S GUARANTEE RESTS ON THREE PROPERTIES, AND ONLY TWO OF THEM ARE GATED.
+#   REACH     -- the patterns are recursive, so they apply inside `backends/` and `skills/`,
+#                which this file re-admits wholesale.   Fixed 1d69a59.
+#   FINALITY  -- nothing re-admits below this block, because a .dockerignore is
+#                last-match-wins.                       Fixed and GATED in 04a4eb1.
+#   SHAPE COVERAGE -- the shapes listed below are the ones worth denying. NOT GATED, and
+#                resting on prose. The heading says "never, under any circumstances" and
+#                what follows is about a dozen shapes, which is a weaker thing than the
+#                heading claims. This repository's own .gitignore names shapes this list
+#                does not, and `docker build` reads the WORKING TREE rather than the index,
+#                so a gitignored credential is invisible to every git-based gate here and
+#                still enters the image. Recorded in RELEASE-SCOPE.md as the top residual
+#                risk rather than patched in passing, because closing it is a decision about
+#                what this list is FOR.
+#
 # Every pattern here is RECURSIVE (`**/`), and that is the whole point of the block rather
 # than a style choice. The stated purpose is that a re-admission above cannot sweep one of
 # these in as a side effect -- and `backends/**` and `skills/**` above are exactly such

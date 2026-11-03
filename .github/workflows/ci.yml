@@ -437,28 +437,63 @@ jobs:
             # Located by the block's marker comment, and ABSENT MARKER IS A FAILURE rather
             # than a skip: a gate that cannot find the block it is checking must not be the
             # thing that reports success. That is the `validate compose` lesson again.
+            # ONE LOCATOR, ONE NORMALISATION. This used `grep -qxF` to test the marker's
+            # presence and then a normalised awk pass to find it, which is two locators
+            # that disagree -- and 21577b1's own comment, two hunks above, is the argument
+            # against exactly that: "a gate comparing raw text would refuse a file Docker
+            # accepts". Measured on ubuntu:24.04 with GNU grep and gawk, the raw test found
+            # the marker on an LF file and NOT on a CRLF file, nor on one whose comment had
+            # been indented two spaces, while the awk found all three and Docker honours
+            # every one of them. So the step aborted saying the marker was missing with the
+            # marker sitting right there.
+            #
+            # It failed CLOSED, so nothing leaked -- but a false positive on CI is not
+            # harmless here: the message told the operator to restore a marker that was
+            # present, and the cheapest way to make that green is to retype or delete the
+            # comment, which disarms the check this is for. Failing closed only helps when
+            # the failure is LEGIBLE.
+            #
+            # DO NOT RE-TEST THIS ON WINDOWS AND CONCLUDE IT WAS FINE. MSYS grep tolerates
+            # the CRLF case and passes, which hides the defect completely. That is the same
+            # platform trap already documented above for the CR strip, and it caught this
+            # file twice.
+            #
+            # So presence and position are now decided by the SAME pass, and a divergence
+            # between two spellings of "find the marker" is no longer possible.
             marker='# ---- never, under any circumstances ----'
-            if ! grep -qxF "$marker" "$ign"; then
-              echo "    $ign has no \"never, under any circumstances\" marker line, so the"
-              echo "    final-deny block cannot be located and its position cannot be"
-              echo "    checked. Restore the marker or teach this step the new structure."
-              bad=1; continue
-            fi
-            after=$(awk -v marker="$marker" '
-              { line = $0
-                sub(/\r$/,    "", line)
-                sub(/^[ \t]+/, "", line)
-                sub(/[ \t]+$/, "", line)
-                if (line == marker) { seen = 1; next }
-                if (!seen)                      next
+            verdict=$(awk -v marker="$marker" '
+              function norm(s) {
+                sub(/\r$/,    "", s)
+                sub(/^[ \t]+/, "", s)
+                sub(/[ \t]+$/, "", s)
+                return s }
+              { line = norm($0)
+                if (!seen) { if (line == marker) seen = 1; next }
                 if (line == "" || line ~ /^#/)  next
                 n++
                 if (line ~ /^!/) print "      line " FNR ": " line }
-              END { if (n == 0) print "      <<the never-block has no patterns at all>>" }
+              END {
+                if (!seen)        print "NOMARKER"
+                else if (n == 0)  print "      <<the never-block has no patterns at all>>" }
             ' "$ign")
-            if [ -n "$after" ]; then
+            if [ "$verdict" = NOMARKER ]; then
+              # Says only what it knows. The previous wording asserted the marker was
+              # absent, which is a fact this step cannot establish -- all it can say is
+              # that nothing matched.
+              echo "    $ign: this step could not LOCATE the final-deny block. No line"
+              echo "    matched the marker below, after stripping CR and surrounding"
+              echo "    whitespace:"
+              echo "      $marker"
+              echo "    The marker may be absent, reworded, or the file may have been"
+              echo "    restructured. LOOK BEFORE RETYPING IT -- if the marker is visibly"
+              echo "    there, this step is wrong and needs teaching, and retyping the"
+              echo "    comment to clear the failure would disarm the position check this"
+              echo "    step exists to perform."
+              bad=1; continue
+            fi
+            if [ -n "$verdict" ]; then
               echo "    $ign re-admits below its never-block, or has emptied it:"
-              echo "$after"
+              echo "$verdict"
               echo "    .dockerignore is last-match-wins, so a negation below that block"
               echo "    re-admits exactly what it denies -- silently, and on the portal"
               echo "    anything under public/ is then SERVED, not merely shipped."
