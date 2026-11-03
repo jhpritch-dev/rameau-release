@@ -451,6 +451,91 @@ a scratch copy of each Dockerfile. The wiring and the required-variable results 
 *without* it — they fail or succeed before any package is fetched. Only the completed builds
 and the `RAMEAU_COMMIT` result required it.
 
+#### DECIDED by delegation 2026-11-02: do NOT adopt the `.CORRECTED` `nginx.conf` variant
+
+John delegated this. The decision rests on the counts already settled above, not on the
+filename, and it does not require seeing the file.
+
+| | live variant | `.CORRECTED` |
+|---|---|---|
+| literal upstreams, resolved at config load | 5 | **8** |
+| variable upstreams behind one `resolver`, resolved per request | 3 | **0** |
+
+The two forms fail in opposite directions, and that is the whole decision. A literal
+upstream is resolved when nginx **parses** its config: one name that does not resolve and
+the container exits or crash-loops, taking the whole site down, `/` included. A variable
+upstream behind a `resolver` is resolved **per request**: that route 502s while the SPA keeps
+serving.
+
+So adopting `.CORRECTED` would convert three request-time routes into config-load routes —
+it moves three failures from *degrade* to *does not start*.
+
+**That is the wrong direction for this release specifically**, and the reason is already
+settled in this document: v0.1 defines two services and ships no image for `arbiter`, `kb`,
+`broadcaster` or `search`. A portal whose upstreams are all resolved at config load is a
+portal that must have every backend present to start at all. Under the live variant the same
+absence costs those panels and leaves the site up.
+
+**Not established here, and the decision does not depend on it:** which routes the three
+variable upstreams serve. `nginx.conf` is not in this repository. What is established is the
+*direction* — three routes move from request-time to config-load — and that is sufficient,
+because no assignment of routes makes "cannot start" preferable to "one panel is empty" for
+a release that deliberately omits backends.
+
+The candidate is not deleted and nothing is rewritten: it stays unapplied on the private
+side. If v0.1 ever defines all of its referenced backends, this decision should be re-taken,
+because the argument above expires at that point.
+
+#### DECIDED by delegation 2026-11-02: define none of the six, and remove none of them
+
+Also delegated. Two decisions, because "referenced but undefined" has two possible answers
+and the brief was right that defining is not the default.
+
+**Define none.** Per service, with the reason already in `deploy/compose.yaml` rather than
+invented here:
+
+| service | why it is not defined |
+|---|---|
+| `ollama` | inference stays on the host; a container wanting the accelerator needs device passthrough, which ties the stack to one vendor's driver stack. A host-boundary input by design. |
+| `embed` | the same boundary: kept separate so embeddings never contend with generation on one accelerator, and `PROVENANCE` records that the private deployment runs it natively rather than in a container. |
+| `arbiter`, `kb`, `broadcaster`, `search` | none of their images is part of v0.1, so defining them would describe a stack this repository cannot build. |
+
+Defining any of them would produce a service that comes up and serves nothing — a green
+surface over an unrun thing, which is the same defect class as a `?` finding count and as an
+empty `skills/`. None is defined.
+
+**Remove none of the references, and this one is a DECLINE with its cost stated.** The
+references are not in `compose.yaml`; they are in the compose-form env example generated from
+`COMPOSE_SERVICE`. Blanking the six there would be safe-by-construction rather than
+safe-by-instruction, which is the better kind — but it was measured against what it costs:
+
+- `test_the_published_ports_do_not_come_back_in_the_compose_example` is a **named regression
+  guard**, carrying the exact wrong values that shipped on 2026-10-27 — `:8091`, `:8092`,
+  `:11436` among them. Those belong to `kb`, `broadcaster` and `embed`. Blank those lines and
+  the guard can no longer fail for the three endpoints it was written to protect. **A guard
+  that cannot fire is the defect this repository has spent the most effort removing**, and
+  trading one away for a convenience is not a trade this document should record as an
+  improvement.
+- The generated file serves both cases by design. `compose.yaml` says those endpoints "are
+  URLs if you have them and blank if you do not", so `http://kb:8090` is correct guidance for
+  an operator who *does* run one on the network, and deleting it serves the operator who does
+  not at the expense of the one who does.
+- The risk it would remove is already addressed by instruction: `828b6c2` made the generated
+  header say, in capitals, that blanking every endpoint you do not run is required rather
+  than optional, and it names the six.
+
+What is NOT a reason to decline, recorded so the weak argument is not mistaken for a strong
+one: `test_the_compose_example_addresses_the_listen_port` would also stop covering those six,
+and that one does not matter — it is circular by construction for exactly these endpoints,
+as `PROVENANCE` says of itself, because both sides of the comparison derive from the
+registry.
+
+**The obligation this leaves.** The residual risk is an operator who does not read the
+header. If step 4 or step 5 shows one actually tripping on it, the fix is to blank the six in
+the generator *and* re-anchor that regression guard to something non-circular in the same
+change — not to blank them and let the guard go quiet. Named here so the second half cannot
+be forgotten.
+
 #### SUSPENDED: the delegated-leaf criterion — that capability is not in the ruled tree
 
 Reported 2026-11-02 by the session that can read the private tree, measured against the
