@@ -83,28 +83,60 @@
 # ---- never, under any circumstances ----
 # Belt and braces. Everything here is already excluded by `**`, and it is restated so that a
 # future edit which re-admits a directory cannot sweep one of these in as a side effect.
-.env
-.env.*
-*.pem
-*.key
-*.p12
-*.pfx
-id_rsa
-id_ed25519
-.netrc
-.git-credentials
-.git/
-.github/
+#
+# EVERY CREDENTIAL PATTERN HERE CARRIES `**/`, AND NONE OF THEM DID UNTIL 2026-11-03.
+# A single `*` in a .dockerignore pattern does NOT cross a '/', so `.env` and `*.pem` were
+# matched against ONE PATH SEGMENT: they denied a top-level `.env` and said nothing whatever
+# about `backends/.env`. And `!backends/**` and `!skills/**` above re-admit those subtrees in
+# full -- so the side effect this block exists to prevent was the state this block was in.
+#
+# Measured, not reasoned about: a planted context built with `FROM scratch`, `COPY . /ctx/`
+# and `--output type=local` transferred `backends/.env`, `backends/leak.pem`, `skills/leak.key`
+# and `backends/sub.log` with the single-segment patterns, and transfers none of them with
+# these. `COPY backends/ /app/backends/` and `COPY skills/ /app/skills/` in the Dockerfile
+# copy whole directories, so those four files would have reached the published image.
+# `**/__pycache__/` and `**/*.pyc` were already written this way, which is exactly why they
+# were the only two entries in this block that held at depth.
+#
+# `**/P` also matches a top-level `P` -- measured on docker 29.9.2 -- so these REPLACE the
+# bare forms rather than joining them. Do not "restore" the bare forms; they are subsumed.
+# The probe that measures all of this lives in the `images` job of .github/workflows/ci.yml
+# and runs on every push, with or without a source tree.
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/id_rsa
+**/id_ed25519
+**/.netrc
+**/.git-credentials
+**/.git/
+**/.github/
 **/__pycache__/
 **/*.pyc
-*.log
-*.bak
-*.bak-*
-*.sqlite
-*.db
-.venv/
-venv/
-node_modules/
+**/*.log
+**/*.bak
+**/*.bak-*
+**/*.sqlite
+**/*.db
+**/.venv/
+**/venv/
+**/node_modules/
+
+# ---- top-level only, and DELIBERATELY not generalised ----
+# These three are the asymmetry, and it is the point rather than an oversight. A pattern that
+# denies too much drops a module that something imports, and that fails inside the container
+# after a green build -- which is the failure class B4 of the step-4 preflight exists to
+# prevent, and it is worse than the thing generalising these would buy.
+#
+# `tests/` here is the suite at the context root. A `backends/tests/` is re-admitted by
+# `!backends/**`, named by `COPY backends/` and does arrive in the image: that is weight, not
+# a credential. A `**/test_*.py` that dropped an imported `test_utils.py` would be the worse
+# trade. B4's comment in ci.yml says these are "denied deliberately"; that is true at the
+# context root and NOT true one directory down, and the preflight's exclusions are still
+# correct for a different reason -- such files arrive rather than being dropped twice.
 tests/
 test_*.py
 *_test.py

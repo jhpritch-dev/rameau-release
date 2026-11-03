@@ -47,14 +47,39 @@ jobs:
           sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
           gitleaks version
 
-      - name: prove the scanner fires before trusting a zero
+      - name: prove the scanner fires, and fires only on the planted positive
         # A clean report is exactly the output nobody re-checks. So plant a known-positive
         # in a scratch directory OUTSIDE the repo, confirm gitleaks reports it, and only
         # then believe a zero from the real scan. A scan that cannot be shown to fire is
         # not evidence.
+        #
+        # NEAR-MISSES ARE PLANTED BESIDE IT, from 2026-11-03. A control satisfied by a
+        # matcher that flags EVERYTHING is as blind as one satisfied by a matcher that
+        # flags nothing: both print "control ok". So the canary repository also holds two
+        # strings that are key-SHAPED and not keys, plus a file of ordinary prose, and the
+        # control asserts the report names creds.txt and NOTHING ELSE.
+        #
+        # BOTH NEAR-MISSES ARE DETERMINISTIC AND CARRY NO ENTROPY, and that is a correction
+        # rather than a preference. The first version generated a RANDOM body of the wrong
+        # length, and it is flaky: gitleaks' entropy-based rules fire on an
+        # `aws_access_key_id = <value>` line when the value's entropy clears a threshold,
+        # and a random eight-character body clears it sometimes. Observed failing once
+        # while this change was being written -- on a clean repository, with a message
+        # blaming the matcher. An isolated loop of twelve runs then produced none, so the
+        # rate is low and is NOT characterised here: any nonzero rate disqualifies it,
+        # because a control that fails at random teaches people to re-run the job.
+        #
+        # Measured on gitleaks 8.21.2, all four files in one commit: creds.txt is flagged
+        # (rule aws-access-token, entropy 3.58) and nothing else is. AKIA followed by
+        # sixteen identical characters is NOT flagged, which makes it the sharper of the two
+        # near-misses -- correct length, correct prefix, rejected on entropy alone.
         run: |
           set -euo pipefail
-          mkdir -p /tmp/canary && cd /tmp/canary
+          # rm -rf first: this step must give the same answer on a re-run, and a leftover
+          # directory from a previous run is a difference between the first run and the
+          # second that nothing else here would reveal.
+          rm -rf /tmp/canary /tmp/canary-report
+          mkdir -p /tmp/canary /tmp/canary-report && cd /tmp/canary
           git init -q .
 
           # The canary is GENERATED, for two separate reasons.
@@ -73,7 +98,23 @@ jobs:
           #    `cut` rather than a second `head` avoids a SIGPIPE under `pipefail`.
           KEY="AKIA$(LC_ALL=C head -c 64 /dev/urandom | base32 | tr -d '=' | tr -cd 'A-Z0-9' | cut -c1-16)"
           printf 'aws_access_key_id = %s\n' "$KEY" > creds.txt
-          git add creds.txt
+
+          # THE NEAR-MISSES. Same assignment, same prefix, same alphabet. Built by repeating
+          # one character rather than written out, so that no key-shaped literal enters this
+          # file -- the same reason the positive is generated.
+          #   short       : eight body characters, so it fails the shape on LENGTH
+          #   lowentropy  : sixteen body characters, so it fails on ENTROPY ALONE
+          NEAR_SHORT="AKIA$(printf 'A%.0s' 1 2 3 4 5 6 7 8)"
+          NEAR_FLAT="AKIA$(printf 'B%.0s' $(seq 16))"
+          printf 'aws_access_key_id = %s\n' "$NEAR_SHORT" > nearmiss-short.txt
+          printf 'aws_access_key_id = %s\n' "$NEAR_FLAT"  > nearmiss-lowentropy.txt
+          printf 'prose about keys and tokens and passwords, naming no value\n' > plain.txt
+
+          # NAMED FILES, not `git add -A`. The report below used to be written inside this
+          # repository, so a re-run staged the previous run's SARIF -- and a SARIF carries
+          # every rule's description. Staging an artefact of the check into the subject of
+          # the check is a loop nothing here would have reported as such.
+          git add creds.txt nearmiss-short.txt nearmiss-lowentropy.txt plain.txt
           git -c user.email=ci@example.invalid -c user.name=ci commit -qm canary
 
           # THE CONTROL RUNS THE SAME REPORTING ARGUMENTS AS THE GATE, and until
@@ -90,7 +131,8 @@ jobs:
           #     finding  -> exit 1, report written
           #     crash    -> exit 1, NO report
           # which makes `[ -s ]` the discriminator, and it needs nothing but the shell.
-          report=/tmp/canary/control.sarif
+          # OUTSIDE the canary repository, for the reason given at `git add` above.
+          report=/tmp/canary-report/control.sarif
           st=0
           gitleaks detect --source . --no-banner --redact --exit-code 1 \
             --report-format sarif --report-path "$report" >/dev/null 2>&1 || st=$?
@@ -107,7 +149,30 @@ jobs:
             echo "nothing. Read the scanner's own error above."
             exit 1
           fi
+
+          # The near-miss half. jq rather than the shell because the discriminator is the
+          # SET OF FILES NAMED, not the report's existence -- and a missing jq must fail
+          # here rather than quietly skip the half of the control that bounds the matcher.
+          command -v jq >/dev/null 2>&1 || {
+            echo "CONTROL INCOMPLETE: jq is not installed, so the near-miss half of this"
+            echo "control cannot run. The shape classification above passed, but nothing"
+            echo "has bounded WHAT the scanner flags. Refusing to report control ok."
+            exit 1
+          }
+          named=$(jq -r '[.runs[].results[].locations[].physicalLocation.artifactLocation.uri] | sort | unique | join(",")' "$report")
+          if [ "$named" != "creds.txt" ]; then
+            echo "CONTROL FAILED: the scanner flagged [$named], expected exactly creds.txt."
+            echo "nearmiss-short.txt (8 body characters), nearmiss-lowentropy.txt (16 body"
+            echo "characters, all identical) and plain.txt are planted alongside the positive"
+            echo "precisely so that a ruleset which flags everything cannot satisfy this"
+            echo "control. A zero from the real scan below would then mean nothing about the"
+            echo "repository and everything about the matcher."
+            exit 1
+          fi
           echo "control ok: gitleaks flags a generated known-positive, and can write its report"
+          echo "matcher: gitleaks ruleset -- positive ok, near-miss ok (neither the short"
+          echo "         near-miss, nor the correct-length zero-entropy one, nor the prose"
+          echo "         file is named in the report)"
 
       - name: scan every object in full history
         # NAMED FOR WHAT IT SCANS. It was called "scan working tree and full history"
@@ -250,12 +315,65 @@ jobs:
             exit 1
           }
 
+          # THE MATCHER, DEFINED ONCE, and called on three plants before the real file.
+          # The plants go through THIS function, not a retyped copy of the pattern: a
+          # control that retypes the regex tests a different regex, and the quoting path
+          # from the YAML block scalar into the shell is part of what is being tested.
+          #
           # grep has THREE exit statuses and `if grep` collapses two of them: 0 match,
           # 1 no match, and 2 ERROR. Measured: `if grep` treats 2 as "no match", so an
           # unreadable profile used to report "no loopback in the in-network profile" --
           # a clean verdict produced by a failure to look. RELEASE-SCOPE.md, finding E.
-          st=0
-          hits=$(grep -nE '127\.0\.0\.1|localhost' "$f") || st=$?
+          loopback_hits() {
+            st=0
+            hits=$(grep -nE '127\.0\.0\.1|localhost' "$1") || st=$?
+          }
+
+          plant="$(mktemp -d)"
+          trap 'rm -rf "$plant"' EXIT
+          # One plant PER ALTERNATIVE. A single file carrying both would be matched by a
+          # pattern that had lost one of them, and `|` losing a branch is exactly the kind
+          # of silent narrowing this control exists to catch.
+          printf 'RAMEAU_A=http://127.0.0.1:8080\n' > "$plant/pos-ipv4"
+          printf 'RAMEAU_B=http://localhost:8081\n'  > "$plant/pos-name"
+          # The near-miss. `127x0y0z1` is the ESCAPE-SURVIVAL test: if the backslashes in
+          # `127\.0\.0\.1` did not survive the YAML block scalar and the single quotes,
+          # `.` would be any character and this line would match. Measured both ways.
+          printf 'RAMEAU_C=http://192.0.2.1:8080\nRAMEAU_D=http://embed.example.com:11434\nRAMEAU_E=http://127x0y0z1:8080\n' > "$plant/near-miss"
+          mkdir -p "$plant/a-directory"
+
+          for p in pos-ipv4 pos-name; do
+            loopback_hits "$plant/$p"
+            [ "$st" -eq 0 ] && [ -n "$hits" ] || {
+              echo "CONTROL FAILED: the planted positive $p was NOT matched (status $st)."
+              echo "This matcher cannot find the thing it exists to find, so the clean"
+              echo "verdict it would print about the real profile would be worthless."
+              exit 1
+            }
+          done
+          loopback_hits "$plant/near-miss"
+          [ "$st" -eq 1 ] && [ -z "$hits" ] || {
+            echo "CONTROL FAILED: the near-miss matched (status $st): $hits"
+            echo "A matcher that flags every address is as useless as one that flags none,"
+            echo "and 127x0y0z1 matching would mean the dot escapes did not survive the"
+            echo "quoting layers between this YAML and the shell."
+            exit 1
+          }
+          # grep's own error prints on the next line; it comes from the planted
+          # unreadable target and is what the control is measuring.
+          loopback_hits "$plant/a-directory" || true
+          [ "$st" -eq 2 ] || {
+            echo "CONTROL FAILED: grep on a directory returned $st, expected 2."
+            echo "The error arm below is then unreachable, and an unreadable profile would"
+            echo "be classified as one of the two verdicts instead of as a failure to look."
+            exit 1
+          }
+          echo "matcher: loopback regex -- positive ok (both alternatives), near-miss ok,"
+          echo "         error arm ok (grep status 2 is reachable and distinguished)"
+          rm -rf "$plant"
+          trap - EXIT
+
+          loopback_hits "$f"
           case "$st" in
             0)
               printf '%s\n' "$hits"
@@ -350,9 +468,59 @@ jobs:
           ENVFILE
           sed -i 's/^ *//' "$f"
 
+          # THE TWO jq SELECTORS, DEFINED ONCE and exercised against a planted fixture
+          # before they are pointed at the real resolved config. Both are matchers: one
+          # picks a key out of the router's environment, the other selects the RAMEAU_*
+          # keys whose value is empty. A selector that matches nothing and a clean
+          # environment produce the same output, which is the whole reason these plants
+          # exist.
+          getvar() {
+            printf '%s' "$1" | jq -r --arg k "$2" '.services.router.environment[$k] // "<<absent>>"'
+          }
+          blank_rameau() {
+            printf '%s' "$1" | jq -r '
+              .services.router.environment | to_entries
+              | map(select(.key | startswith("RAMEAU_")))
+              | map(select(.value == "" or .value == null) | .key) | sort | join(",")'
+          }
+
+          # The fixture carries one of each case the selectors must tell apart: a set key,
+          # an EMPTY RAMEAU_ key, a NULL RAMEAU_ key, an empty key that is NOT RAMEAU_
+          # (the near-miss for the prefix test), and a second set key.
+          fixture='{"services":{"router":{"environment":{"RAMEAU_KB_URL":"http://kb.example.com:8090","RAMEAU_EMPTY":"","RAMEAU_NULL":null,"OTHER_EMPTY":"","RAMEAU_OK":"http://ok.example.com:1"}}}}'
+
+          got_b=$(blank_rameau "$fixture")
+          [ "$got_b" = "RAMEAU_EMPTY,RAMEAU_NULL" ] || {
+            echo "CONTROL FAILED: the blank-value selector returned [$got_b], expected"
+            echo "exactly RAMEAU_EMPTY,RAMEAU_NULL. Either it misses an empty endpoint --"
+            echo "the clobbering this step exists to catch -- or it has stopped bounding"
+            echo "itself to the RAMEAU_ prefix and is reporting unrelated keys."
+            exit 1
+          }
+          [ "$(getvar "$fixture" RAMEAU_KB_URL)" = "http://kb.example.com:8090" ] || {
+            echo "CONTROL FAILED: the key selector cannot read a key that is present."
+            exit 1
+          }
+          [ "$(getvar "$fixture" RAMEAU_NOT_THERE)" = "<<absent>>" ] || {
+            echo "CONTROL FAILED: a missing key did not produce the <<absent>> sentinel."
+            exit 1
+          }
+          # MEASURED, and the reason this is a plant rather than a comment: jq's `//`
+          # fires on null and false, NOT on the empty string. So the sentinel distinguishes
+          # a MISSING key only; an endpoint clobbered to "" reads back as "" and is caught
+          # by the equality comparisons below and by blank_rameau above, not by `//`.
+          [ "$(getvar "$fixture" RAMEAU_EMPTY)" = "" ] || {
+            echo "CONTROL FAILED: an empty-string value no longer reads back as empty, so"
+            echo "the comment above this line is wrong about jq's // operator."
+            exit 1
+          }
+          echo "matcher: jq router-environment selectors -- positive ok, near-miss ok"
+          echo "         (OTHER_EMPTY is empty and correctly NOT reported; the <<absent>>"
+          echo "         sentinel covers a missing key only, which is measured, not assumed)"
+
           cfg=$(docker compose -f deploy/compose.yaml config --format json)
 
-          got=$(printf '%s' "$cfg" | jq -r '.services.router.environment.RAMEAU_KB_URL // "<<absent>>"')
+          got=$(getvar "$cfg" RAMEAU_KB_URL)
           if [ "$got" != "http://kb-reaches-the-router.example.com:8090" ]; then
             echo "profiles/compose.env does NOT reach the router."
             echo "  RAMEAU_KB_URL resolved to: $got"
@@ -366,10 +534,7 @@ jobs:
 
           # The same defect, caught from the other side: no RAMEAU_* endpoint may resolve to
           # the empty string or to null while the file sets it.
-          blank=$(printf '%s' "$cfg" | jq -r '
-            .services.router.environment | to_entries
-            | map(select(.key | startswith("RAMEAU_")))
-            | map(select(.value == "" or .value == null) | .key) | join(",")')
+          blank=$(blank_rameau "$cfg")
           if [ -n "$blank" ]; then
             echo "these router variables resolved to empty/null despite the file setting them: $blank"
             exit 1
@@ -390,7 +555,7 @@ jobs:
                       "RAMEAU_ROUTER_CHAT_URL=http://router:8080/v1/chat/completions" \
                       "RAMEAU_ROUTER_HEALTH_URL=http://router:8080/health"; do
             k=${pair%%=*}; want=${pair#*=}
-            have=$(printf '%s' "$cfg" | jq -r --arg k "$k" '.services.router.environment[$k] // "<<absent>>"')
+            have=$(getvar "$cfg" "$k")
             [ "$have" = "$want" ] || {
               echo "$k is $have, expected $want -- compose.yaml must keep winning for these"
               exit 1
@@ -403,7 +568,36 @@ jobs:
         run: |
           set -euo pipefail
           test -f LICENSE || { echo "LICENSE missing"; exit 1; }
-          grep -q "Apache License" LICENSE || { echo "LICENSE is not Apache-2.0"; exit 1; }
+
+          # The matcher, defined once, with a planted positive and three near-misses. It is
+          # a substring test over a licence text, and the failure mode worth catching is a
+          # pattern loose enough to match ANY licence -- at which point swapping Apache-2.0
+          # for something incompatible would pass this step. Measured: the three near-miss
+          # texts below are not matched, and lowercase is not either, so this is
+          # case-sensitive by measurement rather than by assumption.
+          is_apache() { grep -q "Apache License" "$1"; }
+          plant="$(mktemp -d)"
+          trap 'rm -rf "$plant"' EXIT
+          printf 'Apache License\nVersion 2.0, January 2004\n'            > "$plant/pos"
+          printf 'MIT License\n\nPermission is hereby granted, free of\n' > "$plant/mit"
+          printf 'GNU GENERAL PUBLIC LICENSE\nVersion 3\n'                > "$plant/gpl"
+          printf 'the apache license, in lower case\n'                     > "$plant/lower"
+          is_apache "$plant/pos" || {
+            echo "CONTROL FAILED: the planted Apache-2.0 header was not matched."
+            exit 1
+          }
+          for n in mit gpl lower; do
+            if is_apache "$plant/$n"; then
+              echo "CONTROL FAILED: the $n near-miss matched, so this check would accept a"
+              echo "licence swap. A matcher that matches everything asserts nothing."
+              exit 1
+            fi
+          done
+          echo "matcher: Apache licence substring -- positive ok, near-miss ok (MIT, GPL,"
+          echo "         lower case all unmatched)"
+          rm -rf "$plant"; trap - EXIT
+
+          is_apache LICENSE || { echo "LICENSE is not Apache-2.0"; exit 1; }
           test -f RELEASE-SCOPE.md || { echo "RELEASE-SCOPE.md missing"; exit 1; }
           test -f SECURITY.md || { echo "SECURITY.md missing"; exit 1; }
           echo "invariants ok"
@@ -442,6 +636,116 @@ jobs:
             }
           done
           echo "ok: compose file and both Dockerfiles present"
+
+      - name: prove both ignore files' patterns are in force
+        # THE IGNORE FILES ARE MATCHERS, and the most consequential ones in the repository:
+        # they decide what reaches a published image. They had never been exercised by CI.
+        # The 97727b8 defect was a correct pattern set in a place nothing read it, and no
+        # build could have revealed that, because an inert ignore file produces a GREEN
+        # BUILD -- a wider context and a larger image, with nothing failing.
+        #
+        # So this builds a PLANTED context against each pattern set and asserts the
+        # transferred file list EXACTLY: every file that must arrive, and no file that must
+        # not. `FROM scratch` with `--output type=local` pulls no base image and runs no
+        # instruction, so the probe measures the context transfer and nothing else, and adds
+        # no outbound dependency to this job.
+        #
+        # THE GEOMETRY IS REPRODUCED RATHER THAN SIMPLIFIED. The probe's Dockerfile sits
+        # outside its context with the ignore file beside it as `Dockerfile.dockerignore`,
+        # which is the only arrangement in which either of these two files is read at all. A
+        # probe that put the ignore file at the context root would pass while production was
+        # inert -- the exact failure being guarded. This step asserts the PATTERNS; A1 of the
+        # step-4 preflight asserts the LOCATION. Neither is sufficient alone.
+        #
+        # WHAT THIS FOUND, 2026-11-03: every credential pattern in both files was matched
+        # against ONE PATH SEGMENT, because a single `*` does not cross a '/' in a
+        # .dockerignore pattern. `backends/.env`, `backends/leak.pem`, `skills/leak.key`,
+        # `src/.env`, `src/leak.pem` and `public/leak.key` were all transferred -- re-admitted
+        # by `!backends/**`, `!skills/**`, `!src/**` and `!public/**`, and not re-denied by a
+        # block whose own comment says "never, under any circumstances". Both files now carry
+        # `**/` on those patterns and this probe is what keeps them there.
+        #
+        # EXACT SET EQUALITY RATHER THAN A BYTE FLOOR. A floor would be a number, and the
+        # only numbers available (446 B, 61 kB) came from a stub that no longer exists; a
+        # figure invented to make a gate green is the thing this repository refuses. Equality
+        # is strictly stronger than any floor -- an ignore file that started matching too much
+        # fails here by name, not by a margin -- and it invents nothing. The byte CEILING is
+        # owed by step 4; see RELEASE-SCOPE.md for the command that supplies it.
+        run: |
+          set -euo pipefail
+          pl="$(mktemp -d)"
+          trap 'rm -rf "$pl"' EXIT
+
+          plant() { for p in $2; do mkdir -p "$1/$(dirname "$p")"; : > "$1/$p"; done; }
+
+          # ---- router: what MUST arrive, and what MUST NOT ----
+          R_WANT="backends/nested/inner.py backends/ollama.py backends/tests/helper.py config.py main.py requirements.txt skills/registry.md skills/sub/deep.md"
+          # backends/tests/helper.py is in the WANT list deliberately. `tests/` is top-level
+          # only on purpose -- see the ignore file -- so a tests directory inside a re-admitted
+          # package arrives. Encoding it here means a future generalisation of that pattern
+          # fails this step and has to be an argued change rather than a silent one.
+          R_DENY="test_probe.py probe_test.py tests/test_a.py strategies/tiers.py
+                  .env .env.local secret.pem deploy.key id_rsa .netrc .git-credentials
+                  backends/.env backends/leak.pem skills/leak.key
+                  node_modules/p/i.js __pycache__/x.pyc backends/__pycache__/y.pyc
+                  backends/stray.pyc app.log backends/sub.log main.py.bak data.sqlite
+                  fleet_config.json .git/config"
+
+          # ---- portal ----
+          P_WANT="index.html nginx.conf package-lock.json package.json public/favicon.ico public/img/logo.svg src/App.jsx src/Thing_v2.jsx src/assets/logo.png src/index-old.js src/sub/Deep.jsx vite.config.js"
+          # src/Thing_v2.jsx, src/assets/logo.png and src/index-old.js are in the WANT list
+          # for the same reason: those three patterns are top-level only BY DECISION, because
+          # `**/assets/` would drop Vite's ordinary home for imported images. The decision is
+          # asserted so that reversing it cannot be accidental.
+          P_DENY="index-stale.js index-stale.css dist/assets/x.js assets/a.png
+                  node_modules/p/i.js .env .env.prod server.pem deploy.key .netrc
+                  .git-credentials src/.env src/leak.pem public/leak.key app.log
+                  src/sub.log old.bak old.bak-1 App_fixed.jsx App_v2.jsx"
+
+          probe() {
+            svc="$1"; want="$2"
+            ctx="$pl/$svc-ctx"; dfd="$pl/$svc-df"; out="$pl/$svc-out"
+            mkdir -p "$ctx" "$dfd" "$out"
+            # The real pattern file, copied byte for byte, under the production name.
+            cp "deploy/images/$svc/Dockerfile.dockerignore" "$dfd/Dockerfile.dockerignore"
+            printf 'FROM scratch\nCOPY . /ctx/\n' > "$dfd/Dockerfile"
+            if ! docker buildx build --progress=plain \
+                   -f "$dfd/Dockerfile" \
+                   --output "type=local,dest=$out" \
+                   "$ctx" > "$pl/$svc.log" 2>&1; then
+              echo "PROBE BUILD FAILED for $svc. Its log follows. This step FAILS rather"
+              echo "than skipping: with the probe unable to run, nothing is known about"
+              echo "whether either pattern set is in force, and a green build is exactly"
+              echo "what an inert ignore file produces."
+              cat "$pl/$svc.log"
+              exit 1
+            fi
+            got=$( cd "$out/ctx" 2>/dev/null && LC_ALL=C find . -type f | sed 's|^\./||' | sort | tr '\n' ' ' || true )
+            got=${got% }
+            if [ "$got" != "$want" ]; then
+              echo "IGNORE PATTERNS ARE NOT DOING WHAT deploy/images/$svc/Dockerfile.dockerignore SAYS."
+              echo "  transferred: [$got]"
+              echo "  expected:    [$want]"
+              echo ""
+              echo "Read the diff file by file. A file in 'transferred' and not in 'expected'"
+              echo "is a pattern that stopped denying -- and the credential names in the deny"
+              echo "list are planted precisely so that this is the way you find out. A file in"
+              echo "'expected' and not in 'transferred' is a pattern that started matching too"
+              echo "much, which breaks the build by dropping a source file."
+              exit 1
+            fi
+            nwant=$(printf '%s' "$want" | wc -w)
+            ndeny=$(printf '%s' "$3" | wc -w)
+            echo "matcher: $svc ignore patterns -- positive ok, near-miss ok"
+            echo "         $nwant re-admitted paths all transferred; $ndeny denied paths none"
+            echo "         transferred, three of them credential names planted INSIDE a"
+            echo "         re-admitted subtree, which is where this file was blind until today"
+          }
+
+          plant "$pl/router-ctx" "$R_WANT $R_DENY"
+          plant "$pl/portal-ctx" "$P_WANT $P_DENY"
+          probe router "$R_WANT" "$R_DENY"
+          probe portal "$P_WANT" "$P_DENY"
 
       - name: are the build contexts here yet?
         id: contexts
@@ -526,8 +830,16 @@ jobs:
           RAMEAU_COMMIT="$(git rev-parse --short HEAD)"
           export RAMEAU_COMMIT
           echo "building with RAMEAU_COMMIT=$RAMEAU_COMMIT"
-          docker compose -f deploy/compose.yaml build
+          # --progress=plain so that buildkit's `transferring context: <N>B` line lands in
+          # this log. That figure is what RELEASE-SCOPE.md's step-4 obligation needs in
+          # order to become a ceiling, and the first real assembled build is the only place
+          # it can come from. Without plain progress the line is collapsed and the one run
+          # that could supply it would not record it.
+          docker compose -f deploy/compose.yaml build --progress=plain
           echo "both images built"
+          echo "NOTE for step 4: the \`transferring context\` lines above are the first real"
+          echo "measurement of either build context. RELEASE-SCOPE.md records them as the"
+          echo "source of the byte ceiling; until they exist there is no ceiling to set."
           docker image ls 'rameau/*'
 
   step4:
@@ -591,6 +903,51 @@ jobs:
           v() { violations="$violations|$1"; }
           d() { deferred="$deferred|$1"; }
 
+          # ---- the three pathspec matchers, planted against before they are trusted ----
+          # A2, A3 and A4 each decide from a `git ls-files` pathspec, and an empty result
+          # from a pathspec that matches nothing is indistinguishable from a clean
+          # repository. Two things are measured here rather than assumed:
+          #
+          #   1. THE GLOB REACHES SUBDIRECTORIES. git pathspecs use wildmatch WITHOUT
+          #      FNM_PATHNAME, so `*.jar` matches sub/deep/low.jar as well as top.jar --
+          #      the opposite of find's -path, where `*` crossing '/' was the defect in B4
+          #      below. Measured on git 2.43; a .jar hidden one directory down would
+          #      otherwise be invisible to A2 and nothing else in CI would look.
+          #   2. IT DOES NOT MATCH EVERYTHING. `notajar.jarx`, a file literally named
+          #      `jar`, and `notes.gguf.txt` are planted as near-misses.
+          tracked_jars()    { git ls-files -- '*.jar'; }
+          tracked_weights() { git ls-files -- '*.gguf' '*.safetensors' '*.onnx' '*.pt' '*.pth'; }
+          tracked_fonts()   { git ls-files -- '*.woff2' '*.woff' '*.otf' '*.ttf'; }
+
+          ps_plant="$(mktemp -d)"
+          (
+            cd "$ps_plant"
+            git init -q .
+            mkdir -p sub/deep
+            : > top.jar; : > sub/mid.jar; : > sub/deep/low.jar
+            : > model.gguf; : > sub/m.safetensors
+            : > w.woff2; : > sub/x.ttf
+            : > notajar.jarx; : > jar; : > notes.gguf.txt; : > fontlist.txt; : > plain.txt
+            git add -A
+            git -c user.email=ci@example.invalid -c user.name=ci commit -qm pathspec-plant
+          )
+          ps_check() {
+            got=$( ( cd "$ps_plant" && "$1" ) | tr '\n' ' ')
+            [ "$got" = "$2 " ] || {
+              echo "CONTROL FAILED: $1 on the plant returned [$got], expected [$2 ]."
+              echo "This pathspec does not match what it is written to match, so the empty"
+              echo "result it returns for this repository is not evidence of anything."
+              exit 1
+            }
+          }
+          ps_check tracked_jars    "sub/deep/low.jar sub/mid.jar top.jar"
+          ps_check tracked_weights "model.gguf sub/m.safetensors"
+          ps_check tracked_fonts   "sub/x.ttf w.woff2"
+          rm -rf "$ps_plant"
+          echo "matcher: git ls-files pathspecs (A2 jars, A3 weights, A4 fonts) --"
+          echo "         positive ok at depth, near-miss ok (notajar.jarx, a file named"
+          echo "         jar, notes.gguf.txt and fontlist.txt are all unmatched)"
+
           # --- A1: the ignore files sit where Docker actually reads one -----------------
           # Docker reads an ignore file ONLY from the build-context root, or as
           # <dockerfile-name>.dockerignore beside the Dockerfile. Both of these sat in
@@ -601,11 +958,19 @@ jobs:
           #
           # ASSERT THE LOCATION, not merely that a file exists somewhere: a rename or a lone
           # `git mv` disarms every pattern silently and nothing else in CI would notice.
+          #
+          # THE `test -f` THAT USED TO BE HERE IS GONE, 2026-11-03, because it could not
+          # fire. The `assert what cannot be absent` step above lists both
+          # Dockerfile.dockerignore paths and exits 1 when one is missing, so this step does
+          # not run in the only case that branch existed for. Found by writing its arm: the
+          # mutation failed the job one step earlier and the A1 message never appeared. A
+          # guard incapable of failing is the defect class this job exists to prevent, and it
+          # is the second one I have shipped into this job -- so the existence of these two
+          # files is OWNED by the step above, named here, and asserted in exactly one place.
+          #
+          # What remains is the half nothing else covers: the INERT NAME returning.
           checked=$((checked + 1))
           for svc in router portal; do
-            want="deploy/images/$svc/Dockerfile.dockerignore"
-            test -f "$want" || v "A1 $want is missing -- the ignore file is not where Docker reads it"
-            # The inert name, back again, is the original defect returning.
             if [ -e "deploy/images/$svc/.dockerignore" ]; then
               v "A1 deploy/images/$svc/.dockerignore exists: that name is NOT read for a Dockerfile outside its context, so its patterns are inert (this is the 97727b8 defect)"
             fi
@@ -616,7 +981,7 @@ jobs:
           # requires it named in the wipe ledger. A GPL artefact reaching this tree is a
           # licence conflict rather than unwanted weight, so it is a failure, not a warning.
           checked=$((checked + 1))
-          jars=$(git ls-files -- '*.jar' | tr '\n' ' ')
+          jars=$(tracked_jars | tr '\n' ' ')
           [ -z "$jars" ] || v "A2 a .jar is tracked ($jars) -- RELEASE-SCOPE.md excludes bfg-1.14.0.jar as a GPLv3 licence conflict"
 
           # --- A3: no model weights ----------------------------------------------------
@@ -624,7 +989,7 @@ jobs:
           # so none can leak -- but .gitignore is the only thing enforcing that and
           # .gitignore is edited.
           checked=$((checked + 1))
-          w=$(git ls-files -- '*.gguf' '*.safetensors' '*.onnx' '*.pt' '*.pth' | tr '\n' ' ')
+          w=$(tracked_weights | tr '\n' ' ')
           [ -z "$w" ] || v "A3 model weights are tracked: $w"
 
           # --- A4: NOTICE arrives WITH the fonts, not after ----------------------------
@@ -636,7 +1001,7 @@ jobs:
           # Counted as CHECKED only on the branch that actually asserts something. An
           # obligation that is not yet due has not been satisfied, and folding it into the
           # checked total would overstate what this job established.
-          fonts=$(git ls-files -- '*.woff2' '*.woff' '*.otf' '*.ttf' | wc -l)
+          fonts=$(tracked_fonts | wc -l)
           if [ "$fonts" -gt 0 ]; then
             checked=$((checked + 1))
             test -f NOTICE || v "A4 $fonts font file(s) are tracked but NOTICE is absent -- OFL attribution must be stated, not implied"
@@ -706,6 +1071,10 @@ jobs:
               exit 1
             }
             echo "control ok: a 100644 shebang file is flagged and a 100755 one is not"
+            echo "matcher: shebang + index-mode scan (A5) -- positive ok (not-executable.sh"
+            echo "         flagged), near-miss ok (executable.sh not flagged, plain.txt not"
+            echo "         scanned). This pair predates the 2026-11-03 sweep; it is named"
+            echo "         here so every matcher reports in the same form."
           )
 
           checked=$((checked + 1))
@@ -763,9 +1132,22 @@ jobs:
             [ "$n" -eq 2 ] || echo "HALF-ASSEMBLED: one context present, one absent."
           fi
 
-      - name: obligations that need the assembled source
+      - name: assembled-source obligations -- matchers planted always, asserted when present
         id: srcobl
-        if: steps.src.outputs.present == 'true'
+        # THE `if:` IS GONE, from 2026-11-03, and that removal is the point of this round.
+        # Every matcher this step owns used to be written inside a step that does not run
+        # while services/ is absent. So B4's `find` -- the most valuable assertion in this
+        # job -- sat in the repository unable to match its subject at all, and no run could
+        # have revealed it: the step containing it never executed. The matchers are now
+        # defined once, exercised against PLANTED trees on every run, and pointed at the
+        # real source only when it exists.
+        #
+        # The obligation accounting is unchanged. With services/ absent this step asserts
+        # nothing about the source, counts nothing as checked, and says so; the deferred
+        # list still comes from the `src` step, which always ran. A matcher control passing
+        # is not an obligation being satisfied, and the output below never conflates them.
+        env:
+          SRC_PRESENT: ${{ steps.src.outputs.present }}
         run: |
           set -euo pipefail
           violations=""
@@ -773,6 +1155,135 @@ jobs:
           v() { violations="$violations|$1"; }
           R=services/router
           P=services/portal
+
+          # ======================= THE MATCHERS, DEFINED ONCE =========================
+          # Each is called below on a planted tree and -- when the source is present -- on
+          # the real one. The plants go through these functions rather than a retyped copy
+          # of each pattern, because a control that retypes the pattern tests a different
+          # pattern, and the quoting path out of this YAML block scalar is part of what is
+          # under test.
+          stray_modules() { sm_r="$1"
+            find "$sm_r" -mindepth 2 -name '*.py' -type f \
+              -not -path "$sm_r/backends/*" \
+              -not -path "$sm_r/skills/*" \
+              -not -path '*/tests/*' \
+              -not -name 'test_*.py' \
+              -not -name '*_test.py' \
+              -not -path '*/__pycache__/*' 2>/dev/null | sort | tr '\n' ' '
+          }
+          top_py_count() { find "$1" -maxdepth 1 -name '*.py' -type f 2>/dev/null | wc -l; }
+          py_count()     { find "$1" -name '*.py' -type f 2>/dev/null | wc -l; }
+          has_no_files() { [ -z "$(find "$1" -type f -print -quit 2>/dev/null)" ]; }
+          cred_shaped()  {
+            find "$1" \( -name '.env' -o -name '.env.*' -o -name '*.pem' \
+              -o -name '*.key' -o -name '*.p12' -o -name '*.pfx' -o -name '.netrc' \
+              -o -name '.git-credentials' -o -name 'id_rsa' -o -name 'id_ed25519' \) \
+              -type f 2>/dev/null | sort | tr '\n' ' '
+          }
+          names_bare_uvicorn()   { grep -qiE '^[[:space:]]*uvicorn[[:space:]]*([=<>!~;#].*)?$' "$1"; }
+          names_uvicorn_extras() { grep -qiE '^[[:space:]]*uvicorn\[' "$1"; }
+
+          # ============================ THE PLANTS ====================================
+          fail_control() { echo "CONTROL FAILED: $1"; exit 1; }
+          pl="$(mktemp -d)"
+          PR="$pl/router"
+          mkdir -p "$PR/backends" "$PR/skills" "$PR/strategies" "$PR/deep/deeper" \
+                   "$PR/tests" "$PR/util" "$PR/pkg/__pycache__"
+          # B4 positives: a module in a directory no COPY names and the ignore file denies.
+          : > "$PR/strategies/tiers.py"
+          : > "$PR/deep/deeper/buried.py"
+          # B4 near-misses, one per exclusion the pattern carries.
+          : > "$PR/main.py"
+          : > "$PR/backends/ollama.py"
+          : > "$PR/skills/helper.py"
+          : > "$PR/tests/test_x.py"
+          : > "$PR/util/test_helper.py"
+          : > "$PR/util/helper_test.py"
+          : > "$PR/pkg/__pycache__/cached.py"
+          : > "$PR/skills/doc.md"
+
+          want="$PR/deep/deeper/buried.py $PR/strategies/tiers.py "
+          got=$(stray_modules "$PR")
+          [ "$got" = "$want" ] || fail_control "stray_modules returned [$got], expected [$want].
+            This is the matcher that was INERT when it merged: \`-not -path \"\$R/*.py\"\`
+            excluded every .py at any depth, because \`*\` matches '/' in find's -path glob.
+            With it inert the check reported no violations and exited 0 -- the same output a
+            clean tree produces. Hence -mindepth 2 plus subtree exclusions, and hence this
+            plant, which runs whether or not services/ exists."
+
+          [ "$(top_py_count "$PR")" -eq 1 ] || fail_control "top_py_count missed a top-level module"
+          mkdir -p "$pl/nested/sub" && : > "$pl/nested/sub/only.py"
+          [ "$(top_py_count "$pl/nested")" -eq 0 ] || fail_control "top_py_count counted a .py one directory down, so -maxdepth 1 is not in force and \`COPY *.py ./\` would look satisfied by a module it cannot copy"
+
+          [ "$(py_count "$PR/skills")" -eq 1 ] || fail_control "py_count missed a .py under skills/"
+          mkdir -p "$pl/mdonly" && : > "$pl/mdonly/a.md"
+          [ "$(py_count "$pl/mdonly")" -eq 0 ] || fail_control "py_count reported a .py in a Markdown-only tree"
+
+          mkdir -p "$pl/dirs-only/nested"
+          has_no_files "$pl/dirs-only" || fail_control "has_no_files called a tree of empty directories non-empty; an empty skills/ would then pass B2 and the build would go green shipping a router with no skills"
+          ! has_no_files "$PR/skills" || fail_control "has_no_files called a tree WITH files empty"
+
+          PU="$pl/req"
+          mkdir -p "$PU"
+          printf 'uvicorn\n'                    > "$PU/bare"
+          printf 'uvicorn==0.30.0\n'            > "$PU/bare-pinned"
+          printf 'uvicorn ; python_version>="3.11"\n' > "$PU/bare-marker"
+          printf 'uvicorn[standard]==0.30.6\n'  > "$PU/extras"
+          printf 'uvicorn-worker\nfastapi\n'    > "$PU/other-dist"
+          printf '# uvicorn\n'                   > "$PU/commented"
+          for b in bare bare-pinned bare-marker; do
+            names_bare_uvicorn "$PU/$b" || fail_control "the bare-uvicorn pattern missed $b, which is the pin that silently removes the parts the server needs in order to serve"
+          done
+          for n in extras other-dist commented; do
+            if names_bare_uvicorn "$PU/$n"; then
+              fail_control "the bare-uvicorn pattern matched $n; it would reject a correct requirements.txt, and a pattern that matches everything asserts nothing"
+            fi
+          done
+          names_uvicorn_extras "$PU/extras" || fail_control "the extras pattern missed uvicorn[standard]; the anchors or the escaped bracket did not survive the quoting layers between this YAML and the shell"
+          for n in bare other-dist commented; do
+            if names_uvicorn_extras "$PU/$n"; then
+              fail_control "the extras pattern matched $n"
+            fi
+          done
+
+          PS="$pl/services"
+          mkdir -p "$PS/router/sub" "$PS/portal"
+          : > "$PS/router/.env"; : > "$PS/router/.env.local"; : > "$PS/router/id_rsa"
+          : > "$PS/router/sub/deploy.key"; : > "$PS/portal/server.pem"
+          : > "$PS/router/env"; : > "$PS/router/key.txt"; : > "$PS/router/main.py"
+          : > "$PS/portal/keynote.md"
+          want="$PS/portal/server.pem $PS/router/.env $PS/router/.env.local $PS/router/id_rsa $PS/router/sub/deploy.key "
+          got=$(cred_shaped "$PS")
+          [ "$got" = "$want" ] || fail_control "cred_shaped returned [$got], expected [$want]"
+
+          rm -rf "$pl"
+          echo "matcher: stray flat-module find (B4)   -- positive ok at depth 2 and 3,"
+          echo "         near-miss ok (top level, backends/, skills/, tests/, test_*.py,"
+          echo "         *_test.py, __pycache__/ all correctly unflagged)"
+          echo "matcher: top-level *.py count (B1)     -- positive ok, near-miss ok"
+          echo "         (-maxdepth 1 is in force: a module one level down is not counted)"
+          echo "matcher: *.py count (B2)               -- positive ok, near-miss ok"
+          echo "matcher: non-empty directory (B2, B3)  -- positive ok (a tree of empty"
+          echo "         directories reads as EMPTY), near-miss ok. One matcher, two checks."
+          echo "matcher: bare-uvicorn regex (B5)       -- positive ok (plain, pinned and"
+          echo "         marker forms), near-miss ok (extras, another distribution, comment)"
+          echo "matcher: uvicorn-extras regex (B5)     -- positive ok, near-miss ok"
+          echo "matcher: credential-shaped find (B7)   -- positive ok at depth, near-miss ok"
+          echo "         (a file named env, key.txt, main.py and keynote.md all unflagged)"
+
+          if [ "${SRC_PRESENT:-}" != "true" ]; then
+            {
+              echo "src_checked=0"
+              echo "src_violations="
+            } >> "$GITHUB_OUTPUT"
+            echo
+            echo "source-dependent obligations: NOT ASSERTED. services/ is absent, so the"
+            echo "matchers above were exercised against planted trees ONLY. Nothing was"
+            echo "measured about the real source and nothing is counted as checked -- a"
+            echo "matcher control passing is not an obligation being satisfied. The deferred"
+            echo "list is reported by the \`is the source assembled?\` step above."
+            exit 0
+          fi
 
           # --- B1: every router COPY group's source exists -----------------------------
           # The Dockerfile's COPY lines are requirements.txt, backends/, skills/ and *.py.
@@ -783,7 +1294,7 @@ jobs:
           for d in "$R/backends" "$R/skills"; do
             test -d "$d" || v "B1 $d/ is missing; the router build stops on its COPY"
           done
-          top_py=$(find "$R" -maxdepth 1 -name '*.py' -type f 2>/dev/null | wc -l)
+          top_py=$(top_py_count "$R")
           [ "$top_py" -gt 0 ] || v "B1 no *.py at the top level of $R, so COPY *.py ./ copies nothing"
           test -f "$R/main.py" || v "B1 $R/main.py is missing, and the Dockerfile's CMD is uvicorn main:app"
 
@@ -797,16 +1308,16 @@ jobs:
           # quoting an unverifiable figure is the mistake the withdrawn "131" was.
           checked=$((checked + 1))
           if [ -d "$R/skills" ]; then
-            if [ -z "$(find "$R/skills" -type f -print -quit 2>/dev/null)" ]; then
+            if has_no_files "$R/skills"; then
               v "B2 $R/skills/ exists but is EMPTY -- the build would go green shipping a router with no skills"
             fi
-            spy=$(find "$R/skills" -name '*.py' -type f 2>/dev/null | wc -l)
+            spy=$(py_count "$R/skills")
             [ "$spy" -eq 0 ] || v "B2 $R/skills/ contains $spy .py file(s); it was measured as Markdown-only, and a .py there changes the manifest"
           fi
 
           # --- B3: backends/ non-empty ------------------------------------------------
           checked=$((checked + 1))
-          if [ -d "$R/backends" ] && [ -z "$(find "$R/backends" -type f -print -quit 2>/dev/null)" ]; then
+          if [ -d "$R/backends" ] && has_no_files "$R/backends"; then
             v "B3 $R/backends/ exists but is EMPTY"
           fi
 
@@ -829,13 +1340,7 @@ jobs:
           # `find services/router -path 'services/router/*.py'` matches
           # services/router/strategies/tiers.py. A guard that cannot fail is the defect this
           # whole job exists to prevent, and it got in here first.
-          stray=$(find "$R" -mindepth 2 -name '*.py' -type f \
-                    -not -path "$R/backends/*" \
-                    -not -path "$R/skills/*" \
-                    -not -path '*/tests/*' \
-                    -not -name 'test_*.py' \
-                    -not -name '*_test.py' \
-                    -not -path '*/__pycache__/*' 2>/dev/null | sort | tr '\n' ' ')
+          stray=$(stray_modules "$R")
           [ -z "$stray" ] || v "B4 router module(s) in a directory no COPY names and the ignore file denies: $stray -- these are dropped TWICE and fail at import after a green build. Adding a package directory needs a COPY group AND an ignore-file admission TOGETHER."
 
           # --- B5: the name trap in the manifest --------------------------------------
@@ -849,10 +1354,10 @@ jobs:
           # trap warns about.
           checked=$((checked + 1))
           if [ -f "$R/requirements.txt" ]; then
-            if grep -qiE '^[[:space:]]*uvicorn[[:space:]]*([=<>!~;#].*)?$' "$R/requirements.txt"; then
+            if names_bare_uvicorn "$R/requirements.txt"; then
               v "B5 $R/requirements.txt pins bare \`uvicorn\`; the Dockerfile's CMD needs uvicorn[standard]"
             fi
-            grep -qiE '^[[:space:]]*uvicorn\[' "$R/requirements.txt" \
+            names_uvicorn_extras "$R/requirements.txt" \
               || v "B5 $R/requirements.txt names no uvicorn[...] extras line at all"
           fi
 
@@ -875,10 +1380,7 @@ jobs:
           # file currently catches it -- a single barrier is what this repository's three
           # layers exist to avoid.
           checked=$((checked + 1))
-          creds=$(find services \( -name '.env' -o -name '.env.*' -o -name '*.pem' \
-                    -o -name '*.key' -o -name '*.p12' -o -name '*.pfx' -o -name '.netrc' \
-                    -o -name '.git-credentials' -o -name 'id_rsa' -o -name 'id_ed25519' \) \
-                    -type f 2>/dev/null | sort | tr '\n' ' ')
+          creds=$(cred_shaped services)
           [ -z "$creds" ] || v "B7 credential-shaped file(s) inside a build context: $creds -- the ignore file is then the only barrier, and it has been inert before"
 
           # --- B8: what the ignore files are holding back, reported in bytes -----------
@@ -924,11 +1426,53 @@ jobs:
           show() { printf '%s' "$1" | tr '|' '\n' | awk 'NF{print "    - " $0}'; }
           # awk, NOT `wc -l`. These lists are '|'-separated with no trailing separator, so
           # after `tr` the final entry carries no newline and `wc -l` -- which counts
-          # NEWLINES, not lines -- returned one less than the truth. With a single violation
-          # that is zero, and this job would have printed ASSEMBLED AND CLEAN while holding
-          # a violation it had just listed. Measured while testing the arms, not reasoned
-          # about; `awk 'NF{c++} END{print c+0}'` always prints an integer and exits 0.
+          # NEWLINES, not lines -- returns one less than the truth.
+          #
+          # CORRECTED 2026-11-03, because the comment that stood here overstated it. It
+          # said a single violation would count as ZERO. Measured: `|one` counts 1 under
+          # both, because the LEADING separator contributes the missing newline, and every
+          # list built by `v()` and `d()` carries one. The list that does NOT is
+          # `src_deferred`, which is written as seven entries joined by '|' with no leading
+          # separator -- so `wc -l` returned 6 for it, and the DEFERRED total was the figure
+          # that was wrong. Both counts matter: a deferred total that reads one short is a
+          # claim about how much is outstanding, printed by the step whose whole purpose is
+          # not to overstate what it checked. The arm written for this round is what showed
+          # the old comment to be wrong; the planted sets below carry both separator shapes
+          # for exactly that reason. `awk 'NF{c++} END{print c+0}'` always prints an integer
+          # and exits 0.
           nz()   { printf '%s' "$1" | tr '|' '\n' | awk 'NF{c++} END{print c+0}'; }
+
+          # THE COUNTER IS PLANTED AGAINST, from 2026-11-03. Fixing the one off-by-one I
+          # happened to find is not the same as knowing the counter counts: `wc -l` lost the
+          # LAST element, so the case that broke was the smallest one, and a counter that
+          # loses an element does not announce which. So assert it against sets of KNOWN
+          # SIZE, in both separator shapes, and assert the printer agrees with the counter --
+          # a count of three beside a list of two is the same defect wearing the other face.
+          cnt_plant() {
+            got=$(nz "$1")
+            [ "$got" = "$2" ] || {
+              echo "CONTROL FAILED: nz(\"$1\") = $got, expected $2."
+              echo "This counter decides whether this job exits 0. An undercount by one"
+              echo "printed ASSEMBLED AND CLEAN while holding a violation it had just"
+              echo "listed, which is the defect this control exists to keep fixed."
+              exit 1
+            }
+          }
+          cnt_plant ""            0
+          cnt_plant "||"          0
+          cnt_plant "|one"        1
+          cnt_plant "|a|b|c"      3
+          cnt_plant "a|b|c"       3
+          cnt_plant "|a|b|c|d|e"  5
+          shown=$(show "|a|b|c" | awk 'END{print NR+0}')
+          [ "$shown" -eq 3 ] || {
+            echo "CONTROL FAILED: show() printed $shown lines for a set the counter calls 3."
+            echo "The number and the list must come from the same reading of the set."
+            exit 1
+          }
+          echo "matcher: violation counter and printer -- planted sets of size 0, 1, 3 and 5"
+          echo "         all counted exactly, in both separator shapes, and the printed list"
+          echo "         agrees with the count"
 
           rv=$(nz "${REPO_V:-}"); rd=$(nz "${REPO_D:-}"); sv=$(nz "${SRC_V:-}")
           sd=$(nz "${SRC_D:-}")
@@ -985,11 +1529,13 @@ jobs:
           echo
           echo "REPORTED BUT NOT ASSERTED, when the source is present:"
           echo "  - B8 prints the on-disk size of each context and names any denied"
-          echo "    directory it holds (node_modules, .git, dist, tests, ...). There is no"
-          echo "    byte ceiling, because this repository cannot derive one and an invented"
-          echo "    figure is what the withdrawn \"131\" was. The enforcement is A1, which"
-          echo "    asserts the ignore file sits where Docker reads it, plus the images job,"
-          echo "    which transfers the context for real."
+          echo "    directory it holds (node_modules, .git, dist, tests, ...). There is still"
+          echo "    no byte CEILING: it can only come from the first real assembled build,"
+          echo "    and a figure invented before then is what the withdrawn \"131\" was."
+          echo "    RELEASE-SCOPE.md names the command that supplies it at step 4."
+          echo "    The patterns themselves are no longer unasserted: the images job builds a"
+          echo "    planted context against each ignore file and compares the transferred"
+          echo "    file list EXACTLY, which is stronger than any floor and invents nothing."
           echo
           echo "NOT CHECKED BY THIS JOB, and owed by step 5:"
           echo "  - the four runtime JSON files (fleet_config, capability_registry,"

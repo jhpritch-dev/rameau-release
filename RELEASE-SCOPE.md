@@ -1032,3 +1032,161 @@ unchanged, and the only thing that has changed is that one of its three rows was
   unchanged. It was not relabelled on the strength of unrelated work landing.
 - **Fifteen merged branches** cannot be deleted from this session: the device-trust check
   refuses it. Named once, needing no measurement, and not this document's to resolve.
+
+## The matcher sweep, 2026-11-03
+
+Three times now a check in this repository has reported a clean verdict because its matcher
+could not match its subject: the secret canary printing `? finding(s)` for a scan that had
+crashed; a count of checks that never ran read as a verdict; and B4's `find`, where `*`
+crossing a `/` in a `-path` glob made the preflight's most valuable assertion inert on the
+day it merged. The third appearance makes it a class rather than an incident. **An empty
+result is not an absence**, and the common element every time is a pattern whose failure to
+match is silently read as the absence of what it was looking for.
+
+So every pattern-based matcher in CI now has a planted positive **and** a planted near-miss,
+and each reports by name. The near-miss is not symmetry for its own sake: a matcher that
+flags everything prints `control ok` exactly as loudly as one that flags nothing.
+
+### What the sweep covered, and what each plant found
+
+Discovered by sweeping `.github/workflows/ci.yml` for `find`, `grep`, `git ls-files`, `jq`,
+shell globs used in a decision, and `case` dispatch. **Twelve matchers, in four jobs.**
+`tools/git-hooks/pre-push` is a gate with matchers of its own but is not called by CI; its
+gitleaks invocation is the same one the `secrets` job plants against, and its own
+crash-versus-verdict classification was corrected on 2026-11-02.
+
+| matcher | serves | positive | near-miss | found |
+|---|---|---|---|---|
+| gitleaks ruleset | `secrets` | AKIA + 16 random | AKIA + 8, AKIA + 16 identical, prose | the first near-miss was **flaky** — see below |
+| loopback regex | `build` | `127.0.0.1` and `localhost`, one file each | `192.0.2.1` (TEST-NET-1), a documentation host, `127x0y0z1` | sound; and `127.0.0.11` matches, correctly |
+| grep error arm | `build` | a directory as the target → status 2 | — | sound |
+| Apache licence substring | `build` | the Apache header | MIT, GPL, lower case | sound |
+| jq key selector | `build` | a key that is set | a key that is missing, a key that is empty | `//` does **not** fire on `""` |
+| jq blank-value selector | `build` | `RAMEAU_` empty and null | `OTHER_EMPTY`, which is empty and not reported | sound |
+| router ignore patterns | `images` | 8 re-admitted paths | 24 denied paths | **a credential hole — see below** |
+| portal ignore patterns | `images` | 12 re-admitted paths | 20 denied paths | **the same hole, wider** |
+| `git ls-files` pathspecs (A2, A3, A4) | `step4` | `.jar`, weights and fonts at depth 3 | `notajar.jarx`, a file named `jar`, `notes.gguf.txt` | sound, and reaches any depth |
+| shebang + index mode (A5) | `step4` | a 100644 shebang file | a 100755 one, and a non-script | sound; this pair predates the sweep |
+| stray flat-module find (B4) | `step4` | modules at depth 2 and 3 | top level, `backends/`, `skills/`, `tests/`, `test_*.py`, `*_test.py`, `__pycache__/` | sound **after** the fix it was shipped without |
+| `uvicorn` name-trap regexes (B5) | `step4` | plain, pinned and marker forms | extras, another distribution, a comment | sound; anchors survive the quoting |
+| violation counter and printer | `step4` | sets of size 0, 1, 3 and 5, both separator shapes | — | the recorded reason for the old defect was **wrong** |
+
+Thirteen rows for twelve matchers: the `grep` error arm is the third branch of the loopback
+matcher rather than a matcher of its own, and is listed separately because it is planted
+separately.
+
+**Every plant runs on every push, with or without a source tree.** That required removing the
+`if:` from the step that owns B1–B7: the matchers are defined once, exercised against planted
+trees always, and pointed at the real source only when it exists. The obligation accounting is
+unchanged — with `services/` absent nothing is asserted and nothing is counted as checked,
+because a matcher control passing is not an obligation being satisfied.
+
+### Finding: both ignore files' credential blocks were matched against one path segment
+
+Measured with a planted context, `FROM scratch`, `COPY . /ctx/` and `--output type=local` on
+docker 29.9.2, and re-measured by the `images` job on every push:
+
+- **router**: `backends/.env`, `backends/leak.pem`, `skills/leak.key` and `backends/sub.log`
+  were all transferred into the build context.
+- **portal**: `src/.env`, `src/leak.pem`, `public/leak.key` and `src/sub.log` likewise.
+
+A single `*` in a `.dockerignore` pattern does not cross a `/`, so `.env`, `*.pem`, `*.key`
+and `*.log` denied the context root and said nothing about anything below it — while
+`!backends/**`, `!skills/**`, `!src/**` and `!public/**` re-admit those subtrees in full. The
+block whose own comment reads *"never, under any circumstances … so that a future edit which
+re-admits a directory cannot sweep one of these in as a side effect"* was in exactly the state
+it was written to prevent. `**/__pycache__/` and `**/*.pyc` were the only two entries written
+with `**/`, which is precisely why they were the only two that held at depth.
+
+The consequence is not confined to the context. `COPY backends/ /app/backends/` and
+`COPY skills/ /app/skills/` copy whole directories, so those router files reach the published
+image. The portal's is worse: Vite copies its publicDir **verbatim** into the build output, so
+with `publicDir` left at its default a `public/leak.key` becomes `dist/leak.key` and nginx
+serves it. `vite.config.js` is not in this repository and arrives with the context, so that
+default is an assumption rather than a measurement — **step 4 must read it.**
+
+`**/P` also matches a top-level `P`, measured, so the generalised patterns replace the bare
+forms rather than joining them.
+
+**What was deliberately left top-level only**, with the reason, because denying too much is
+the worse failure here: `tests/`, `test_*.py` and `*_test.py` in the router, and `assets/`,
+`index-*.js`, `index-*.css`, `dist/`, `*_fixed.jsx` and `*_v2.jsx` in the portal. `src/assets/`
+is Vite's ordinary home for imported images and `**/assets/` would drop it; a
+`**/test_*.py` that dropped an imported `test_utils.py` would fail inside the container after
+a green build, which is the failure class B4 exists to prevent. The preflight's B4 comment
+said these were "denied deliberately"; that is true at the context root and **not** true one
+directory down, and B4's exclusions remain correct for a different reason — such files arrive
+rather than being dropped twice.
+
+### Two corrections to this repository's own record
+
+1. **The violation counter's recorded defect was mis-stated.** The note in `ci.yml` said a
+   single violation would count as zero under `wc -l`. Measured: `|one` counts 1 under both,
+   because the leading separator supplies the missing newline, and every list built by `v()`
+   and `d()` carries one. The list that does not is `src_deferred` — seven entries joined by
+   `|` with no leading separator — so the figure that was wrong was the **deferred total**,
+   which read 6. A deferred total that reads one short is a claim about how much is
+   outstanding, printed by the step whose whole purpose is not to overstate what it checked.
+   The planted sets now carry both separator shapes.
+2. **The canary's near-miss was flaky in its first form.** A randomly generated body of the
+   wrong length occasionally clears gitleaks' entropy threshold on an
+   `aws_access_key_id = …` line. Observed failing once, on a clean repository, with a message
+   blaming the matcher; an isolated loop of twelve runs produced none. The rate is not
+   characterised and does not need to be — any nonzero rate disqualifies it, because a control
+   that fails at random teaches people to re-run the job. Both near-misses are now
+   deterministic and carry no entropy. Measured on gitleaks 8.21.2, all four files in one
+   commit: `creds.txt` alone is flagged, rule `aws-access-token`, entropy 3.58, and AKIA
+   followed by sixteen identical characters is not flagged at all — which makes it the sharper
+   near-miss, rejected on entropy with the length and prefix correct.
+
+Two further fragilities in that step were fixed while measuring it: the SARIF report was
+written **inside** the canary repository and `git add -A` staged the previous run's copy on a
+re-run — staging an artefact of the check into the subject of the check — and the scratch
+directory was not removed first, so the first run and the second did not ask the same
+question.
+
+### One guard removed rather than shipped
+
+A1's `test -f` on each `Dockerfile.dockerignore` **could not fire**. The `assert what cannot
+be absent` step lists both paths and exits 1 when one is missing, so the repo step does not
+run in the only case that branch existed for. Found by writing its arm: the mutation failed
+the job one step earlier and the A1 message never appeared. Existence is now owned by that
+step, in one place, and A1 asserts the half nothing else covers — the inert `.dockerignore`
+name returning. This is the second guard-that-cannot-fail I have put into this job, and both
+were found by arming rather than by reading.
+
+## Arm coverage for the twelve obligations, 2026-11-03
+
+All twelve are **ARMED**: for each, a mutation, the arm failing, and the correct state passing
+again. None is DEFERRED and none CANNOT BE ARMED. B1–B7 are armed against a **transient stub**
+built inside a throwaway clone and discarded with it — which is not the real source, and the
+caveat on the preflight stands unchanged: the arms show each assertion *can* fire, which is the
+strongest claim available before step 4, and is not the same as having run at the transition.
+
+41 arms fire as expected. The full list is in the pull request that introduced them. Each arm
+runs in a **fresh local clone** rather than in the working tree: the previous round's harness
+leaked state between arms, and the fix was a full reset — which is a destructive operation that
+should not be aimed at the real tree at all. The harness also reports a **mutation that itself
+failed** as `MUTATION-FAILED` rather than scoring it as a pass; that caught one arm whose
+`git add` was refused by `.gitignore`, which would otherwise have read as a check that fired.
+
+## The byte ceiling: owner, trigger and command, 2026-11-03
+
+The ceiling on the transferred build context remains **unset**, and deliberately: the window is
+still open. The context grows when `services/` lands, and a ceiling pinned against today's
+stub figures would go red on exactly the growth it exists to permit. A figure invented to make
+a gate green is what the withdrawn "131" was.
+
+What replaces the floor the brief asked for is **exact set equality**, asserted by the `images`
+job against a planted context: every re-admitted path transferred, every denied path not. That
+is strictly stronger than a floor — an ignore file that started matching too much fails by
+name rather than by a margin — and it invents no number.
+
+- **Trigger**: the first run in which `services/router` and `services/portal` both exist, so
+  that `docker compose build` actually transfers a context.
+- **Command**: the `images` job now runs `docker compose -f deploy/compose.yaml build
+  --progress=plain`, and buildkit's `transferring context: <N>B` line for each service is the
+  figure. Plain progress is there for this reason: without it the line is collapsed and the one
+  run that could supply the measurement would not record it.
+- **Owner**: step 4. Take both figures from that first green run, record them here with the
+  runner image and docker version they were measured on, and only then write a ceiling.
