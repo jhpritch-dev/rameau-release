@@ -91,6 +91,52 @@ jobs:
             --report-path gitleaks.sarif \
             --exit-code 1
 
+      - name: prove the private-literal gate can fail
+        # Same discipline as the gitleaks canary above, for the same reason: a clean
+        # report is the output nobody re-checks. The planted value is GENERATED, so no
+        # address belonging to anyone appears in this file -- which is also the design
+        # rule the scanner itself follows.
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/plcanary && cd /tmp/plcanary
+          o3=$(( RANDOM % 254 + 1 )); o4=$(( RANDOM % 254 + 1 ))
+          printf 'ROUTER_URL = "http://10.%d.%d.%d:8089"\n' "$o3" "$o4" "$o4" > probe.py
+          # Exit 1 is the PASS condition here. Exit 0 means the planted private address
+          # was missed and the gate below cannot be trusted.
+          if python3 "$GITHUB_WORKSPACE/tools/scan_private_literals.py" \
+               --root . --paths probe.py; then
+            echo "CONTROL FAILED: the private-literal gate did not flag a generated"
+            echo "RFC1918 address. The scan below cannot be trusted; failing on purpose."
+            exit 1
+          fi
+          echo "control ok: the private-literal gate flags a generated private address"
+
+      - name: unit-test the private-literal gate
+        # The scanner has its own tests, and one of them is load-bearing:
+        # test_this_file_contains_no_address_literal asserts the detector does not embed
+        # the thing it defends. That is a property no amount of end-to-end scanning would
+        # catch, because a hardcoded subnet makes every other check pass.
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check pytest
+          python3 -m pytest "$GITHUB_WORKSPACE/tools/test_scan_private_literals.py" -q
+
+      - name: scan for private addresses and internal hostnames
+        # THE HALF gitleaks DOES NOT COVER. CLAUDE.md and README.md state the rule as
+        # "credential, key, token, password, private address or internal hostname".
+        # gitleaks has no rule for the last two -- measured: a file whose whole content is
+        # an RFC1918 URL is reported "no leaks found" with exit 0. Until this step existed
+        # the number of instruments covering half the stated rule was zero, and the one
+        # leak this repository has actually had was in that half.
+        #
+        # Scope, stated rather than implied: addresses are covered completely; internal
+        # hostnames only where they carry a reserved DNS suffix. A bare single-label
+        # private hostname is NOT covered, because in a Compose project it is the same
+        # shape as a service name -- see the scanner's docstring for the measurement.
+        run: |
+          set -euo pipefail
+          python3 tools/scan_private_literals.py --root "$GITHUB_WORKSPACE" --audit
+
       - name: upload findings
         if: always()
         # v7, not v4: v4 is a Node 20 action. That was NOT visible until
