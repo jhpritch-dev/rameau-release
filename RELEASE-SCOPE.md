@@ -626,7 +626,7 @@ now blocks a deliverable and makes live documents wrong rather than leaving a qu
 | option | consequence |
 |---|---|
 | accept the ruled scope, restate acceptance as the three legs | smallest; the delegate is simply not in v0.1 |
-| extend the ruling to include the delegate and tool loop | pulls in the entangled sibling tree, four more packages, and eight module names it imports without containing — manifest and closure both need re-measuring |
+| extend the ruling to include the delegate and tool loop | **this row was wrong and is corrected below (2026-11-03).** It said "entangled sibling tree, four more packages, eight module names it imports without containing"; that came from a stale snapshot. Re-measured: the closure is **self-contained**, the manifest delta is **two** packages, and nothing is imported-but-absent |
 | test against the live router | tests the private system, so it cannot discharge the release's acceptance at all |
 
 The measuring session recommends the first, and so do I, for a reason this document already
@@ -901,3 +901,134 @@ that survives testing unaltered is the exception rather than the rule:
 
 Not changed, deliberately: the advisory working-tree pass, the hook's history scope, and
 `validate compose`'s weak control, each for the reason recorded above.
+
+## The step-4 preflight, 2026-11-03
+
+Everything above this line that places an obligation on step 4 was enforced by nothing. Each
+was measured, each is correct, and each depended on a human reading a 900-line document at
+the one moment it matters. That is the weaker half of a gate — the same shape as the
+executable bit before `28f7c82`, generalised to every other obligation in this document.
+
+`.github/workflows/ci.yml` now carries a `step-4 preflight` job that asserts them in one
+place and reports exactly one state by name. The executable-bit check is **folded into it**
+rather than left standing in `build`, so one job reports one state; **Finding G of the gate
+audit is therefore discharged by this job and is no longer separately latent.**
+
+| state | meaning | result |
+|---|---|---|
+| `NOT ASSEMBLED YET` | `services/` absent; repository obligations hold | pass |
+| `NOT ASSEMBLED YET, AND VIOLATED` | `services/` absent, but a repository obligation fails **now** | fail |
+| `ASSEMBLED AND CLEAN` | `services/` present, every assertable obligation holds | pass |
+| `ASSEMBLED AND VIOLATED` | `services/` present, at least one fails | fail |
+
+The fourth name is a departure from the three the brief asked for, and the reason is a defect
+the arms caught in the first version: with only three states the job failed solely on
+`ASSEMBLED AND VIOLATED`, so a tracked GPL `.jar`, a model weight, a `100644` script or a
+displaced ignore file was **listed as a violation and then exited 0**. The job printed its
+findings and waved them through — the shape `2f30729` corrected in the hook. Three states are
+right about *assembly*; they do not cover a live defect found before step 4.
+
+**What it asserts.** Five hold with or without the source: the ignore files sit where Docker
+reads them (**the location, not mere existence** — a rename or a lone `git mv` disarms every
+pattern silently); no `.jar`, because a GPLv3 artefact in an Apache-2.0 release is a licence
+conflict; no model weights; `NOTICE` exists the moment any font is tracked, which couples two
+things this document could previously only ask a reader to remember; and every tracked
+shebang file is `100755` in the index, with its control.
+
+Seven more need the assembled source and are **named and reported DEFERRED** until it exists,
+never counted as satisfied: every router and portal `COPY` source present including
+`nginx.conf`; `skills/` non-empty and still Markdown-only; `backends/` non-empty;
+`uvicorn[standard]` rather than bare `uvicorn`; nothing credential-shaped anywhere in either
+context; and **the flat-modules precondition**, which is the one worth having — a router
+module outside `backends/` or `skills/` is dropped twice, by the ignore file and by no `COPY`
+naming it, and fails at import after a green build.
+
+An eighth item, the size the ignore files hold back, **reports rather than asserts**. There is
+no byte ceiling, because this repository cannot derive one and an invented figure is what the
+withdrawn "131" was. Enforcement is the location assertion plus the `images` job, which
+transfers the context for real.
+
+**Three obligations it cannot assert, which therefore belong to step 5 and are named in its
+own output** rather than passed over: the four runtime JSON files, absent by design and
+unhostable in CI; `docker/.env.example`, which must be read line by line because it entered
+the release set on its filename alone; and the acceptance procedure itself, whose
+delegated-leaf step is suspended below.
+
+**One thing the preflight cannot fix, recorded instead.** "No stub survived" is not directly
+assertable: nothing distinguishes a stub from assembled source by inspection. What the job
+does instead is make the distinction irrelevant — a `services/` that satisfies all seven
+source obligations is not a stub in any respect the build cares about. Relatedly, the
+protection that kept stubs out of this repository during development was
+`.git/info/exclude`, which is **local and does not travel**; `.gitignore` carries no
+`services/` rule deliberately, because a rule that must be *removed* at step 4 is the same
+hazard as an obligation that must be remembered.
+
+## The delegation's real shape, re-measured 2026-11-03 — NOTHING ADOPTED
+
+Reported by the session that can read the private tree. Counts and line counts only; no
+source, no values, and the two module names were already public in this document.
+
+```
+bifrost_delegate.py                  774 lines
+igor_tool_loop.py                  2,141 lines
+local closure reachable from them     10 modules, ~5,360 lines
+imported-but-absent modules            0      <- SELF-CONTAINED
+new third-party requirements            2      fastmcp, mcp
+already in the release manifest         3      httpx, pydantic, prometheus_client
+tests referencing the mechanism        23
+```
+
+**The zero is the figure that matters.** The options table above said this path pulls in an
+entangled sibling tree, four more packages and eight modules imported without being present.
+That was read off a stale snapshot and is wrong about what actually runs: a port would be a
+copy of ten self-contained modules plus two public PyPI requirements, not a rewrite. The
+engineering question is substantially smaller than this document implied, which is why the
+row is corrected rather than left to be rediscovered.
+
+**And the real constraint is not engineering at all.** Both seed modules are rule-1 protected
+on the private side, so a port publishes protected internals. It is a **disclosure** decision,
+not a difficulty one — still John's, but for a different reason than this document gave. A
+reader who concluded "too entangled to be worth it" would have been reasoning from a figure
+that no longer holds.
+
+### What the release would have to do to accept it, so the port is mechanical
+
+Answerable now, without the code:
+
+- **Manifest delta: two lines.** `fastmcp` and `mcp`; the other three are already in. The
+  form is not decided here because floors-versus-pins is still John's. Both names must be
+  read from `importlib.metadata.packages_distributions()` in an environment where they are
+  installed — never from recall — which is the standing rule for this manifest and not a
+  comment on these two packages.
+- **The router ignore file: possibly nothing, and the preflight now says which.** It denies
+  `**` and re-admits named paths, and `!*.py` already covers any module landing flat. A new
+  package directory needs a `COPY` group **and** a `!dir/` plus `!dir/**` admission
+  *together* — and those `!` lines must go in the re-admit block, **before** the
+  never-under-any-circumstances block, because an ignore file takes the **last** matching
+  pattern and `.env`, `*.pem`, `*.key`, `.netrc`, `.git-credentials` must keep winning. The
+  flat-modules assertion in the preflight is exactly the question this turns on, so after
+  step 4 the answer is measured rather than assumed.
+- **The 23 tests: into the repository, not into the image.** The ignore file denies `tests/`,
+  `test_*.py` and `*_test.py`, so they cannot reach the build context by design, and the
+  repository already tracks a test suite. Their own test-time dependencies are not among the
+  figures above and are unmeasured here.
+- **Acceptance: leg 1 changes, legs 2 and 3 do not.** Leg 1 rests on every requirement
+  resolving at module scope before the app can answer. `bifrost_delegate.py` is read off disk
+  with `ast` and imported by nothing, so `fastmcp` and `mcp` would be reached only when a
+  delegated leaf actually runs — and a 200 would stop discharging the manifest. The
+  consequence is precise: **the suspended delegated-leaf criterion un-suspends rather than
+  being replaced**, which is why it was suspended and not deleted. Legs 2 and 3 test a real
+  completion and the runtime config, neither of which this touches.
+
+**Nothing here is adopted.** The ruling is John's, the recommendation in the options table is
+unchanged, and the only thing that has changed is that one of its three rows was wrong.
+
+## Dispositions carried forward, 2026-11-03
+
+- **Finding G** — discharged by the step-4 preflight, which absorbed the executable-bit
+  check. Not separately latent any more.
+- **The weak check stays weak.** `validate compose`'s required-variable control still
+  certifies for the wrong reason, the preflight does not touch it, and its label is
+  unchanged. It was not relabelled on the strength of unrelated work landing.
+- **Fifteen merged branches** cannot be deleted from this session: the device-trust check
+  refuses it. Named once, needing no measurement, and not this document's to resolve.
