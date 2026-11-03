@@ -77,8 +77,9 @@
 # NAMED AS PATTERNS, not left to `**`, and recursive -- added 2026-11-03. This section was
 # prose only, which meant the four files were kept out at the CONTEXT ROOT and nowhere else:
 # `backends/**` and `skills/**` above re-admit wholesale, and `**` has already been
-# overridden by the time a file inside them is considered. Measured AT COMMIT 48fd5d1, i.e.
-# on this file BEFORE the patterns below existed: `backends/fleet_config.json`,
+# overridden by the time a file inside them is considered. Measured on this file AS IT
+# STOOD BEFORE 04a4eb1 -- it is byte-identical from 1d69a59 through 5bb4983, so any
+# of those five commits shows the same bytes: `backends/fleet_config.json`,
 # `backends/capability_profiles.json`, `backends/bifrost_shell_policy.json` and
 # `skills/capability_registry.json` all arrived in the built image while the root
 # `fleet_config.json` was correctly excluded. A reader testing the current file will and
@@ -98,20 +99,27 @@
 **/bifrost_shell_policy.json
 
 # ---- never, under any circumstances ----
-# THIS BLOCK'S GUARANTEE RESTS ON THREE PROPERTIES, AND ONLY TWO OF THEM ARE GATED.
+# THIS BLOCK'S GUARANTEE RESTS ON THREE PROPERTIES, AND ONLY ONE OF THEM IS GATED.
 #   REACH     -- the patterns are recursive, so they apply inside `backends/` and `skills/`,
-#                which this file re-admits wholesale.   Fixed 1d69a59.
+#                which this file re-admits wholesale.   Fixed 1d69a59. NOT gated: the
+#                probes that measured it were throwaway stub contexts built outside git
+#                and discarded, and no step builds a context or tests admission.
 #   FINALITY  -- nothing re-admits below this block, because a .dockerignore is
 #                last-match-wins.                       Fixed and GATED in 04a4eb1.
-#   SHAPE COVERAGE -- the shapes listed below are the ones worth denying. NOT GATED, and
+#   SHAPE COVERAGE -- the shapes listed below are the ones worth denying. NOT gated, and
 #                resting on prose. The heading says "never, under any circumstances" and
 #                what follows is about a dozen shapes, which is a weaker thing than the
 #                heading claims. This repository's own .gitignore names shapes this list
 #                does not, and `docker build` reads the WORKING TREE rather than the index,
 #                so a gitignored credential is invisible to every git-based gate here and
 #                still enters the image. Recorded in RELEASE-SCOPE.md as the top residual
-#                risk rather than patched in passing, because closing it is a decision about
-#                what this list is FOR.
+#                risk rather than patched in passing, because closing it is a decision
+#                about what this list is FOR.
+#
+# ONE OF THREE, NOT TWO. This heading said "ONLY TWO OF THEM ARE GATED" until 2026-11-03,
+# and that was false when written: only FINALITY has a step behind it. REACH rests on
+# probes that no longer exist anywhere, which is the same "promise rather than property"
+# this block was added to be candid about -- found inside the note about that defect.
 #
 # Every pattern here is RECURSIVE (`**/`), and that is the whole point of the block rather
 # than a style choice. The stated purpose is that a re-admission above cannot sweep one of

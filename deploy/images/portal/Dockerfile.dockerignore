@@ -64,9 +64,10 @@
 #
 # THE OTHER THREE ARE NOW RECURSIVE, and the previous comment was wrong to cover them with
 # the same sentence. An `index-<hash>.js` is a build OUTPUT shape, never a Vite input, so
-# recursion costs nothing there -- whereas root-anchoring cost plenty. Measured AT COMMIT
-# 48fd5d1, i.e. on this file BEFORE the change below -- a reader testing the current file
-# will and should see the opposite: `public/index-a1b2c3.js`,
+# recursion costs nothing there -- whereas root-anchoring cost plenty. Measured on this
+# file AS IT STOOD BEFORE 04a4eb1 -- it is byte-identical from 1d69a59 through
+# 5bb4983, so any of those five commits shows the same bytes. A reader testing the
+# current file will and should see the opposite: `public/index-a1b2c3.js`,
 # `public/assets/index-a1b2c3.js`, `public/assets/index-a1b2c3.css`,
 # `public/assets/nested/index-deep.js` and `public/dist/index-a1b2c3.js` were all admitted.
 # `public/` copies verbatim into `dist/`, so those land at the document root AND in
@@ -99,8 +100,12 @@ public/**/index-*.css
 # Added 2026-11-03. The portal has no business carrying them, and on this image the
 # consequence is worse than on the router: `public/` copies verbatim into `dist/`, which the
 # serve stage copies into the nginx document root, so fleet detail under `public/` would be
-# SERVED. Measured on the committed file: `public/fleet_config.json`,
-# `public/bifrost_shell_policy.json` and `src/capability_registry.json` were all admitted.
+# SERVED. Measured on this file AS IT STOOD BEFORE 04a4eb1 -- it is byte-identical
+# from 1d69a59 through 5bb4983, so any of those five shows the same bytes:
+# `public/fleet_config.json`, `public/bifrost_shell_policy.json` and
+# `src/capability_registry.json` were all admitted. THE CURRENT FILE ADMITS NONE OF THE
+# THREE -- the four patterns immediately below are what changed that, so a reader who tests
+# HEAD will see the opposite and should.
 # Named one by one rather than as `**/*.json`, which would sit below `!package.json` and
 # `!package-lock.json` above and deny the portal its own manifest.
 **/fleet_config.json
@@ -109,20 +114,27 @@ public/**/index-*.css
 **/bifrost_shell_policy.json
 
 # ---- never, under any circumstances ----
-# THIS BLOCK'S GUARANTEE RESTS ON THREE PROPERTIES, AND ONLY TWO OF THEM ARE GATED.
-#   REACH     -- the patterns are recursive, so they apply inside the directories this file
-#                re-admits wholesale.            Fixed 1d69a59; gated by the probes.
+# THIS BLOCK'S GUARANTEE RESTS ON THREE PROPERTIES, AND ONLY ONE OF THEM IS GATED.
+#   REACH     -- the patterns are recursive, so they apply inside `src/` and `public/`,
+#                which this file re-admits wholesale.   Fixed 1d69a59. NOT gated: the
+#                probes that measured it were throwaway stub contexts built outside git
+#                and discarded, and no step builds a context or tests admission.
 #   FINALITY  -- nothing re-admits below this block, because a .dockerignore is
-#                last-match-wins.                Fixed and GATED in 04a4eb1.
-#   SHAPE COVERAGE -- the shapes listed below are the ones worth denying. NOT GATED, and
+#                last-match-wins.                       Fixed and GATED in 04a4eb1.
+#   SHAPE COVERAGE -- the shapes listed below are the ones worth denying. NOT gated, and
 #                resting on prose. The heading says "never, under any circumstances" and
-#                what follows is a list of about a dozen shapes, which is a weaker thing
-#                than the heading claims. This repository's own .gitignore names shapes
-#                this list does not, and `docker build` reads the WORKING TREE rather than
-#                the index, so a gitignored credential is invisible to every git-based gate
-#                here and still enters the image. Recorded in RELEASE-SCOPE.md as the top
-#                residual risk rather than patched in passing, because closing it is a
-#                decision about what this list is FOR.
+#                what follows is about a dozen shapes, which is a weaker thing than the
+#                heading claims. This repository's own .gitignore names shapes this list
+#                does not, and `docker build` reads the WORKING TREE rather than the index,
+#                so a gitignored credential is invisible to every git-based gate here and
+#                still enters the image. Recorded in RELEASE-SCOPE.md as the top residual
+#                risk rather than patched in passing, because closing it is a decision
+#                about what this list is FOR.
+#
+# ONE OF THREE, NOT TWO. This heading said "ONLY TWO OF THEM ARE GATED" until 2026-11-03,
+# and that was false when written: only FINALITY has a step behind it. REACH rests on
+# probes that no longer exist anywhere, which is the same "promise rather than property"
+# this block was added to be candid about -- found inside the note about that defect.
 #
 # RECURSIVE (`**/`), and on this image that matters more than on the router's. `src/**` and
 # `public/**` above are wholesale re-admissions, and a root-anchored pattern cannot reach
