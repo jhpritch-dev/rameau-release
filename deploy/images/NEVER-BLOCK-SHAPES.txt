@@ -1,0 +1,86 @@
+# The shapes every never-block must deny. THE FLOOR, NOT THE DEFINITION.
+#
+# Each Dockerfile.dockerignore in this directory tree ends with a block headed
+#     # ---- never, under any circumstances ----
+# and that heading used to be a stronger claim than the list beneath it. Until 2026-11-03
+# the block's own comment said so: SHAPE COVERAGE was "NOT gated, and resting on prose."
+# This file is what it now rests on instead. `tools/check_never_block_shapes.py` requires
+# every pattern below to appear verbatim in every never-block, and CI runs that checker
+# against its own positive control first.
+#
+# WHAT THIS FILE DOES NOT DO, said plainly so it is not read as more than it is:
+#
+#   * It is a FLOOR. A never-block may deny more, and both of them do -- the router's adds
+#     `**/__pycache__/`, `**/.venv/` and the test shapes, the portal's adds `**/*_fixed.jsx`
+#     and `**/*_v2.jsx`. The two blocks are NOT required to be identical and should not be.
+#   * It does not test REACH. Whether a pattern actually excludes a file from a built
+#     context is a property of `docker build`, and no step in this repository builds one.
+#     That remains the never-block's first ungated property.
+#   * It does not test FINALITY -- that the block is last and nothing re-admits below it.
+#     The `each Dockerfile must still have its .dockerignore beside it` step owns that, and
+#     a second spelling of one rule invites an edit to half of it.
+#   * It cannot see a credential that is not of a listed SHAPE. `docker build` reads the
+#     WORKING TREE rather than the index, so a gitignored file still enters the context;
+#     RELEASE-SCOPE.md carries that as the top residual risk.
+#
+# PROVENANCE. The credential, key and token entries are `.gitignore`'s own three sections
+# of those names, each with a `**/` prefix, derived by comparing the files line by line on
+# 2026-11-03. The checker re-derives that comparison on every run, so this file cannot
+# fall behind `.gitignore` silently. `**/.git-credentials`, `**/.git/` and `**/.github/`
+# are here without a `.gitignore` twin, deliberately: this IS a git repository, so they
+# are not ignored, and both never-blocks have denied them since they were written.
+#
+# `**/*credential*` subsumes `**/credentials.json` and `**/*-credentials*`. All three are
+# listed: the checker compares lines, so a reader deleting a subsumed line is told rather
+# than silently agreed with.
+#
+# `.gitignore`'s assembly class (`_scrub/`, `_preimages/`, `_defect-fixes/`,
+# `WIPE-LEDGER.md`) is ABSENT ON PURPOSE. compose builds each image with a context of
+# `services/<name>`, so every pattern in a never-block is relative to that directory and
+# those four live at the repository root, outside it. They would be inert lines reading as
+# guarantees. The model-weights class is absent as a scope matter rather than a credential
+# one, and `*.bin` would deny a wasm or font asset a portal may legitimately ship.
+
+# --- environment and secrets ---
+**/.env
+**/.env.*
+**/*.env
+**/secrets/
+**/.secrets/
+**/*.secret
+**/*.secrets
+**/credentials.json
+**/*credential*
+**/*-credentials*
+**/auth.json
+**/.sops.yaml
+**/.sops/
+**/*.kubeconfig
+**/kubeconfig
+**/kubeconfig.*
+
+# --- keys and certificates ---
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.keystore
+**/id_rsa
+**/id_rsa.*
+**/id_ed25519
+**/id_ed25519.*
+**/*.ppk
+**/known_hosts
+
+# --- tokens ---
+**/*.token
+**/.netrc
+**/_netrc
+**/.npmrc
+**/.pypirc
+
+# --- repository metadata, which carries remotes and credentials of its own ---
+**/.git-credentials
+**/.git/
+**/.github/

@@ -171,3 +171,60 @@
 **/tests/
 **/test_*.py
 **/*_test.py
+
+# ---- WIDENED 2026-11-03 to the same set as the portal's ----
+# The portal's file carries the full reasoning for this block and is the one John ruled on
+# (in chat, 2026-11-03: *"2. widen to the portal"*). This list follows it in the same
+# sitting rather than later, for the reason the portal's own note gives: the two credential
+# sets are MEANT to be one set, they diverged once for no recorded reason, and a widening
+# applied to one of two files re-creates exactly that divergence. The gate added with this
+# commit now refuses it: it requires EVERY never-block to carry every shape in
+# `deploy/images/NEVER-BLOCK-SHAPES.txt`, so neither file can drift below that set alone.
+#
+# It does NOT require the two blocks to be identical, and saying so would be false. They
+# differ outside the credential classes and should: this one denies `**/__pycache__/`,
+# `**/.venv/` and the test shapes, the portal's denies `**/*_fixed.jsx` and `**/*_v2.jsx`.
+# What each file adds beyond the declared set is its own image's business. The declared set
+# is the floor, not the definition.
+#
+# Twenty-four patterns, every one a line of `.gitignore`'s "environment and secrets",
+# "keys and certificates" and "tokens" sections that had no `**/` twin here. Derived by
+# comparing the files line by line, not by thinking of more shapes. None of them matches
+# any tracked file, and RELEASE-SCOPE.md's import closure -- 8 top-level `.py` plus 4
+# under `backends/` -- contains nothing of these shapes either, so nothing the release
+# ships is denied.
+#
+# `.gitignore`'s assembly class (`_scrub/`, `_preimages/`, `_defect-fixes/`,
+# `WIPE-LEDGER.md`) is deliberately NOT here: compose builds this image with
+# `context: ../services/router`, so every pattern in this file is relative to
+# `services/router/` and those four live at the repository root, outside it. They would be
+# four inert lines reading as four guarantees. The model-weights class is absent as a
+# scope rather than a credential matter; RELEASE-SCOPE.md owns it.
+#
+# `**/.npmrc` has no job on a python image and is kept anyway, because the gate compares
+# the two lists for equality and one list with a hole in it is how they diverged before.
+# `**/.pypirc` is the one that earns its place here: it carries index credentials for pip.
+**/*.env
+**/secrets/
+**/.secrets/
+**/*.secret
+**/*.secrets
+**/credentials.json
+**/*credential*
+**/*-credentials*
+**/auth.json
+**/.sops.yaml
+**/.sops/
+**/*.kubeconfig
+**/kubeconfig
+**/kubeconfig.*
+**/*.jks
+**/*.keystore
+**/id_rsa.*
+**/id_ed25519.*
+**/*.ppk
+**/known_hosts
+**/*.token
+**/_netrc
+**/.npmrc
+**/.pypirc

@@ -511,6 +511,30 @@ jobs:
           echo "ok: every built service has a tracked, deny-by-default ignore-file beside"
           echo "    the Dockerfile compose names"
 
+      - name: the never-block must cover the declared shape set
+        # The step above decides PRESENCE and POSITION of the never-block. It says nothing
+        # about WHAT is in it, and the block's own comment was candid that SHAPE COVERAGE
+        # was "NOT gated, and resting on prose" -- a heading reading "never, under any
+        # circumstances" above about a dozen shapes, while this repository's own .gitignore
+        # named shapes neither block carried. That is this step.
+        #
+        # THE SELF-TEST RUNS FIRST, and the reason is the same one the secret-scan job
+        # states for itself: a zero from a checker that cannot fire is worth nothing. The
+        # self-test drives both legs against in-memory controls, including a never-block
+        # with one shape missing, one with no marker, an empty one, and a CRLF file -- the
+        # case that hides this class on Windows. If any control fails to fire, the step
+        # fails BEFORE the real check is believed.
+        #
+        # It deliberately does NOT re-test finality or position: a second spelling of one
+        # rule invites an edit to half of it. And it does not test REACH -- whether a
+        # pattern keeps a file out of a built context is a property of `docker build`, and
+        # nothing here builds one. The checker prints that caveat on success rather than
+        # letting a green read as more than it is.
+        run: |
+          set -euo pipefail
+          python tools/check_never_block_shapes.py --self-test
+          python tools/check_never_block_shapes.py
+
       - name: every script must be executable IN THE INDEX
         # RELEASE-SCOPE.md carries this as an obligation and until now nothing enforced it,
         # which is the weaker half of a gate. The obligation is not hypothetical: it is
