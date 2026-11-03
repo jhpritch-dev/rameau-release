@@ -148,7 +148,9 @@ gitleaks by default, which is how the first version of that control failed. The 
 byte-compiles, runs the tests, regenerates and diffs both env examples, asserts the
 in-network profile contains no loopback, and validates both compose files by path -- with a
 control that asserts the stack still **refuses** to resolve when `RAMEAU_OLLAMA_URL` is
-unset. The image job builds both images **through compose**, because the thing most likely to
+unset. Its loopback check and its licence check each run against a planted match and a planted
+near-miss before they are pointed at the real file, through the same function rather than a
+retyped copy of the pattern -- a control that retypes the pattern tests a different pattern. The image job builds both images **through compose**, because the thing most likely to
 be wrong at step 5 is the wiring rather than either Dockerfile -- each service's context is
 `../services/<name>` and its Dockerfile is outside that context -- and `docker build` would
 exercise none of it. Today both contexts are absent, so that job prints what is missing, names
@@ -170,6 +172,21 @@ them the one that is silent in both directions: a router module outside `backend
 `skills/` is dropped twice, by the ignore file and by no `COPY` naming it, and fails at import
 after a green build. The job reports one of four states by name, and says in its own output
 which obligations it *cannot* check so that they fall to step 5 rather than passing quietly.
+
+**Every pattern-based matcher in CI has a planted positive and a planted near-miss**, and each
+reports by name. Three times a check here has printed a clean verdict because its matcher could
+not match its subject -- most recently the preflight's own flat-module `find`, where `*`
+crossing a `/` in a `-path` glob made the most valuable assertion in the job inert on the day
+it merged. An empty result is not an absence, and a matcher that flags *everything* prints
+`control ok` exactly as loudly as one that flags nothing, so each of the **twenty-one** is
+exercised both ways: the regexes, the `find` and `git ls-files` patterns, the `jq` selectors,
+`grep`'s three-way exit, and the violation counter against sets of known size. The plants run on every
+push whether or not a source tree exists, against trees built and discarded in the step.
+Among them the `images` job builds a **planted build context** against each
+`Dockerfile.dockerignore` and compares the transferred file list exactly -- which is how the
+credential block in both files was found to be matched against a single path segment, so that
+`backends/.env` and `public/leak.key` reached the context while a block headed "never, under
+any circumstances" said nothing about either. Both now carry `**/`. See `RELEASE-SCOPE.md`.
 
 **`tools/git-hooks/pre-push` -- the fail-closed local secret gate.** GitHub's push
 protection is unavailable while this repository is private on the current plan (secret

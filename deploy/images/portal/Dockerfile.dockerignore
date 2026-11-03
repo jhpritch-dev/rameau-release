@@ -53,22 +53,45 @@
 # stale build under a stale asset hash -- silently, with no error anywhere. Excluded by `**`
 # already, and named here so that a future edit re-admitting the app root cannot sweep them
 # back in.
+#
+# TOP-LEVEL ONLY, and deliberately so. A single `*` does not cross a '/' in a .dockerignore
+# pattern, so these four match at the context root and nowhere else -- which is what they
+# mean: `src/assets/` is the ordinary Vite home for imported images and `**/assets/` would
+# drop it, and a `src/index-old.js` may well be a module something imports. Measured: with
+# these patterns `src/index-old.js` is transferred and the app-root pair is not.
 assets/
 index-*.js
 index-*.css
 dist/
 
 # ---- never, under any circumstances ----
-.env
-.env.*
-*.pem
-*.key
-.netrc
-.git-credentials
-.git/
-node_modules/
-*.log
-*.bak
-*.bak-*
+# EVERY PATTERN HERE CARRIES `**/`, AND NONE OF THEM DID UNTIL 2026-11-03, for the reason
+# spelled out in the router's list: a single `*` does not cross a '/', so `.env` and `*.pem`
+# denied only the context root while `!src/**` and `!public/**` above re-admitted both
+# subtrees in full. Measured on a planted context: `src/.env`, `src/leak.pem` and
+# `public/leak.key` were all transferred with the single-segment patterns.
+#
+# THIS IMAGE'S EXPOSURE IS THE WORST OF THE TWO, and it is worth stating plainly. The serve
+# stage copies only `/app/dist/`, so a file under `src/` reaches the build stage alone -- but
+# Vite copies the contents of its publicDir VERBATIM into the build output, so with publicDir
+# left at its default a `public/leak.key` becomes `dist/leak.key` and nginx serves it at
+# `/leak.key`. vite.config.js is not in this repository and arrives with this context, so
+# that default is an assumption here rather than a measurement: step 4 must read it.
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/.netrc
+**/.git-credentials
+**/.git/
+**/node_modules/
+**/*.log
+**/*.bak
+**/*.bak-*
+
+# ---- top-level only, and DELIBERATELY not generalised ----
+# Scratch copies at the app root. Not generalised for the reason the router's `test_*.py` is
+# not: `src/Component_v2.jsx` may be a module something imports, and a pattern that drops it
+# trades a harmless unused file in the bundle for a broken build.
 *_fixed.jsx
 *_v2.jsx
