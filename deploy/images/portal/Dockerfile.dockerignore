@@ -179,3 +179,61 @@ public/**/index-*.css
 **/*.bak-*
 **/*_fixed.jsx
 **/*_v2.jsx
+
+# ---- WIDENED 2026-11-03 to the shapes this repository's own .gitignore names ----
+# On John's ruling in chat, 2026-11-03, verbatim: *"2. widen to the portal"*. This is the
+# portal's half of N1. The router's list follows, because the two credential sets are
+# meant to be the SAME set and the note above records that they once diverged for no
+# reason anyone wrote down.
+#
+# DERIVED BY MEASUREMENT, not by reading the list and thinking of more. Every pattern
+# below is a line of `.gitignore`'s "environment and secrets", "keys and certificates"
+# and "tokens" sections that had no `**/` twin in this block -- twenty-four of them,
+# counted by comparing the two files line by line. Nothing here is a shape `.gitignore`
+# does not already refuse to stage.
+#
+# CHECKED AGAINST THE TRACKED SET FIRST: none of the twenty-four matches any of the
+# repository's tracked files, so none denies this build something it needs. That test is
+# WEAK and says so -- the release source has not landed in this tree yet, so the strong
+# version of it cannot be run today. Which is the reason the coverage is now GATED in CI
+# rather than left resting on this comment.
+#
+# WHAT IS DELIBERATELY NOT HERE, and the reason is the build CONTEXT. compose builds this
+# image with `context: ../services/portal`, so every pattern in this file is relative to
+# `services/portal/`. `.gitignore`'s assembly class -- `_scrub/`, `_preimages/`,
+# `_defect-fixes/`, `WIPE-LEDGER.md` -- lives at the REPOSITORY ROOT, outside the context,
+# where no pattern in this file can reach it. Adding those four would read as four more
+# guarantees and be four inert lines, which is the exact failure the heading above was
+# written to stop doing. The model-weights class is absent for a different reason: it is a
+# SCOPE matter rather than a credential one, and `*.bin` would deny a wasm or font asset
+# under `public/` that a portal may legitimately ship.
+#
+# `**/*credential*` subsumes `credentials.json` and `*-credentials*`. Both are kept anyway,
+# against this file's own "two spellings of one rule invite an edit to half of it" warning,
+# because the gate enforcing this set compares LINES: a reader who deletes a subsumed line
+# should be told rather than quietly agreed with. The gate resolves that tension; this
+# comment only records it.
+**/*.env
+**/secrets/
+**/.secrets/
+**/*.secret
+**/*.secrets
+**/credentials.json
+**/*credential*
+**/*-credentials*
+**/auth.json
+**/.sops.yaml
+**/.sops/
+**/*.kubeconfig
+**/kubeconfig
+**/kubeconfig.*
+**/*.jks
+**/*.keystore
+**/id_rsa.*
+**/id_ed25519.*
+**/*.ppk
+**/known_hosts
+**/*.token
+**/_netrc
+**/.npmrc
+**/.pypirc
