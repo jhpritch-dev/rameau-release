@@ -288,7 +288,14 @@ jobs:
           # keep overriding the file, because the file addresses the router by service name on
           # a port that a host-side example may have carried over. shared/test_resolver.py
           # asserts those three values against compose.yaml.
+          #
+          # ALL THREE are listed below. This loop checked two until 2026-11-03 while
+          # its own comment said three, so removing RAMEAU_ROUTER_CHAT_URL from
+          # compose.yaml's `environment:` would have let the operator's file reach it
+          # with this step still green. Measured against a compose.env that sets a
+          # sentinel chat URL: compose.yaml wins, as it must.
           for pair in "RAMEAU_ROUTER_URL=http://router:8080" \
+                      "RAMEAU_ROUTER_CHAT_URL=http://router:8080/v1/chat/completions" \
                       "RAMEAU_ROUTER_HEALTH_URL=http://router:8080/health"; do
             k=${pair%%=*}; want=${pair#*=}
             have=$(printf '%s' "$cfg" | jq -r --arg k "$k" '.services.router.environment[$k] // "<<absent>>"')
@@ -298,6 +305,90 @@ jobs:
             }
           done
           echo "ok: the router's own three URLs still come from compose.yaml"
+
+      - name: each Dockerfile must still have its .dockerignore beside it
+        # Both ignore-files were read by NOTHING until 2026-11-02. They sat in
+        # deploy/images/<svc>/ named plain `.dockerignore`, while the build contexts are
+        # services/<svc>/ -- and Docker reads an ignore-file only from the context root or
+        # as `<dockerfile-name>.dockerignore` beside the Dockerfile. Every pattern in both
+        # was inert. The remedy was the FILENAME, and both files now warn in prose that
+        # `git mv`-ing either one alone disarms the other, silently.
+        #
+        # Prose is not a gate. This is. The failure it catches is the worst shape this
+        # repository knows: nothing errors, the build goes green, and the context is
+        # unbounded -- which on the portal means a key under public/ is copied into dist/
+        # and then SERVED by nginx. No build output would look any different.
+        #
+        # Driven from `docker compose config` rather than from a glob over deploy/images/,
+        # because what matters is the Dockerfile COMPOSE ACTUALLY USES. A glob would keep
+        # passing after someone pointed a service at a different file.
+        env:
+          RAMEAU_OLLAMA_URL: http://ollama.invalid:11434
+        run: |
+          set -euo pipefail
+
+          cfg=$(docker compose -f deploy/compose.yaml config --format json)
+
+          # Assert the subject exists before a clean scan can mean anything -- the
+          # `validate compose` lesson: a gate that cannot find what it checks must not be
+          # the thing that reports success.
+          n=$(printf '%s' "$cfg" | jq '[.services[] | select(.build)] | length')
+          if [ "$n" -eq 0 ]; then
+            echo "no service in deploy/compose.yaml declares a build: stanza."
+            echo "Both router and portal are built from source, so this is not a tree with"
+            echo "nothing to check -- it is a gate that has lost its subject."
+            exit 1
+          fi
+          echo "services with a build stanza: $n"
+
+          bad=0
+          while IFS=$'\t' read -r svc ctx df; do
+            # `dockerfile` resolves relative to the build CONTEXT, which is how
+            # compose.yaml points each service at a Dockerfile outside its own context.
+            # The context directory itself need not exist: it arrives at step 4, and this
+            # check is about the pairing, not about the assembly.
+            # `realpath -m` normalises without requiring the path to exist, which is
+            # the case that matters: services/<svc>/ is not assembled, so the `..`
+            # traverses a directory that is not there.
+            dfpath=$(realpath -m "$ctx/$df")
+            ign="$dfpath.dockerignore"
+            printf '  %-8s %s\n' "$svc" "${dfpath#"$PWD/"}"
+
+            if [ ! -f "$dfpath" ]; then
+              echo "    MISSING Dockerfile: $dfpath"
+              bad=1; continue
+            fi
+            if [ ! -f "$ign" ]; then
+              echo "    MISSING ignore-file: $ign"
+              echo "    Docker reads an ignore-file from the build context root, or as"
+              echo "    <dockerfile-name>.dockerignore BESIDE the Dockerfile, and nowhere"
+              echo "    else. This service's context is $ctx, so the name above is the"
+              echo "    only one that is read -- a plain .dockerignore here is inert and"
+              echo "    the build context is then everything in it."
+              bad=1; continue
+            fi
+            if ! git ls-files --error-unmatch "$ign" >/dev/null 2>&1; then
+              echo "    $ign exists on disk but is NOT TRACKED, so it never travels."
+              bad=1; continue
+            fi
+            # Deny-by-default is the property the COPY groups rest on: `COPY *.py ./`
+            # cannot narrow a context, only the ignore-file can.
+            if ! grep -qx '\*\*' "$ign"; then
+              echo "    $ign does not deny-all first: no bare line of two asterisks."
+              echo "    Without it the re-admissions below it are decoration, and the"
+              echo "    context is everything in the directory."
+              bad=1; continue
+            fi
+            echo "    ok: ignore-file present, tracked, deny-by-default"
+          done < <(printf '%s' "$cfg" | jq -r '
+            .services | to_entries
+            | map(select(.value.build))
+            | .[] | [.key, .value.build.context, (.value.build.dockerfile // "Dockerfile")]
+            | @tsv')
+
+          [ "$bad" -eq 0 ] || exit 1
+          echo "ok: every built service has a tracked, deny-by-default ignore-file beside"
+          echo "    the Dockerfile compose names"
 
       - name: every script must be executable IN THE INDEX
         # RELEASE-SCOPE.md carries this as an obligation and until now nothing enforced it,
@@ -458,6 +549,12 @@ jobs:
             echo "with a message that varies by Compose version -- \"unable to prepare"
             echo "context: path ... not found\" on v2, and a buildx privilege request for"
             echo "\`fs.read=../services\` on v5 -- so this job does not match on it."
+            echo "(A third reading, 2026-11-03 on Docker 29.4.2 / Compose v5.1.3: that v5"
+            echo " produced the v2 message, \"unable to prepare context: path ... not"
+            echo " found\", and no privilege request. Recorded beside the other two rather"
+            echo " than replacing either -- three readings, two shapes, and no basis here"
+            echo " for saying which v5 does which. It changes nothing: not matching on the"
+            echo " message is what makes this robust to all three.)"
             echo "That is the documented state of the tree, not a failure to debug, and it"
             echo "is why this job passes rather than fails."
             {
