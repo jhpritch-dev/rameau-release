@@ -861,3 +861,43 @@ certifying a falsehood. Proposal, optional: match the interpolation error text.
 The nine fixes are **not in this change**, by instruction: the audit is the deliverable and a
 verdict per check is only meaningful if it predates the edits. They land next, A and B
 together, and each one carries the measurement recorded above rather than a fresh assertion.
+
+### All nine discharged, 2026-11-03
+
+Every finding is fixed, and each fix was shown to FAIL before being called done. Nine of the
+ten arms below run the OLD step from `main` against the same condition, because a fix whose
+defect cannot be reproduced on demand has not been shown to fix anything.
+
+| # | arm | old step | new step |
+|---|---|---|---|
+| A | crashing scanner, no report written | `control ok …`, exit **0** | refuses: "crashed rather than found the canary" |
+| A | scanner misses the canary (exit 0) | fails | fails: "did not flag a generated known-positive" |
+| B | — | control passed neither reporting argument | control passes the gate's `--report-format sarif --report-path` |
+| C | — | *no behavioural arm: this is a rename* | step now named `scan every object in full history` |
+| D | each of the four subjects deleted | skips green, "expected pre-source" | fails, naming the file |
+| E | profile unreadable (`grep` exit 2) | `no loopback …`, exit **0** | fails: "an ERROR rather than a verdict" |
+| F | `RAMEAU_ROUTER_CHAT_URL` pointed at a wrong host | passes, exit **0** | fails, naming the variable |
+| G | two tracked scripts, one unreadable | `scripts checked: 1`, `ok: every tracked script is executable`, exit **0** | fails, naming the unreadable file |
+| H | `scan_modes` mutated so it cannot flag a mode | *no control existed* | its own control fails: "expected exactly 'not-executable.sh'" |
+| I | `git rev-parse` fails | exit **0**, `RAMEAU_COMMIT` empty | exit 128 at the assignment |
+
+Three things the arms changed about the audit's own conclusions, recorded because a finding
+that survives testing unaltered is the exception rather than the rule:
+
+- **G is less severe than the audit said, and more severe later.** With the hook as the only
+  shebang file, the `scanned -eq 0` backstop catches an unreadable one by luck. Measured with a
+  second script added: the old step prints `scripts checked: 1` and `ok: every tracked script
+  is executable in the index` and exits 0 — a success report about a file it never read. So the
+  defect is latent today and real from step 4, when more scripts arrive.
+- **Two of my own D fixes carried a guard that could not fire.** The first version asserted an
+  anchor and *then* checked for a contradiction between the anchor and `find`; since the anchor
+  is itself a `.py`, `find` always matches it and the branch was dead. Removed rather than
+  shipped — a guard incapable of failing is the defect this change is about. Found by running
+  the arm, not by reading the diff.
+- **Two step names were also wrong, by finding C's own argument.** `byte-compile python, if
+  any` and `run tests, if any` no longer have an "if any": they assert their subject. Renamed,
+  and the workflow header's claim that the build steps "pass on an empty tree" is now scoped to
+  the `images` job, which is the only one whose subject legitimately has not arrived.
+
+Not changed, deliberately: the advisory working-tree pass, the hook's history scope, and
+`validate compose`'s weak control, each for the reason recorded above.

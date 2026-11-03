@@ -105,6 +105,16 @@ desktop.ini
 .idea/
 .vscode/
 
+# --- CI scan output, which lands in the workspace --------------------------
+# The `scan every object in full history` step writes gitleaks.sarif into
+# $GITHUB_WORKSPACE and `upload findings` uploads it as an artifact. Running that step
+# locally therefore drops a report in the working tree, and it was staged by accident
+# once. This is a scanner OUTPUT, not a shape being hidden from the scanner: it holds
+# redacted findings plus the rule metadata, and ignoring it changes nothing about what
+# the scan examines.
+gitleaks.sarif
+*.sarif
+
 # --- never publish the assembly working material ----------------------------
 _scrub/
 _preimages/
