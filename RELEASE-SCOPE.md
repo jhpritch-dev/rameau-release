@@ -1207,3 +1207,193 @@ name rather than by a margin — and it invents no number.
   run that could supply the measurement would not record it.
 - **Owner**: step 4. Take both figures from that first green run, record them here with the
   runner image and docker version they were measured on, and only then write a ceiling.
+
+## The population is now derived, 2026-11-04
+
+The sweep of 2026-11-03 reported **twelve** matchers and the real number was 21. The sweep's
+own correction, pushed the same day, reported **21**. The census now derives the population
+from the source, and the figure is **34**.
+
+So the hand-typed number was wrong twice. Twenty-one was not merely superseded by this
+round's additions: it was short by one at the time it was written. `ignore-pattern-probe` --
+the listing inside the probe that enumerates a transferred context, whose silent failure
+would make every ignore file look as though it denied everything -- existed and was not
+counted, because the table had been built by reading the job rather than by asking it.
+
+The arithmetic, so the figure can be checked rather than believed:
+
+| where | count | what |
+|---|---|---|
+| `.github/workflows/ci.yml` | 20 | declared between `# MATCHER:` / `# /MATCHER` |
+| derived from the tree | 2 | one per `Dockerfile.dockerignore`; the file's existence is its declaration |
+| `tools/ci/census.sh` | 11 | the discovery instruments, each of which fails by returning an empty set |
+| `tools/ci/arms.sh` | 1 | `output_says`, the harness's own verdict matcher |
+| **total** | **34** | every one with an arm; 34 arms, 12 obligations, 12 obligation arms |
+
+Thirteen of the 34 are new this round: the twelve instruments the census itself needed, plus
+the one that was always there and uncounted. **A count about a set you own must be derived
+from the set.** That rule, and not the number, is what this round installed.
+
+### How the census resists being a list in disguise
+
+Three legs, because a registry alone is a convention anyone can decline to follow:
+
+1. **The registry.** `# MATCHER: <id>` … `# /MATCHER`, with unbalanced, nested and unopened
+   markers each reported as their own error rather than absorbed.
+2. **The construct census.** Every shell pattern-decision construct — `grep`, `rg`,
+   `git ls-files`, `git grep`, any `find`, a `jq` program that selects, a `case` dispatch —
+   must fall inside a declared span. One outside every span is an **UNDECLARED MATCHER**,
+   reported with its file and line. This is what makes the registry non-optional.
+3. **Two discoveries that need no registry at all.** Each `Dockerfile.dockerignore` in the
+   tree is a matcher whose id is derived from its path, so a third service's pattern set
+   cannot arrive without an arm; and every scanner invocation site must sit in a span, so a
+   second scanner cannot either.
+
+The files scanned, the workflow files and the jobs are all discovered too, and the counts are
+printed. A census that hard-coded `ci.yml`, or a list of the two scripts under `tools/ci/`,
+would be the same defect one level up — and the first version of this job carried exactly
+that list before `scanned_files` replaced it.
+
+The correspondence is asserted **by name**, and the two differences are different bugs:
+**UNARMED CHECK** is a matcher nobody has shown can fail; **STALE ARM** is an arm naming a
+matcher that no longer exists. Every number the job prints is the length of a list it built.
+
+### Floors, not pins
+
+Set equality by name is the gate. The floors — 34 matchers, 12 obligations — exist for the
+one thing set equality cannot see: **deleting a matcher together with its arm satisfies every
+comparison in the job.** A floor goes red only on a shrink, so the population grows freely,
+where a pin would go red on exactly the growth the gate exists to permit. Lowering a floor
+should need an argument in the pull request that does it.
+
+### What the census found inside itself
+
+Four of its own instruments collapsed grep's three exit statuses — which is **finding E of
+this repository's own gate audit, four times over, inside the instrument built to prevent
+it.** With 0, 1 and 2 conflated, a producer that legitimately found nothing returned 1,
+`pipefail` propagated it and `set -e` killed the census step with **no output at all**:
+
+- `scanner_sites` over a file carrying no scanner invocation — which is most files.
+- `construct_hits`, and worse: with a directory as the target, `awk` failed, `grep` saw empty
+  input and returned 1, and the whole thing read as "no constructs". A clean census produced
+  by a failure to look. Both producers now assert the target is a readable regular file.
+- `declared_ids` over a file with no tags. This one matters most: an **empty registry** is
+  precisely the condition that would make every correspondence pass vacuously, so it has to
+  be reportable rather than fatal.
+- `obligation_ids`, both halves.
+
+All four were found by their own arms, none by reading the code.
+
+### A narrowing rejected on the measurement
+
+The construct census over-reports: prose that merely names a construct — a failure message
+reading "the two grep lines" — is flagged. A quoted-string heuristic was written to silence
+that, and **measured against the three scanned files before being adopted.** It would have
+dropped the two prose lines and **five real matchers** with them: the probe's transferred
+listing, `has_no_files`, `obligation_ids`' own grep, and both containment helpers, each
+because a quoted string appears earlier on its line. It was rejected on that measurement.
+
+The policy is therefore written into the file: **the fix for a false positive here is to
+reword the prose or declare a span, never to narrow the regex.** Two of this round's own
+messages were reworded under it.
+
+## Arms, committed and run, 2026-11-04
+
+`tools/ci/arms.sh` — **70 arms, every one behaving as declared, in 53 seconds.** One command:
+
+```
+bash tools/ci/arms.sh            # or a literal substring to run one
+```
+
+Through three rounds the arms lived in a scratch directory and died with the session that
+wrote them, which made every claim about them unverifiable by anyone else. It also meant the
+seven source-dependent obligations were deferred in the weakest sense: **the work of writing
+their arms was deferred with them.** Each of the seven now plants the minimal `services/`
+shape, shows the obligation firing, and shows it passing once the fixture is corrected — so
+step 4 runs a command instead of repeating a round of work, and the preflight's output says
+so in those words rather than reporting a bare "deferred".
+
+**The arms run in CI.** The census proves every matcher *has* an arm; it cannot prove the arm
+still works, because existence and efficacy are different properties and a committed arm that
+quietly stopped firing would satisfy the census perfectly. Nothing but running them closes
+that.
+
+### What running them found that reading would not
+
+- **An arm that could not fire.** The violation-printer arm mutated `NF{print …}` to
+  `NR>1{print …}` — which changes nothing, because these lists carry a leading separator, so
+  `NR>1` drops only the empty first field and still prints three lines for a set of three. It
+  now drops a non-empty entry.
+- **An arm that mutated nothing.** The obligation-ids arm replaced `[vd]` with `[vz]`, which
+  still matches `v`. It now drops `v`.
+- **Four MUTATION-FAILED results**, every one a quoting layer between an arm definition and
+  its anchor, including one anchor that was not unique — `awk 'NF{c++} END{print c+0}'`
+  appears seven times in the workflow. The harness **reported** them rather than scoring
+  them, which is the single property that makes it worth trusting: a mutation that itself
+  failed is not a pass. Those five arms now carry base64-encoded anchors, which removes every
+  quoting layer between the arm and the file.
+- **One WRONG-REASON** that was a defective control message rather than a defective arm:
+  removing `-maxdepth 1` makes `top_py_count` over-count, and the control said it "missed a
+  top-level module". The message now reads correctly in both directions.
+
+### What the first CI run of the arms job found
+
+The job failed on its first run, and correctly: it drove the secret-scan canary step without
+having installed gitleaks, which exited 127. Everything downstream behaved as designed — the
+canary's own control reported *"exited 127 WITHOUT writing a report, which means it crashed
+rather than found the canary"*, and the harness scored the arm **WRONG-REASON** rather than
+counting it. But one arm reading WRONG-REASON for a missing binary is a far worse diagnosis
+than the whole suite refusing and naming it.
+
+So the harness now asserts its dependencies first and **fails closed** — git, python3 with
+PyYAML, a reachable docker daemon, and gitleaks — for the reason `tools/git-hooks/pre-push`
+fails closed: a harness that quietly skips the arms whose tool is missing manufactures the
+appearance of coverage. The `arms` job installs the same gitleaks version the `secrets` job
+does, because an arm exercising a different gitleaks than the gate would be testing a
+different matcher.
+
+### The three demonstrations the census rests on
+
+Tagged `DEMO` rather than `ARM`, because they exercise the correspondence logic rather than a
+matcher, and an arm naming no matcher is itself a failure:
+
+- a matcher added with no arm → **UNARMED CHECK**, by name;
+- an arm naming a matcher that does not exist → **STALE ARM**, by name;
+- a pattern-decision construct outside every span → **UNDECLARED MATCHER**, with file and line;
+- a matcher and its arm deleted together → **POPULATION SHRANK**, which is the only thing that
+  sees it.
+
+## BUILDKIT TOO OLD is its own state, 2026-11-04
+
+The context probe's inability to run is now reported under its own name, never under the name
+it uses for a finding. A probe that cannot look and a probe that looked and found something
+must not reach a reader the same way — that is the defect class this repository has chased
+through three rounds, and an instance of it inside the instrument that found the others would
+have been a poor joke.
+
+It is **not a version comparison.** `--output type=local` with the plain docker driver was
+measured working on docker 29.9.2 / buildkit v0.34.0 and on the GitHub runner; the version at
+which it became available is not something this repository has measured, so gating on a number
+would mean inventing one — the mistake the withdrawn "131" and the withdrawn byte ceiling both
+were. The **capability** is tested instead: a one-file context through the same exporter,
+round-tripped and checked, before any pattern set is read. A success that produces no file
+fails too, because a silent export would make every pattern set look as though it denied
+everything.
+
+## The byte floor: its shape, settled in advance, 2026-11-04
+
+Whichever way the numeric floor is ruled, the shape does not need deriving again:
+
+- **Exact set equality stays, regardless.** It fails by name, invents nothing, and is strictly
+  more informative than a margin. It is not replaced by a floor and not weakened by one.
+- **If a floor is added it is a FLOOR, and it may go red only on a SHRINK.** The transferred
+  context grows when the real source lands; a ceiling pinned to the first measurement would go
+  red on exactly the growth it exists to permit. The live figure is printed beside it on every
+  run.
+- **It is set from the first real assembled build, never from a stub.** The stub-derived
+  numbers were withdrawn for that reason. The source is the `transferring context: <N>B` line
+  that `docker compose build --progress=plain` now writes into the `images` job's log; the run
+  that supplies it is the first in which both `services/router` and `services/portal` exist.
+
+Not implemented this round, by instruction. Recorded so that the ruling is the only thing
+outstanding.
