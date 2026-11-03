@@ -80,8 +80,15 @@ jobs:
         # --redact so a finding never prints the value into a public CI log.
         run: |
           set -euo pipefail
+          # --config explicitly, not by auto-discovery. gitleaks would auto-load
+          # .gitleaks.toml from the source root here, but the step above plants its
+          # canaries in a scratch directory and must be handed the same config by path
+          # -- so naming it in both places is what keeps the control and the scan on one
+          # ruleset. A control that does not share its subject's configuration cannot
+          # speak for it. The config ADDS an Anthropic rule the vendor set lacks.
           gitleaks detect \
             --source "$GITHUB_WORKSPACE" \
+            --config "$GITHUB_WORKSPACE/.gitleaks.toml" \
             --redact \
             --no-banner \
             --report-format sarif \

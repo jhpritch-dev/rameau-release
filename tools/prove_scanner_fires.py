@@ -68,8 +68,10 @@ B64ISH = ALNUM + "+/"
 URLSAFE = ALNUM + "-_"
 HEX = "0123456789abcdef"
 
-DEFAULT_FLOOR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             "scanner-shape-floor.txt")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_FLOOR = os.path.join(_HERE, "scanner-shape-floor.txt")
+# The repository's own gitleaks config, one level up from tools/.
+CONFIG = os.path.join(os.path.dirname(_HERE), ".gitleaks.toml")
 
 
 def r(alphabet, n):
@@ -160,10 +162,19 @@ def scan_round(pending):
                         "-c", "user.name=ci", "commit", "-qm", "canary"],
                        cwd=d, capture_output=True)
         rep = os.path.join(d, "report.json")
-        proc = subprocess.run(
-            ["gitleaks", "detect", "--source", d, "--no-banner", "--redact",
-             "--report-format", "json", "--report-path", rep, "--exit-code", "1"],
-            capture_output=True, text=True, timeout=600)
+        argv = ["gitleaks", "detect", "--source", d, "--no-banner", "--redact",
+                "--report-format", "json", "--report-path", rep, "--exit-code", "1"]
+        # Use THIS REPOSITORY'S config, not the default ruleset.
+        #
+        # The canaries are planted in a scratch directory outside the repo, and gitleaks
+        # auto-loads .gitleaks.toml from the SOURCE root -- which here is the scratch
+        # directory, so the repo's config would never be read. The control would then
+        # exercise a different ruleset than the scan two steps later: a control that does
+        # not share its subject's configuration cannot speak for it. Passing --config
+        # explicitly is what makes this proof about the scan that actually runs.
+        if os.path.exists(CONFIG):
+            argv += ["--config", CONFIG]
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=600)
         # The REPORT is the evidence, not the exit code. gitleaks exits non-zero when it
         # finds something, so for canaries a non-zero exit is the expected case -- but a
         # non-zero exit could equally be a crash, and an exit code cannot tell a finding
@@ -218,6 +229,21 @@ def scan_round(pending):
 # one stops at its first hit, and the attempt count is printed so a shape that needed
 # many draws stays visible instead of hiding behind a pass.
 DRAWS_PER_SHAPE = 24
+
+# Shapes whose per-draw detection rate is measured to be WELL UNDER 1, so a miss says
+# nothing about coverage. Keeping this explicit is the difference between "the scanner
+# cannot see this class" and "this draw was unlucky", and the output must not conflate
+# them.
+#
+# aws-access-key, measured 2026-11-03 on gitleaks 8.30.1, pooled across runs: roughly
+# 10 of 32 draws, about 31 %. Confirmed NOT to be a config effect by a paired test --
+# the same twelve generated keys scored 3/12 with the default ruleset and 3/12 with this
+# repository's .gitleaks.toml, so `[extend] useDefault = true` suppresses nothing. The
+# mechanism was never established; entropy was tested and refuted.
+KNOWN_INTERMITTENT = {
+    "aws-access-key": "~31 % per draw (10 of 32), mechanism unestablished; "
+                      "entropy tested and refuted; not a config effect (paired 3/12 vs 3/12)",
+}
 
 
 def shape_names():
@@ -307,10 +333,18 @@ def main(argv):
             for x in noisy:
                 print("  - %s took %d draws" % (x["shape"], x["attempts"]))
         if dead:
-            print("NOT detected in %d draws -- treat as a real coverage gap for "
-                  "this scanner version:" % DRAWS_PER_SHAPE)
-            for s in dead:
-                print("  - %s" % s)
+            gaps = [s for s in dead if s not in KNOWN_INTERMITTENT]
+            flaky = [s for s in dead if s in KNOWN_INTERMITTENT]
+            if gaps:
+                print("NOT detected in %d draws -- a real coverage gap for this "
+                      "scanner version and config:" % DRAWS_PER_SHAPE)
+                for s in gaps:
+                    print("  - %s" % s)
+            if flaky:
+                print("Missed, but KNOWN INTERMITTENT -- this is NOT a coverage "
+                      "statement:")
+                for s in flaky:
+                    print("  - %s (%s)" % (s, KNOWN_INTERMITTENT[s]))
 
     # TIER 1 -- the irreducible claim.
     if not fired:
@@ -326,6 +360,19 @@ def main(argv):
         print("A floor entry that matches no candidate can never fail, which makes")
         print("the floor look satisfied while proving nothing. Fix the name.")
         return 1
+    # A floor must contain only shapes whose detection is DETERMINISTIC. Allowing a
+    # known-intermittent shape onto it would turn this gate into a flake generator --
+    # red at random, which is exactly the failure the retry design was added to remove.
+    floor_flaky = [s for s in floor if s in KNOWN_INTERMITTENT]
+    if floor_flaky:
+        print("\nFLOOR NAMES A KNOWN-INTERMITTENT SHAPE: %s"
+              % ", ".join(floor_flaky))
+        for s in floor_flaky:
+            print("  %s: %s" % (s, KNOWN_INTERMITTENT[s]))
+        print("A floor entry must be deterministically detected, or this gate goes red")
+        print("at random and teaches its readers to ignore it. Remove it from the floor.")
+        return 1
+
     if floor_missing:
         print("\nCOVERAGE REGRESSION: shapes on the declared floor did not fire:")
         for s in floor_missing:

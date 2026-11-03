@@ -22,3 +22,21 @@
 # Until then the control still enforces Tier 1: at least one generated
 # known-positive must be flagged, or the job fails and the real scan's zero is not
 # believed.
+#
+# ---------------------------------------------------------------------------
+# ONE ENTRY IS ALREADY SAFE TO PIN, and it is pinned below.
+#
+# anthropic-key is detected by THIS REPOSITORY'S OWN rule in .gitleaks.toml, not by the
+# vendor ruleset. That makes it the one shape whose detection does not depend on which
+# gitleaks version CI installs: it is a plain regex on the sk-ant- prefix with no entropy
+# threshold, so it behaves the same on 8.21.2 and 8.30.1. Measured firing on draw 1 of 24.
+#
+# Pinning it here is the point of adding the rule. Without a floor entry the rule is
+# merely present; with one, deleting .gitleaks.toml, breaking the regex, or dropping the
+# --config flag turns the build red by name.
+#
+# Everything else stays unpinned until a real CI run on the pinned version reports its
+# matrix. Note what must NOT go here: aws-access-key is known-intermittent (~31 % per
+# draw, measured) and prove_scanner_fires.py REFUSES a floor containing it, because a
+# flaky floor entry reds the build at random and teaches its readers to ignore it.
+anthropic-key
