@@ -3,8 +3,14 @@ name: ci
 # This gate exists BEFORE the source tree lands, deliberately. The secret scan is the third
 # of three layers that keep credentials out of this repository (allowlist, .gitignore, this),
 # and it is the only one that runs on every push whether or not a human remembered the other
-# two. The build steps below are written to pass on an empty tree and to start doing real
-# work the moment source appears, so the gate never has to be "turned on" later.
+# two. The build steps below were written to pass on an empty tree and to start doing
+# real work the moment source appears, so the gate never has to be "turned on" later.
+#
+# Source has since partly landed (shared/, deploy/), and the steps whose subject is now
+# committed no longer skip: they assert it and fail if it is missing. A step that answers
+# "this is expected pre-source" about a file the repository tracks is reporting a broken
+# checkout as an early one. Only the `images` job still legitimately skips, because its
+# subject -- the two build contexts -- genuinely arrives at step 4.
 
 on:
   push:
@@ -70,16 +76,51 @@ jobs:
           git add creds.txt
           git -c user.email=ci@example.invalid -c user.name=ci commit -qm canary
 
-          # gitleaks exits nonzero when it finds something, so a ZERO exit here means the
-          # planted credential was missed.
-          if gitleaks detect --source . --no-banner --redact --exit-code 1 >/dev/null 2>&1; then
+          # THE CONTROL RUNS THE SAME REPORTING ARGUMENTS AS THE GATE, and until
+          # 2026-11-03 it did not: it omitted --report-format and --report-path, so it
+          # could not fail the way the gate fails. Measured: gitleaks exits 1 BOTH for a
+          # real finding and for a report path it cannot write, so "nonzero" alone read an
+          # unwritable path as a successfully flagged canary -- and then said so out loud.
+          # The same defect was fixed in tools/git-hooks/pre-push on 2026-11-02 and left
+          # standing here; see RELEASE-SCOPE.md, findings A and B of the gate audit.
+          #
+          # So classify by SHAPE, as the hook does. Measured on gitleaks 8.21.2 with
+          # --report-format sarif:
+          #     clean    -> exit 0, report written (~43 KB of SARIF skeleton)
+          #     finding  -> exit 1, report written
+          #     crash    -> exit 1, NO report
+          # which makes `[ -s ]` the discriminator, and it needs nothing but the shell.
+          report=/tmp/canary/control.sarif
+          st=0
+          gitleaks detect --source . --no-banner --redact --exit-code 1 \
+            --report-format sarif --report-path "$report" >/dev/null 2>&1 || st=$?
+
+          if [ "$st" -eq 0 ]; then
             echo "CONTROL FAILED: gitleaks did not flag a generated known-positive."
             echo "The scan below cannot be trusted and this job fails on purpose."
             exit 1
           fi
-          echo "control ok: gitleaks flags a generated known-positive"
+          if [ ! -s "$report" ]; then
+            echo "CONTROL FAILED: gitleaks exited $st WITHOUT writing a report, which means"
+            echo "it crashed rather than found the canary. The planted credential was never"
+            echo "shown to be detectable, so a zero from the real scan below would prove"
+            echo "nothing. Read the scanner's own error above."
+            exit 1
+          fi
+          echo "control ok: gitleaks flags a generated known-positive, and can write its report"
 
-      - name: scan working tree and full history
+      - name: scan every object in full history
+        # NAMED FOR WHAT IT SCANS. It was called "scan working tree and full history"
+        # until 2026-11-03 and it never scanned the working tree: `gitleaks detect
+        # --source` traverses git objects, and reading files from disk needs --no-git.
+        # Measured: an uncommitted credential exits 0 under --source and 1 under --no-git.
+        #
+        # Nothing is left unscanned by this, and the name was the whole defect. On a clean
+        # CI checkout every file on disk is in the committed tree, so history is a superset
+        # here -- which is NOT true on a developer's machine, and is why the hook runs a
+        # separate --no-git pass. A step must not claim a check it did not run; see
+        # RELEASE-SCOPE.md, finding C.
+        #
         # --redact so a finding never prints the value into a public CI log.
         run: |
           set -euo pipefail
@@ -115,28 +156,50 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: byte-compile python, if any
+      - name: byte-compile python
         run: |
           set -euo pipefail
-          # -print -quit avoids walking the whole tree just to answer "are there any".
-          if [ -z "$(find . -name '*.py' -not -path './.git/*' -print -quit)" ]; then
-            echo "no python in the tree yet - skipping (this is expected pre-source)"
-            exit 0
-          fi
+          # ANCHOR FIRST. This step used to skip, green, whenever `find` matched nothing,
+          # printing "this is expected pre-source" -- which is also exactly what a broken
+          # checkout, a renamed directory or a sparse clone looks like. shared/ has landed,
+          # so "no python in the tree" can no longer legitimately happen, and reaching that
+          # branch now means something is wrong rather than early. See RELEASE-SCOPE.md,
+          # finding D, and the `validate compose` comment below for the defect this is.
+          anchor=shared/resolver.py
+          test -f "$anchor" || {
+            echo "expected $anchor and it is not there."
+            echo "A clean byte-compile of a tree missing its own committed source would"
+            echo "report success for an empty walk, so this fails instead."
+            exit 1
+          }
+          # NO discovery step and no contradiction check. The `find` that used to decide
+          # whether to skip has no job once the anchor is asserted, and a contradiction
+          # check here COULD NOT FIRE: the anchor is itself a .py, so `find -name '*.py'`
+          # always matches it. Writing one anyway would be a guard incapable of failing --
+          # the defect class this whole change is about. Caught by testing the arm.
           python -m compileall -q .
           echo "byte-compile ok"
 
-      - name: run tests, if any
+      - name: run tests
         # The byte-compile above proves the tree parses, which is not the same as the
         # code being correct. The resolver's whole value is a behaviour -- that an unset
         # endpoint RAISES instead of defaulting to an unreachable literal -- and a
         # behaviour is only guarded by running it.
         run: |
           set -euo pipefail
-          if [ -z "$(find . -name 'test_*.py' -not -path './.git/*' -print -quit)" ]; then
-            echo "no tests yet - skipping (this is expected pre-source)"
-            exit 0
-          fi
+          # ANCHOR FIRST, for the reason in the step above -- and the stakes here are the
+          # highest of the four: this step skipped green on "no tests yet" while the tree
+          # carries 87 of them, so a checkout that lost shared/ would have reported success
+          # for running nothing. See RELEASE-SCOPE.md, finding D.
+          anchor=shared/test_resolver.py
+          test -f "$anchor" || {
+            echo "expected $anchor and it is not there."
+            echo "This step reports on tests it discovers; with the repository's own"
+            echo "committed suite missing, finding none would prove nothing."
+            exit 1
+          }
+          # No discovery step, and no contradiction check: it could not fire either, since
+          # the anchor matches `test_*.py` itself. See the byte-compile step above.
           python -m pip install --quiet --disable-pip-version-check pytest
           python -m pytest -q --tb=line
           echo "tests ok"
@@ -148,10 +211,15 @@ jobs:
         # next regeneration silently reverts their change.
         run: |
           set -euo pipefail
-          if [ ! -f shared/resolver.py ]; then
-            echo "no resolver yet - skipping (this is expected pre-source)"
-            exit 0
-          fi
+          # The generator is committed, so its absence is a broken checkout rather than a
+          # pre-source tree, and this used to skip green on exactly that. RELEASE-SCOPE.md,
+          # finding D.
+          test -f shared/resolver.py || {
+            echo "expected shared/resolver.py and it is not there."
+            echo "Both example files claim to be generated from it; with the generator"
+            echo "missing, nothing can be said about whether they still match."
+            exit 1
+          }
           python shared/resolver.py --env-example > /tmp/env.expected
           python shared/resolver.py --compose-example > /tmp/compose.expected
           fail=0
@@ -174,13 +242,37 @@ jobs:
         run: |
           set -euo pipefail
           f=deploy/profiles/compose.env.example
-          [ -f "$f" ] || { echo "no compose profile yet - skipping"; exit 0; }
-          if grep -nE '127\.0\.0\.1|localhost' "$f"; then
-            echo "loopback in the in-network profile: inside a container that is the"
-            echo "container itself, not the service."
+          # The profile is committed and generated, so skipping when it is absent was the
+          # same false green as the three steps above. RELEASE-SCOPE.md, finding D.
+          test -f "$f" || {
+            echo "expected $f and it is not there."
+            echo "A clean loopback result for a file that does not exist is not a result."
             exit 1
-          fi
-          echo "no loopback in the in-network profile"
+          }
+
+          # grep has THREE exit statuses and `if grep` collapses two of them: 0 match,
+          # 1 no match, and 2 ERROR. Measured: `if grep` treats 2 as "no match", so an
+          # unreadable profile used to report "no loopback in the in-network profile" --
+          # a clean verdict produced by a failure to look. RELEASE-SCOPE.md, finding E.
+          st=0
+          hits=$(grep -nE '127\.0\.0\.1|localhost' "$f") || st=$?
+          case "$st" in
+            0)
+              printf '%s\n' "$hits"
+              echo "loopback in the in-network profile: inside a container that is the"
+              echo "container itself, not the service."
+              exit 1
+              ;;
+            1)
+              echo "no loopback in the in-network profile"
+              ;;
+            *)
+              echo "grep exited $st reading $f, which is an ERROR rather than a verdict."
+              echo "Nothing is claimed about loopback either way, so this fails instead of"
+              echo "reporting the clean result it did not measure."
+              exit 1
+              ;;
+          esac
 
       - name: validate compose
         # This step globbed FOUR ROOT-RELATIVE names until 2026-10-27, and both stacks
@@ -288,7 +380,14 @@ jobs:
           # keep overriding the file, because the file addresses the router by service name on
           # a port that a host-side example may have carried over. shared/test_resolver.py
           # asserts those three values against compose.yaml.
+          # All THREE, which this loop did not do until 2026-11-03: the comment above has
+          # always said "three" and the loop iterated two, silently omitting
+          # RAMEAU_ROUTER_CHAT_URL. The overclaim was the defect rather than a coverage
+          # hole -- shared/test_resolver.py asserts the omitted one -- but a control that
+          # states more than it checks is the thing this file is least allowed to contain.
+          # RELEASE-SCOPE.md, finding F.
           for pair in "RAMEAU_ROUTER_URL=http://router:8080" \
+                      "RAMEAU_ROUTER_CHAT_URL=http://router:8080/v1/chat/completions" \
                       "RAMEAU_ROUTER_HEALTH_URL=http://router:8080/health"; do
             k=${pair%%=*}; want=${pair#*=}
             have=$(printf '%s' "$cfg" | jq -r --arg k "$k" '.services.router.environment[$k] // "<<absent>>"')
@@ -297,7 +396,7 @@ jobs:
               exit 1
             }
           done
-          echo "ok: the router's own three URLs still come from compose.yaml"
+          echo "ok: all three of the router's own URLs still come from compose.yaml"
 
       - name: every script must be executable IN THE INDEX
         # RELEASE-SCOPE.md carries this as an obligation and until now nothing enforced it,
@@ -343,17 +442,84 @@ jobs:
             exit 1
           }
 
-          scanned=0
-          bad=""
-          while IFS= read -r f; do
-            [ -f "$f" ] || continue
-            [ "$(head -c 2 -- "$f" 2>/dev/null || true)" = '#!' ] || continue
-            scanned=$((scanned + 1))
-            mode=$(git ls-files -s -- "$f" | awk '{print $1}')
-            [ "$mode" = 100755 ] || bad="$bad $f"
-          done <<EOF
+          # The loop is a FUNCTION so that the control below can run the same code against
+          # a repository whose answer is known. It reads `git ls-files` in the current
+          # directory, so the caller chooses the repository by cd-ing into it. It sets
+          # `scanned`, `bad` and `unreadable`, and prints nothing.
+          #
+          # NO `|| true` ON THE READ. It had one until 2026-11-03, and measured as an
+          # unprivileged user: an unreadable file passes `[ -f ]`, `head` fails, the
+          # substitution comes back empty, the shebang test is false, and the file is
+          # skipped SILENTLY -- and never counted, so the scanned-eq-0 backstop below could
+          # not see it either. A file that could not be read is not the same answer as a
+          # file that is not a script, and this is the `|| echo '?'` shape that was removed
+          # from tools/git-hooks/pre-push the day before. RELEASE-SCOPE.md, finding G.
+          scan_modes() {
+            scanned=0
+            bad=""
+            unreadable=""
+            while IFS= read -r f; do
+              [ -f "$f" ] || continue
+              if ! first2=$(head -c 2 -- "$f" 2>/dev/null); then
+                unreadable="$unreadable $f"
+                continue
+              fi
+              [ "$first2" = '#!' ] || continue
+              scanned=$((scanned + 1))
+              mode=$(git ls-files -s -- "$f" | awk '{print $1}')
+              [ "$mode" = 100755 ] || bad="$bad $f"
+            done <<MODES
           $(git ls-files)
-          EOF
+          MODES
+          }
+
+          # --- control: prove this can FAIL, in a scratch repository ------------------
+          # The check had no control at all, which RELEASE-SCOPE.md recorded as finding H.
+          # `scanned -eq 0` proves the loop read something; it does not prove the loop
+          # flags a wrong mode. So plant both answers and require both.
+          control_dir="$(mktemp -d)"
+          trap 'rm -rf "$control_dir"' EXIT
+          (
+            cd "$control_dir"
+            git init -q .
+            printf '#!/usr/bin/env bash\necho x\n' > executable.sh
+            printf '#!/usr/bin/env bash\necho x\n' > not-executable.sh
+            printf 'not a script\n' > plain.txt
+            chmod 0755 executable.sh
+            chmod 0644 not-executable.sh
+            git add -A
+            git -c user.email=ci@example.invalid -c user.name=ci commit -qm control
+          )
+          (
+            cd "$control_dir"
+            scan_modes
+            # Trailing/leading whitespace is incidental to how `bad` is accumulated.
+            got=$(printf '%s' "$bad" | tr -s ' ' | sed 's/^ //;s/ $//')
+            if [ "$scanned" -ne 2 ]; then
+              echo "CONTROL FAILED: expected to scan 2 shebang files, scanned $scanned."
+              exit 1
+            fi
+            if [ "$got" != "not-executable.sh" ]; then
+              echo "CONTROL FAILED: expected exactly 'not-executable.sh' to be flagged,"
+              echo "got: [$got]"
+              echo "This check cannot detect the mode it exists to detect, so its verdict"
+              echo "on the real tree below would mean nothing."
+              exit 1
+            fi
+            echo "control ok: a 100644 shebang file is flagged and a 100755 one is not"
+          )
+
+          # --- the real tree ----------------------------------------------------------
+          scan_modes
+
+          if [ -n "$unreadable" ]; then
+            echo "these tracked files could not be read, so nothing is known about them:"
+            for f in $unreadable; do echo "  $f"; done
+            echo
+            echo "An unreadable file is NOT the same answer as a file without a shebang."
+            echo "This fails rather than silently treating it as 'not a script'."
+            exit 1
+          fi
 
           echo "scripts checked (tracked files beginning #!): $scanned"
           if [ "$scanned" -eq 0 ]; then
@@ -499,7 +665,14 @@ jobs:
           RAMEAU_OLLAMA_URL: http://ollama.invalid:11434
         run: |
           set -euo pipefail
-          export RAMEAU_COMMIT="$(git rev-parse --short HEAD)"
+          # ASSIGN, THEN EXPORT -- not `export VAR="$(...)"`. Measured: under
+          # `set -euo pipefail`, `export V="$(false)"` exits 0 and leaves V empty, because
+          # the status reported is `export`'s own, while the bare assignment exits 1. So a
+          # failed rev-parse used to yield an empty value, compose's ${RAMEAU_COMMIT:-unknown}
+          # resolved to `unknown`, and the image shipped labelled with plausible wrong
+          # provenance instead of the build failing. RELEASE-SCOPE.md, finding I.
+          RAMEAU_COMMIT="$(git rev-parse --short HEAD)"
+          export RAMEAU_COMMIT
           echo "building with RAMEAU_COMMIT=$RAMEAU_COMMIT"
           docker compose -f deploy/compose.yaml build
           echo "both images built"
