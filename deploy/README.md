@@ -54,6 +54,70 @@ an empty *directory* at a missing bind source, so a missing file mounts a direct
 
 Everything below is correct for the point at which those land.
 
+### The target layout step 4 must produce
+
+Four files decide what the build contexts have to contain — the two Dockerfiles and the two
+ignore files beside them — plus `compose.yaml` for where they live. That is four places to
+reconcile while assembling, so the result is consolidated here once.
+
+```
+services/router/
+  requirements.txt      the five-line manifest; COPY'd first, so its absence stops the
+                        build before anything is downloaded
+  *.py                  TOP LEVEL ONLY -- see the precondition below
+  backends/             whole directory, recursively
+  skills/               whole directory, recursively -- AND IT COMES FROM THE OTHER TREE
+
+services/portal/
+  package.json
+  package-lock.json     both, together: `npm ci` fails loudly when they disagree
+  index.html            the Vite entry; it names src/main.jsx
+  vite.config.js
+  public/               whole directory
+  src/                  whole directory
+  nginx.conf            copied into the SERVE stage as a template, not into conf.d
+```
+
+Nothing else from either source tree reaches the image. The ignore files deny everything
+first and re-admit exactly the above, then re-deny `.env*`, `*.pem`, `*.key`, `*.p12`,
+`id_rsa`, `id_ed25519`, `.netrc`, `.git-credentials`, `.git/`, `.github/`, `__pycache__`,
+`*.pyc`, `*.log`, `*.bak*`, `*.sqlite`, `*.db`, `.venv/`, `venv/`, `node_modules/`,
+`tests/`, `test_*.py` and `*_test.py` — so a credential or a test directory that arrives in
+the assembled tree is excluded by construction rather than by anyone remembering.
+
+**A PRECONDITION TO CHECK, NOT AN INVARIANT TO ASSUME.** `COPY *.py ./` is top level only,
+and the ignore file's `!*.py` is top level only too — deliberately, per its own comment, so
+that a `**/*.py` does not sweep in test files and vendored copies. The consequence is sharp:
+**a router module in any directory other than `backends/` or `skills/` is dropped twice —
+excluded by the ignore file and not named by any `COPY` — with no error at build time.** It
+fails at import, inside the container, after a green build.
+
+So the layout assumes the router's modules are **flat**. The closure measured on the ruled
+tree is consistent with that (top-level modules plus `backends/`), but that is a fact about
+one snapshot, not a guarantee about the one that lands. Check it when assembling: any
+package directory beyond those two needs a `COPY` group and an ignore-file admission added
+together, and adding only one of the two is silent either way.
+
+**`skills/` comes from a different source tree than the manifest.** That is recorded in
+RELEASE-SCOPE.md as an assembly obligation and is restated here because it is the one item
+on this list that cannot be satisfied by copying one directory. Do not create an empty
+`skills/` to get past the `COPY`: the build goes green and ships a router with no skills.
+
+### Verifying a landing, before trusting it
+
+```
+docker compose -f compose.yaml build          # the wiring; exercised 2026-11-02 against a stub
+git ls-files -s | awk '$1!="100644"'          # modes: every script must read 100755
+```
+
+The first proves the contexts resolve and every `COPY` is satisfiable. The second is the
+executable-bit obligation: this tree is assembled on Windows, which carries no executable
+bit, so a script that arrives `100644` is skipped silently — CI asserts this for every
+tracked file beginning `#!`, and it is listed here because the failure is invisible locally.
+
+Neither proves the manifest. That is the acceptance procedure below, and its first leg is a
+200 from any route.
+
 ## What you need
 
 - Docker with Compose **v2.24 or newer** — `compose.yaml` uses `env_file: required: false`.
