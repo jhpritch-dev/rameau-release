@@ -178,9 +178,9 @@ reports by name. Three times a check here has printed a clean verdict because it
 not match its subject -- most recently the preflight's own flat-module `find`, where `*`
 crossing a `/` in a `-path` glob made the most valuable assertion in the job inert on the day
 it merged. An empty result is not an absence, and a matcher that flags *everything* prints
-`control ok` exactly as loudly as one that flags nothing, so each of the twelve is exercised
-both ways: the regexes, the `find` and `git ls-files` patterns, the `jq` selectors, `grep`'s
-three-way exit, and the violation counter against sets of known size. The plants run on every
+`control ok` exactly as loudly as one that flags nothing, so each of the **twenty-one** is
+exercised both ways: the regexes, the `find` and `git ls-files` patterns, the `jq` selectors,
+`grep`'s three-way exit, and the violation counter against sets of known size. The plants run on every
 push whether or not a source tree exists, against trees built and discarded in the step.
 Among them the `images` job builds a **planted build context** against each
 `Dockerfile.dockerignore` and compares the transferred file list exactly -- which is how the

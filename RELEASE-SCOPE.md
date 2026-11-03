@@ -1050,30 +1050,47 @@ flags everything prints `control ok` exactly as loudly as one that flags nothing
 ### What the sweep covered, and what each plant found
 
 Discovered by sweeping `.github/workflows/ci.yml` for `find`, `grep`, `git ls-files`, `jq`,
-shell globs used in a decision, and `case` dispatch. **Twelve matchers, in four jobs.**
+shell globs used in a decision, and `case` dispatch. **Twenty-one matchers, in four jobs.**
+
+The denominator matters, and the first version of this section got it wrong: it said twelve,
+which is the number of step-4 OBLIGATIONS, not of matchers. Corrected the same day, from the
+code rather than from memory. The basis for 21: each distinct pattern that decides something,
+counted where it is defined — so the three `git ls-files` pathspecs are three, the two
+`uvicorn` regexes are two, and the counter and its printer are two. `ci.yml` carries 15
+`matcher:` report statements and prints 16 per run, because the ignore-pattern report sits in
+a function called once per service. A sweep without its denominator is not a result, and a
+sweep with the wrong one is worse.
+
 `tools/git-hooks/pre-push` is a gate with matchers of its own but is not called by CI; its
 gitleaks invocation is the same one the `secrets` job plants against, and its own
 crash-versus-verdict classification was corrected on 2026-11-02.
 
-| matcher | serves | positive | near-miss | found |
-|---|---|---|---|---|
-| gitleaks ruleset | `secrets` | AKIA + 16 random | AKIA + 8, AKIA + 16 identical, prose | the first near-miss was **flaky** — see below |
-| loopback regex | `build` | `127.0.0.1` and `localhost`, one file each | `192.0.2.1` (TEST-NET-1), a documentation host, `127x0y0z1` | sound; and `127.0.0.11` matches, correctly |
-| grep error arm | `build` | a directory as the target → status 2 | — | sound |
-| Apache licence substring | `build` | the Apache header | MIT, GPL, lower case | sound |
-| jq key selector | `build` | a key that is set | a key that is missing, a key that is empty | `//` does **not** fire on `""` |
-| jq blank-value selector | `build` | `RAMEAU_` empty and null | `OTHER_EMPTY`, which is empty and not reported | sound |
-| router ignore patterns | `images` | 8 re-admitted paths | 24 denied paths | **a credential hole — see below** |
-| portal ignore patterns | `images` | 12 re-admitted paths | 20 denied paths | **the same hole, wider** |
-| `git ls-files` pathspecs (A2, A3, A4) | `step4` | `.jar`, weights and fonts at depth 3 | `notajar.jarx`, a file named `jar`, `notes.gguf.txt` | sound, and reaches any depth |
-| shebang + index mode (A5) | `step4` | a 100644 shebang file | a 100755 one, and a non-script | sound; this pair predates the sweep |
-| stray flat-module find (B4) | `step4` | modules at depth 2 and 3 | top level, `backends/`, `skills/`, `tests/`, `test_*.py`, `*_test.py`, `__pycache__/` | sound **after** the fix it was shipped without |
-| `uvicorn` name-trap regexes (B5) | `step4` | plain, pinned and marker forms | extras, another distribution, a comment | sound; anchors survive the quoting |
-| violation counter and printer | `step4` | sets of size 0, 1, 3 and 5, both separator shapes | — | the recorded reason for the old defect was **wrong** |
+| # | matcher | serves | positive | near-miss | found |
+|---|---|---|---|---|---|
+| 1 | gitleaks ruleset | `secrets` | AKIA + 16 random | AKIA + 8, AKIA + 16 identical, prose | the first near-miss was **flaky** — see below |
+| 2 | loopback regex | `build` | `127.0.0.1` and `localhost`, one file each | `192.0.2.1` (TEST-NET-1), a documentation host, `127x0y0z1` | sound; and `127.0.0.11` matches, correctly |
+| 3 | `grep`'s three-way exit | `build` | a directory as the target → status 2 | — | sound |
+| 4 | jq key selector | `build` | a key that is set | a key that is missing, a key that is empty | `//` does **not** fire on `""` |
+| 5 | jq blank-value selector | `build` | `RAMEAU_` empty and null | `OTHER_EMPTY`, which is empty and not reported | sound |
+| 6 | Apache licence substring | `build` | the Apache header | MIT, GPL, lower case | sound |
+| 7 | router ignore patterns | `images` | 8 re-admitted paths | 24 denied paths | **a credential hole — see below** |
+| 8 | portal ignore patterns | `images` | 12 re-admitted paths | 20 denied paths | **the same hole, wider** |
+| 9 | `*.jar` pathspec (A2) | `step4` | `.jar` at depth 3 | `notajar.jarx`, a file named `jar` | sound, reaches any depth |
+| 10 | weights pathspec (A3) | `step4` | `.gguf`, `.safetensors` at depth | `notes.gguf.txt` | sound |
+| 11 | fonts pathspec (A4) | `step4` | `.woff2`, `.ttf` at depth | `fontlist.txt` | sound |
+| 12 | shebang + index mode (A5) | `step4` | a 100644 shebang file | a 100755 one, and a non-script | sound; this pair predates the sweep |
+| 13 | stray flat-module find (B4) | `step4` | modules at depth 2 and 3 | top level, `backends/`, `skills/`, `tests/`, `test_*.py`, `*_test.py`, `__pycache__/` | sound **after** the fix it was shipped without |
+| 14 | top-level `*.py` count (B1) | `step4` | a module at the context root | a `.py` one directory down, not counted | sound, `-maxdepth 1` in force |
+| 15 | `*.py` count (B2) | `step4` | a `.py` under `skills/` | a Markdown-only tree | sound |
+| 16 | non-empty directory (B2, B3) | `step4` | a tree of empty directories reads EMPTY | a tree with a file reads NOT-EMPTY | sound; one matcher, two checks |
+| 17 | credential-shaped find (B7) | `step4` | `.env`, `.env.*`, `id_rsa`, `*.pem`, `*.key` at depth | a file named `env`, `key.txt`, `main.py`, `keynote.md` | sound |
+| 18 | bare-`uvicorn` regex (B5) | `step4` | plain, pinned and marker forms | extras, another distribution, a comment | sound; anchors survive the quoting |
+| 19 | `uvicorn`-extras regex (B5) | `step4` | `uvicorn[standard]`, pinned or not | bare, another distribution, a comment | sound; the escaped `[` survives |
+| 20 | violation counter | `step4` | sets of size 0, 1, 3 and 5, both separator shapes | — | the recorded reason for the old defect was **wrong** |
+| 21 | violation printer | `step4` | a set of size 3 prints 3 lines | — | sound; asserted against the counter |
 
-Thirteen rows for twelve matchers: the `grep` error arm is the third branch of the loopback
-matcher rather than a matcher of its own, and is listed separately because it is planted
-separately.
+`grep`'s three-way exit is the loopback matcher's third branch rather than a matcher of its
+own, and is counted and planted separately because reading it as a verdict was finding E.
 
 **Every plant runs on every push, with or without a source tree.** That required removing the
 `if:` from the step that owns B1–B7: the matchers are defined once, exercised against planted
