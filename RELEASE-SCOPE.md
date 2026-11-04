@@ -35,8 +35,10 @@ later rewrite un-sends it.
 | observability | structured logs and basic request metrics |
 | the portal | the existing web UI, as it stands -- **ruled in by John 2026-10-27** |
 | autopilot | the planning graph and its orchestration -- **ruled in by John 2026-10-27** |
+| the shell-MCP server | the delegated-shell MCP service and its compose wiring -- **ruled in by John 2026-11-03** |
+| delegated tool execution | the decomposer, `bifrost_delegate` and `igor_tool_loop` -- **ruled in by John 2026-11-03** |
 
-The last two rows were added by ruling, not by drafting, and the reason is recorded
+The last four rows were added by ruling, not by drafting, and the reason is recorded
 below under "A scope gap and a scope contradiction, both settled by ruling" -- the
 census had already selected both families and this table did not name them.
 
@@ -48,7 +50,7 @@ being published, or is large enough to deserve its own release.
 | cut | reason |
 |---|---|
 | overnight orchestration / scheduled self-improvement | operationally entangled with a specific fleet. **Narrowed 2026-10-27:** this cuts the scheduled overnight RUNNER and its fleet wiring, NOT the autopilot planning graph, which is ruled in above |
-| the agent sandbox | depends on a Linux-only isolation mechanism not present on every host |
+| the agent sandbox | depends on a Linux-only isolation mechanism not present on every host. **Narrowed 2026-11-04:** this cuts the sandbox ISOLATION layer, not the shell-MCP server, which is ruled in above |
 | NPU classification path | hardware-specific, and the measured failure rate on the one host that has it is too high to publish |
 | quantum-related experiments | research, not product |
 | workflow-automation integration | third-party service wiring, host-specific |
@@ -87,6 +89,30 @@ tables above either cut or never mentioned.
 | decomposer | 4 | 29,503 | nothing |
 | shell-mcp | 6 | 9,801 | cut, as "the agent sandbox" |
 
+**Every byte figure in this document is a GIT BLOB size, not a filesystem size, and it is
+measured on the ARCHIVED CAPTURE at the census commit — not on live upstream code.** Three
+things follow, and a figure whose basis is unstated is the defect all three guard against.
+
+*The basis is the stored object.* It is what `git cat-file -s` reports, which is the only
+basis on which the whole set adds up consistently: verified across the selection at 302 of
+302 rows. A `stat` over a checked-out worktree disagrees wherever checkout line endings
+differ from the stored form — on 231 of those 302 files — because a CRLF checkout of an LF
+blob is larger than the blob. Four of the six families above are affected: `stat` makes
+autopilot 11,726 bytes larger, `igor_tool_loop.py` 2,089, `bifrost_delegate.py` 780,
+decomposer 719 and shell-mcp 65. The portal's 872,218 is identical on both bases, so that
+one figure can be re-measured either way.
+
+*The commit is the one recorded in `allowlist.json`*, and the basis has not drifted since:
+every one of the 302 selected paths has the same blob at the archive's current tip as at the
+census commit, so no figure above is stale relative to the tree it describes.
+
+*But the capture is not upstream.* These are sizes of the archived copy that will be
+published, not of the code still being developed. `igor_tool_loop.py` is the clearest case:
+**110,359 bytes here, while the live upstream file has since grown past 120 KB** under
+later work. The number above is correct for what ships; what the divergence raises is a
+separate question — whether the capture should be refreshed before release — and it must not
+be "corrected" by substituting an upstream size, which would mix two bases in one column.
+
 These were two different defects and it matters which was which. For **autopilot** the cut
 list named the family and the census selected it anyway: a contradiction, where two parts
 of one document disagreed and a reader could cite either. For the **portal** there was
@@ -98,12 +124,18 @@ gap is the worse of the two, because a contradiction announces itself and a gap 
 the two cut rows are narrowed to say what they actually cut, and the compose service list
 can be written against this table.
 
-**The ruling covers two of the six families, and the other four remain open.**
-`igor_tool_loop.py`, `bifrost_delegate.py` and the decomposer are selected and unnamed by
-either table — the same gap as the portal, not yet closed. `docker/shell-mcp/` is the
-sharper case: the cut list names "the agent sandbox" directly and six shell-mcp paths are
-selected, so that contradiction is still live. Nothing here extends the ruling to them;
-they are listed so the next reader sees four open questions rather than a settled table.
+**John ruled on the remaining four on 2026-11-03, and all six families are now settled.**
+`igor_tool_loop.py`, `bifrost_delegate.py` and the decomposer were selected and named by
+neither table — the same gap as the portal. They are now in scope under one row,
+*delegated tool execution*. `docker/shell-mcp/` was the sharper case: the cut list named
+"the agent sandbox" directly while six shell-mcp paths were selected, a live contradiction
+between two parts of this document. It resolves in favour of the selection — the shell-MCP
+server has its own in-scope row, and the cut row is narrowed to the isolation layer it
+actually cuts.
+
+So the table above is a record of how the scope was repaired, not a list of open
+questions. Each of the six families now appears in the in-scope table, and the two cut
+rows that used to contradict it say what they cut.
 
 - **A `NOTICE` file is required at the root.** Nine `.woff2` faces (Instrument Sans,
   Instrument Serif, JetBrains Mono) and their three OFL licence texts are in the release
