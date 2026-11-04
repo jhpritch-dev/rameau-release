@@ -245,6 +245,131 @@ run_secrets_canary()  { run_step secrets__02; }
 run_census_controls() { run_step census__01; }
 run_census_main()     { run_step census__02; }
 
+# ---------------------------------------------------------------------------------------
+# THE POSITIONAL STEP MAP, ASSERTED BEFORE ANY ARM RUNS
+# ---------------------------------------------------------------------------------------
+# EVERY RUNNER ABOVE ADDRESSES A STEP BY ITS INDEX, AND AN INDEX IS SILENT WHEN IT MOVES.
+# Measured 2026-11-03 on the merge that brought the step-5 and scrub branches together:
+# grafting three gates into `build` pushed "licence and scope invariants" from build__08 to
+# build__11 while `run_build_licence` went on addressing build__08 -- by then the
+# dockerignore gate. The apache-licence-substring arm would have mutated the licence step
+# and judged a different step's output. It would not have errored, and it would not have
+# been scored as a harness fault; it would simply have reported on the wrong subject.
+#
+# WHY A PREFLIGHT RATHER THAN A CHECK INSIDE run_step. A guard that fires inside the runner
+# returns non-zero with a message, and `judge` would compare that message against the arm's
+# expectation, miss it, and record WRONG-REASON. That is a FAIL, so not a false pass -- but
+# it reads as "the gate fired for the wrong reason" when the truth is that NOTHING WAS
+# TESTED. This is the same judgement the dependency check at the top of this file makes:
+# one arm reading WRONG-REASON is a far worse diagnosis than the whole suite refusing and
+# naming the cause. So the map is asserted once, before any arm runs, and a fault here can
+# never be dressed up as an arm's verdict.
+#
+# THE EXPECTATIONS ARE SUBSTRINGS OF THE SLUG, not whole filenames: extract-steps.py
+# truncates a long step name, so pinning the full name would make this gate go red on an
+# edit to a step's prose -- which is growth, not breakage.
+# STEP-MAP-DATA
+STEP_MAP="build__05:in-network-profile
+build__07:compose-env-must-actually-reach
+build__08:licence-and-scope
+images__02:ignore-files-patterns
+secrets__02:prove-the-scanner-fires
+census__01:discovery-library
+census__02:discover-the-population
+step4__01:assert-what-cannot-be-absent
+step4__02:obligations-that-hold
+step4__03:is-the-source-assembled
+step4__04:assembled-source-obligations
+step4__05:state"
+# /STEP-MAP-DATA
+
+# Extracted from the WORKING TREE rather than from a clone: `fresh` commits exactly those
+# modifications before extracting, so the mapping is the same one every arm will see, and
+# this costs no clone.
+mkdir -p "$STEPS"
+if ! ( cd "$SRC" && python3 tools/ci/extract-steps.py .github/workflows/ci.yml "$STEPS" ) \
+     >/dev/null 2>&1; then
+  note "ARMS REFUSED: the step extractor failed, so the positional map cannot be checked"
+  note "and every arm below would be addressing steps nobody has confirmed exist."
+  exit 2
+fi
+
+# THE MAP IS CHECKED AGAINST THE REFERENCES DISCOVERED IN THIS FILE, not trusted to be
+# complete. A hand-kept map is the same defect one level up: a runner added later without a
+# map entry would escape this check in silence, which is precisely the failure being closed.
+#
+# DISCOVERY IS ANCHORED ON THE ID ITSELF, not on an adjacent `run_step`/`step_path`. The
+# ids are not all written the same way: run_preflight holds four of them in a shell list
+# (`for pf_s in step4__01 ...`) and calls `step_path "$pf_s"`, so a pattern keyed on the
+# caller sees only the literal call sites and reports the other four as stale entries --
+# measured, on a baseline with nothing wrong with it. A guard that is red on correct
+# content gets switched off, so the pattern has to find an id however it is spelt.
+#
+# Two exclusions keep that sound: COMMENT LINES (this file's own prose names ids by way of
+# example, and an example is not a reference) and the STEP-MAP-DATA block (the map must not
+# be allowed to verify itself into completeness -- every entry would be "addressed" by its
+# own row).
+sm_refs=$(awk '
+  /^# \/STEP-MAP-DATA$/ { sm_skip = 0; next }
+  /^# STEP-MAP-DATA$/   { sm_skip = 1; next }
+  sm_skip               { next }
+  /^[[:space:]]*#/      { next }
+                        { print }
+' "$SRC/tools/ci/arms.sh" | grep -oE '\b[a-z0-9]+__[0-9]+\b' | sort -u)
+sm_mapped=$(printf '%s\n' "$STEP_MAP" | awk -F: 'NF{print $1}' | sort -u)
+sm_unmapped=$(comm -23 <(printf '%s\n' "$sm_refs") <(printf '%s\n' "$sm_mapped"))
+sm_stale=$(comm -13 <(printf '%s\n' "$sm_refs") <(printf '%s\n' "$sm_mapped"))
+
+sm_bad=""
+sm_checked=0
+sm_oldifs=$IFS
+IFS='
+'
+for sm_row in $STEP_MAP; do
+  IFS=$sm_oldifs
+  sm_id=${sm_row%%:*}
+  sm_want=${sm_row#*:}
+  sm_file=$(step_path "$sm_id")
+  sm_base=${sm_file##*/}
+  case "$sm_base" in
+    *"$sm_want"*) ;;
+    *"*"*) sm_bad="$sm_bad
+    $sm_id -- NO SUCH STEP (expected a slug containing: $sm_want)" ;;
+    *) sm_bad="$sm_bad
+    $sm_id -> $sm_base (expected a slug containing: $sm_want)" ;;
+  esac
+  sm_checked=$((sm_checked + 1))
+  IFS='
+'
+done
+IFS=$sm_oldifs
+rm -rf "$STEPS"
+
+if [ -n "$sm_unmapped" ] || [ -n "$sm_stale" ] || [ -n "$sm_bad" ]; then
+  note "ARMS REFUSED: the positional step map does not describe this workflow."
+  note ""
+  [ -z "$sm_unmapped" ] || {
+    note "  ADDRESSED BUT NOT IN THE MAP -- these are checked by nothing:"
+    printf '%s\n' "$sm_unmapped" | awk 'NF{print "    " $0}' >&2
+  }
+  [ -z "$sm_stale" ] || {
+    note "  IN THE MAP AND ADDRESSED BY NOTHING -- a stale entry asserting nothing:"
+    printf '%s\n' "$sm_stale" | awk 'NF{print "    " $0}' >&2
+  }
+  [ -z "$sm_bad" ] || {
+    note "  RESOLVES TO THE WRONG STEP -- an arm here would mutate one step and judge"
+    note "  another, and would report a verdict rather than an error:"
+    note "$sm_bad"
+  }
+  note ""
+  note "A step was inserted, removed or renamed. Fix the INDEX (or the expectation) in"
+  note "STEP_MAP and in the runner that addresses it -- do not delete the entry to get"
+  note "green, because the entry is the only thing standing between an index that moved"
+  note "and an arm that silently reports on the wrong subject."
+  exit 2
+fi
+note "step map ok: $sm_checked positional reference(s), each resolving to the step it names"
+
 # A correct, minimal services/ tree: every source-dependent obligation satisfied. Built in
 # the clone, never committed, discarded with the clone. It is NOT the real source and nothing
 # here pretends otherwise -- an arm against a stub shows the assertion CAN fire, which is the
