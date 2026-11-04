@@ -29,8 +29,11 @@ from resolver import (  # noqa: E402
 
 
 def test_resolves_the_canonical_variable():
+    # rameau-scan: allow -- an RFC1918 fixture, and deliberately one. An operator on a
+    # private LAN will configure exactly this, so the resolver MUST accept it; swapping in
+    # a documentation-range address would leave that behaviour unproven.
     env = {"RAMEAU_ROUTER_URL": "http://10.0.0.9:8089"}
-    assert resolve("router", env=env) == "http://10.0.0.9:8089"
+    assert resolve("router", env=env) == "http://10.0.0.9:8089"  # rameau-scan: allow
 
 
 def test_strips_a_trailing_slash_so_callers_can_concatenate():
@@ -91,7 +94,9 @@ def test_every_shape_of_redaction_is_rejected(redacted):
     "http://10.infra.example.com:8089", # ALL-NUMERIC DNS LABEL in a real hostname
     "http://1.example.com:8089",        # three fields, numeric label
     "http://192.0.2.4:8089",            # a real dotted quad (RFC 5737 TEST-NET-1)
-    "http://10.1.2.3:80",
+    "http://10.1.2.3:80",               # rameau-scan: allow -- RFC1918 on purpose: a
+                                        # private address is a legitimate endpoint, not a
+                                        # redaction, and that is what this asserts.
     "http://127.0.0.1:11434",
     "http://2026.10.27.9:8089",         # four numerics, one not octet-range
 ])
@@ -207,6 +212,8 @@ def test_the_redaction_rule_s_documented_blind_spot():
 def test_a_real_address_with_four_octets_is_NOT_mistaken_for_a_redaction():
     """Positive twin for the test above: the placeholder check must not be so eager
     that it rejects ordinary addresses."""
+    # rameau-scan: allow -- same reason as the parametrised list above: the RFC1918 entry
+    # is the point of the test, since the eager-placeholder check must not reject it.
     for good in ("http://192.0.2.4:8089", "http://10.1.2.3:80",
                  "http://127.0.0.1:11434", "https://router.example.com"):
         assert resolve("router", env={"RAMEAU_ROUTER_URL": good}) == good.rstrip("/")

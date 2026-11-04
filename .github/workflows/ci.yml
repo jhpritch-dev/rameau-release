@@ -52,129 +52,68 @@ jobs:
         # in a scratch directory OUTSIDE the repo, confirm gitleaks reports it, and only
         # then believe a zero from the real scan. A scan that cannot be shown to fire is
         # not evidence.
+        # The canaries are GENERATED into a scratch directory outside the workspace, for
+        # two reasons that are both load-bearing. A literal key committed here would
+        # itself be a finding in the scan below, and allowlisting this path instead would
+        # punch a hole in the one layer that runs unconditionally.
         #
-        # NEAR-MISSES ARE PLANTED BESIDE IT, from 2026-11-03. A control satisfied by a
-        # matcher that flags EVERYTHING is as blind as one satisfied by a matcher that
-        # flags nothing: both print "control ok". So the canary repository also holds two
-        # strings that are key-SHAPED and not keys, plus a file of ordinary prose, and the
-        # control asserts the report names creds.txt and NOTHING ELSE.
+        # This step used to plant ONE shape inline. It now calls
+        # tools/prove_scanner_fires.py, which proves BOTH halves of the control in one
+        # scan -- that the scanner fires on planted credentials, and that it does NOT
+        # fire on things merely shaped like them.
         #
-        # BOTH NEAR-MISSES ARE DETERMINISTIC AND CARRY NO ENTROPY, and that is a correction
-        # rather than a preference. The first version generated a RANDOM body of the wrong
-        # length, and it is flaky: gitleaks' entropy-based rules fire on an
-        # `aws_access_key_id = <value>` line when the value's entropy clears a threshold,
-        # and a random eight-character body clears it sometimes. Observed failing once
-        # while this change was being written -- on a clean repository, with a message
-        # blaming the matcher. An isolated loop of twelve runs then produced none, so the
-        # rate is low and is NOT characterised here: any nonzero rate disqualifies it,
-        # because a control that fails at random teaches people to re-run the job.
+        #   * SENSITIVITY, over ELEVEN shapes rather than one. One shape is one claim;
+        #     eleven say which credential CLASSES this pinned scanner actually covers.
+        #   * RE-DRAWN, up to 24 times per shape, because a single generated canary is an
+        #     INTERMITTENT control. aws-access-key measured roughly 31 % per draw (10 of
+        #     32) on 8.30.1, and entropy was tested and REFUTED as the mechanism. A
+        #     one-draw control reds the build at random, which is how a reader learns to
+        #     wave it through -- and then the real scan's zero quietly stops being
+        #     checked. "This scanner CAN detect this shape" is settled by one firing
+        #     draw, so the right treatment for an intermittent subject is re-draw, never
+        #     localisation: an intermittent fault is neither monotonic nor stationary,
+        #     and bisecting one returns a crisp, worthless answer.
+        #   * SPECIFICITY, which the inline version did not have. Three DETERMINISTIC
+        #     near-misses are planted in the SAME repository and the SAME scan: correct
+        #     prefix failing on LENGTH, one failing on ENTROPY alone, and prose naming no
+        #     value. A control satisfied by a matcher that flags EVERYTHING is as blind
+        #     as one satisfied by a matcher that flags nothing, and both print a
+        #     reassuring line. A near-miss firing in ANY round fails this step and names
+        #     the rule that fired. They are deterministic on purpose: planted every
+        #     round, anything carrying entropy would eventually clear gitleaks' threshold
+        #     and red the build at random -- the same flake arriving by the other door.
+        #   * THE REPORT IS THE EVIDENCE, NOT THE EXIT CODE. gitleaks exits non-zero both
+        #     for a finding and for a report path it cannot write, so an exit code cannot
+        #     tell a finding from an epitaph. A missing or unparseable report is reported
+        #     as a round that established nothing, never as a round where nothing fired.
+        #   * IT IS HANDED --config BY PATH. The canaries sit outside the repo, where
+        #     gitleaks' auto-discovery finds no .gitleaks.toml and falls back to the
+        #     vendor ruleset -- and a control that does not share its subject's
+        #     configuration cannot speak for it. That is not hypothetical here: this
+        #     repository's config ADDS `anthropic-api-key`, which the vendor set does not
+        #     ship, so an auto-discovered control could not speak for the one rule this
+        #     repository had to write itself.
         #
-        # Measured on gitleaks 8.21.2, all four files in one commit: creds.txt is flagged
-        # (rule aws-access-token, entropy 3.58) and nothing else is. AKIA followed by
-        # sixteen identical characters is NOT flagged, which makes it the sharper of the two
-        # near-misses -- correct length, correct prefix, rejected on entropy alone.
+        # The script hard-fails if NOTHING fires, if ANY near-miss fires, and on any
+        # coverage regression against tools/scanner-shape-floor.txt.
+        #
+        # MEASURED 2026-11-03 on gitleaks 8.30.1 with this repo's config: 11 of 11 shapes
+        # fire, and no near-miss fires in 12 rounds while the positive fires. THE FLOOR
+        # IS NOT EMPTY -- it names `anthropic-key`. An earlier version of this comment
+        # said the floor starts empty and that sk-ant-* keys "are not caught by the
+        # scanner at all, so the dockerignore never-block is the only layer behind them";
+        # both halves were behind their own tooling. The accurate statement is narrower
+        # and is the one .gitleaks.toml makes: the VENDOR ruleset ships no Anthropic rule,
+        # which is why this repository defines one -- and with it, sk-ant-* IS caught.
+        #
+        # NOTE THE INSTRUMENT. Those figures are 8.30.1; this job pins 8.21.2, so THIS
+        # RUN is the measurement that counts, and a figure taken on the wrong instrument
+        # is not a measurement. The floor admits only shapes whose detection is
+        # deterministic: a known-intermittent shape on it would red at random and teach
+        # its readers to ignore the gate, so the script rejects that too.
         run: |
           set -euo pipefail
-          # rm -rf first: this step must give the same answer on a re-run, and a leftover
-          # directory from a previous run is a difference between the first run and the
-          # second that nothing else here would reveal.
-          rm -rf /tmp/canary /tmp/canary-report
-          mkdir -p /tmp/canary /tmp/canary-report && cd /tmp/canary
-          git init -q .
-
-          # The canary is GENERATED, for two separate reasons.
-          #
-          # 1. A literal key written here would itself be a finding in THIS file, and the
-          #    scan step below scans the workspace -- so the gate would fail on its own
-          #    workflow. Allowlisting this path instead would weaken the only layer that
-          #    runs unconditionally.
-          #
-          # 2. The first version of this step used AWS's documented example key. gitleaks
-          #    ALLOWLISTS that value by default, precisely because it appears in
-          #    documentation everywhere -- so the control failed on its first run and
-          #    correctly refused to let the real scan be trusted. A canary has to be a
-          #    value the scanner will actually flag, not a famous example every scanner is
-          #    built to ignore. base32 emits A-Z2-7, which satisfies the AWS key shape, and
-          #    `cut` rather than a second `head` avoids a SIGPIPE under `pipefail`.
-          KEY="AKIA$(LC_ALL=C head -c 64 /dev/urandom | base32 | tr -d '=' | tr -cd 'A-Z0-9' | cut -c1-16)"
-          printf 'aws_access_key_id = %s\n' "$KEY" > creds.txt
-
-          # THE NEAR-MISSES. Same assignment, same prefix, same alphabet. Built by repeating
-          # one character rather than written out, so that no key-shaped literal enters this
-          # file -- the same reason the positive is generated.
-          #   short       : eight body characters, so it fails the shape on LENGTH
-          #   lowentropy  : sixteen body characters, so it fails on ENTROPY ALONE
-          NEAR_SHORT="AKIA$(printf 'A%.0s' 1 2 3 4 5 6 7 8)"
-          NEAR_FLAT="AKIA$(printf 'B%.0s' $(seq 16))"
-          printf 'aws_access_key_id = %s\n' "$NEAR_SHORT" > nearmiss-short.txt
-          printf 'aws_access_key_id = %s\n' "$NEAR_FLAT"  > nearmiss-lowentropy.txt
-          printf 'prose about keys and tokens and passwords, naming no value\n' > plain.txt
-
-          # NAMED FILES, not `git add -A`. The report below used to be written inside this
-          # repository, so a re-run staged the previous run's SARIF -- and a SARIF carries
-          # every rule's description. Staging an artefact of the check into the subject of
-          # the check is a loop nothing here would have reported as such.
-          git add creds.txt nearmiss-short.txt nearmiss-lowentropy.txt plain.txt
-          git -c user.email=ci@example.invalid -c user.name=ci commit -qm canary
-
-          # THE CONTROL RUNS THE SAME REPORTING ARGUMENTS AS THE GATE, and until
-          # 2026-11-03 it did not: it omitted --report-format and --report-path, so it
-          # could not fail the way the gate fails. Measured: gitleaks exits 1 BOTH for a
-          # real finding and for a report path it cannot write, so "nonzero" alone read an
-          # unwritable path as a successfully flagged canary -- and then said so out loud.
-          # The same defect was fixed in tools/git-hooks/pre-push on 2026-11-02 and left
-          # standing here; see RELEASE-SCOPE.md, findings A and B of the gate audit.
-          #
-          # So classify by SHAPE, as the hook does. Measured on gitleaks 8.21.2 with
-          # --report-format sarif:
-          #     clean    -> exit 0, report written (~43 KB of SARIF skeleton)
-          #     finding  -> exit 1, report written
-          #     crash    -> exit 1, NO report
-          # which makes `[ -s ]` the discriminator, and it needs nothing but the shell.
-          # OUTSIDE the canary repository, for the reason given at `git add` above.
-          report=/tmp/canary-report/control.sarif
-          st=0
-          # MATCHER: gitleaks-ruleset
-          gitleaks detect --source . --no-banner --redact --exit-code 1 \
-            --report-format sarif --report-path "$report" >/dev/null 2>&1 || st=$?
-          # /MATCHER
-
-          if [ "$st" -eq 0 ]; then
-            echo "CONTROL FAILED: gitleaks did not flag a generated known-positive."
-            echo "The scan below cannot be trusted and this job fails on purpose."
-            exit 1
-          fi
-          if [ ! -s "$report" ]; then
-            echo "CONTROL FAILED: gitleaks exited $st WITHOUT writing a report, which means"
-            echo "it crashed rather than found the canary. The planted credential was never"
-            echo "shown to be detectable, so a zero from the real scan below would prove"
-            echo "nothing. Read the scanner's own error above."
-            exit 1
-          fi
-
-          # The near-miss half. jq rather than the shell because the discriminator is the
-          # SET OF FILES NAMED, not the report's existence -- and a missing jq must fail
-          # here rather than quietly skip the half of the control that bounds the matcher.
-          command -v jq >/dev/null 2>&1 || {
-            echo "CONTROL INCOMPLETE: jq is not installed, so the near-miss half of this"
-            echo "control cannot run. The shape classification above passed, but nothing"
-            echo "has bounded WHAT the scanner flags. Refusing to report control ok."
-            exit 1
-          }
-          named=$(jq -r '[.runs[].results[].locations[].physicalLocation.artifactLocation.uri] | sort | unique | join(",")' "$report")
-          if [ "$named" != "creds.txt" ]; then
-            echo "CONTROL FAILED: the scanner flagged [$named], expected exactly creds.txt."
-            echo "nearmiss-short.txt (8 body characters), nearmiss-lowentropy.txt (16 body"
-            echo "characters, all identical) and plain.txt are planted alongside the positive"
-            echo "precisely so that a ruleset which flags everything cannot satisfy this"
-            echo "control. A zero from the real scan below would then mean nothing about the"
-            echo "repository and everything about the matcher."
-            exit 1
-          fi
-          echo "control ok: gitleaks flags a generated known-positive, and can write its report"
-          echo "matcher: gitleaks ruleset -- positive ok, near-miss ok (neither the short"
-          echo "         near-miss, nor the correct-length zero-entropy one, nor the prose"
-          echo "         file is named in the report)"
+          python3 tools/prove_scanner_fires.py
 
       - name: scan every object in full history
         # NAMED FOR WHAT IT SCANS. It was called "scan working tree and full history"
@@ -191,15 +130,68 @@ jobs:
         # --redact so a finding never prints the value into a public CI log.
         run: |
           set -euo pipefail
+          # --config explicitly, not by auto-discovery. gitleaks would auto-load
+          # .gitleaks.toml from the source root here, but the step above plants its
+          # canaries in a scratch directory and must be handed the same config by path
+          # -- so naming it in both places is what keeps the control and the scan on one
+          # ruleset. A control that does not share its subject's configuration cannot
+          # speak for it. The config ADDS an Anthropic rule the vendor set lacks.
           # MATCHER: gitleaks-ruleset
           gitleaks detect \
             --source "$GITHUB_WORKSPACE" \
+            --config "$GITHUB_WORKSPACE/.gitleaks.toml" \
             --redact \
             --no-banner \
             --report-format sarif \
             --report-path gitleaks.sarif \
             --exit-code 1
           # /MATCHER
+
+      - name: prove the private-literal gate can fail
+        # Same discipline as the gitleaks canary above, for the same reason: a clean
+        # report is the output nobody re-checks. The planted value is GENERATED, so no
+        # address belonging to anyone appears in this file -- which is also the design
+        # rule the scanner itself follows.
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/plcanary && cd /tmp/plcanary
+          o3=$(( RANDOM % 254 + 1 )); o4=$(( RANDOM % 254 + 1 ))
+          printf 'ROUTER_URL = "http://10.%d.%d.%d:8089"\n' "$o3" "$o4" "$o4" > probe.py
+          # Exit 1 is the PASS condition here. Exit 0 means the planted private address
+          # was missed and the gate below cannot be trusted.
+          if python3 "$GITHUB_WORKSPACE/tools/scan_private_literals.py" \
+               --root . --paths probe.py; then
+            echo "CONTROL FAILED: the private-literal gate did not flag a generated"
+            echo "RFC1918 address. The scan below cannot be trusted; failing on purpose."
+            exit 1
+          fi
+          echo "control ok: the private-literal gate flags a generated private address"
+
+      - name: unit-test the private-literal gate
+        # The scanner has its own tests, and one of them is load-bearing:
+        # test_this_file_contains_no_address_literal asserts the detector does not embed
+        # the thing it defends. That is a property no amount of end-to-end scanning would
+        # catch, because a hardcoded subnet makes every other check pass.
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check pytest
+          python3 -m pytest "$GITHUB_WORKSPACE/tools/test_scan_private_literals.py" -q
+
+      - name: scan for private addresses and internal hostnames
+        # THE HALF gitleaks DOES NOT COVER. CLAUDE.md and README.md state the rule as
+        # "credential, key, token, password, private address or internal hostname".
+        # gitleaks has no rule for the last two -- measured: a file whose whole content is
+        # an RFC1918 URL is reported "no leaks found" with exit 0. Until this step existed
+        # the number of instruments covering half the stated rule was zero, and the one
+        # leak this repository has actually had was in that half.
+        #
+        # Scope, stated rather than implied: addresses are covered completely; internal
+        # hostnames only where they carry a reserved DNS suffix. A bare single-label
+        # private hostname is NOT covered, because in a Compose project it is the same
+        # shape as a service name -- see the scanner's docstring for the measurement.
+        run: |
+          set -euo pipefail
+          python3 tools/scan_private_literals.py --root "$GITHUB_WORKSPACE" --audit
 
       - name: upload findings
         if: always()
@@ -616,6 +608,30 @@ jobs:
           test -f SECURITY.md || { echo "SECURITY.md missing"; exit 1; }
           echo "invariants ok"
 
+      - name: the never-block must cover the declared shape set
+        # The step above decides PRESENCE and POSITION of the never-block. It says nothing
+        # about WHAT is in it, and the block's own comment was candid that SHAPE COVERAGE
+        # was "NOT gated, and resting on prose" -- a heading reading "never, under any
+        # circumstances" above about a dozen shapes, while this repository's own .gitignore
+        # named shapes neither block carried. That is this step.
+        #
+        # THE SELF-TEST RUNS FIRST, and the reason is the same one the secret-scan job
+        # states for itself: a zero from a checker that cannot fire is worth nothing. The
+        # self-test drives both legs against in-memory controls, including a never-block
+        # with one shape missing, one with no marker, an empty one, and a CRLF file -- the
+        # case that hides this class on Windows. If any control fails to fire, the step
+        # fails BEFORE the real check is believed.
+        #
+        # It deliberately does NOT re-test finality or position: a second spelling of one
+        # rule invites an edit to half of it. And it does not test REACH -- whether a
+        # pattern keeps a file out of a built context is a property of `docker build`, and
+        # nothing here builds one. The checker prints that caveat on success rather than
+        # letting a green read as more than it is.
+        run: |
+          set -euo pipefail
+          python tools/check_never_block_shapes.py --self-test
+          python tools/check_never_block_shapes.py
+
   images:
     name: build images
     runs-on: ubuntu-24.04
@@ -839,6 +855,12 @@ jobs:
             echo "with a message that varies by Compose version -- \"unable to prepare"
             echo "context: path ... not found\" on v2, and a buildx privilege request for"
             echo "\`fs.read=../services\` on v5 -- so this job does not match on it."
+            echo "(A third reading, 2026-11-03 on Docker 29.4.2 / Compose v5.1.3: that v5"
+            echo " produced the v2 message, \"unable to prepare context: path ... not"
+            echo " found\", and no privilege request. Recorded beside the other two rather"
+            echo " than replacing either -- three readings, two shapes, and no basis here"
+            echo " for saying which v5 does which. It changes nothing: not matching on the"
+            echo " message is what makes this robust to all three.)"
             echo "That is the documented state of the tree, not a failure to debug, and it"
             echo "is why this job passes rather than fails."
             {
@@ -1955,7 +1977,12 @@ jobs:
           # freely -- a pin would go red on exactly the growth this gate exists to permit.
           # Raising a floor is a one-line deliberate act; lowering one should need an
           # argument in the pull request that does it.
-          MATCHER_FLOOR=34
+          # 34 -> 36 when step-map-refs and step-map-expectation were declared. Raised in
+          # the same change that grew the population, because a floor left behind is SLACK:
+          # at 34 against 36 the DEMO arm's symmetric matcher+arm removal lands on 35 and
+          # the floor stays quiet, so the one leg that can see that removal stops seeing it.
+          # Measured, not reasoned about -- the arm scored WRONG-REASON for exactly this.
+          MATCHER_FLOOR=36
           OBLIGATION_FLOOR=12
           [ "$NM" -ge "$MATCHER_FLOOR" ] || blame "POPULATION SHRANK: $NM matchers against a floor of $MATCHER_FLOOR. Set equality cannot see a matcher deleted together with its arm, which is what this floor is for. If the removal was deliberate, lower the floor in the same change and say why." ""
           [ "$NO" -ge "$OBLIGATION_FLOOR" ] || blame "OBLIGATIONS SHRANK: $NO against a floor of $OBLIGATION_FLOOR." ""

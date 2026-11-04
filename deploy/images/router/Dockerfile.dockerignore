@@ -74,29 +74,76 @@
 !skills/**
 
 # ---- NOT admitted, and deliberately so ----
-# The four runtime JSON files (fleet_config.json, capability_registry.json,
-# capability_profiles.json, bifrost_shell_policy.json) are absent from this context by
-# design. The release ships them as *.example.json and the stack bind-mounts the operator's
-# copies; see the Dockerfile and deploy/compose.yaml. Do not re-admit them: baking fleet
-# detail into a published image is the thing the release exists to avoid.
+# The four runtime JSON files are absent from this context by design. The release ships them
+# as *.example.json and the stack bind-mounts the operator's copies; see the Dockerfile and
+# deploy/compose.yaml. Do not re-admit them: baking fleet detail into a published image is
+# the thing the release exists to avoid.
+#
+# NAMED AS PATTERNS, not left to `**`, and recursive -- added 2026-11-03. This section was
+# prose only, which meant the four files were kept out at the CONTEXT ROOT and nowhere else:
+# `backends/**` and `skills/**` above re-admit wholesale, and `**` has already been
+# overridden by the time a file inside them is considered. Measured on this file AS IT
+# STOOD BEFORE 04a4eb1 -- it is byte-identical from 1d69a59 through 5bb4983, so any
+# of those five commits shows the same bytes: `backends/fleet_config.json`,
+# `backends/capability_profiles.json`, `backends/bifrost_shell_policy.json` and
+# `skills/capability_registry.json` all arrived in the built image while the root
+# `fleet_config.json` was correctly excluded. A reader testing the current file will and
+# should see the opposite.
+#
+# The four are named ONE BY ONE rather than as a blanket `**/*.json`, for two reasons and
+# only the second applies to this list. First, on the PORTAL's list a blanket would sit
+# below `!package.json` and `!package-lock.json` and deny the portal its own manifest --
+# this list re-admits no JSON at all, so that hazard is the other file's, and an earlier
+# draft of this comment wrongly generalised it to both by citing the `!requirements.txt`
+# re-admission, which is not JSON. Second, and the reason here: naming them is the only
+# form that says WHICH files this is about, and the four are the subject of note 1 in the
+# Dockerfile and of all four deploy/config/*.example.json.
+**/fleet_config.json
+**/capability_registry.json
+**/capability_profiles.json
+**/bifrost_shell_policy.json
 
 # ---- never, under any circumstances ----
-# Belt and braces. Everything here is already excluded by `**`, and it is restated so that a
-# future edit which re-admits a directory cannot sweep one of these in as a side effect.
+# THIS BLOCK'S GUARANTEE RESTS ON THREE PROPERTIES, AND ALL THREE ARE NOW GATED.
+# Corrected 2026-11-03 on the merge that made it true; both sides of that merge still
+# said "NOT gated" about two of them, each side blind to the step the other had added.
+#   REACH     -- the patterns are recursive, so they apply inside the subtrees this file
+#                re-admits wholesale.                   Fixed 1d69a59.
+#                GATED by "prove both ignore files' patterns are in force" in the `images`
+#                job: it builds a PLANTED context (`FROM scratch`, `COPY . /ctx/`,
+#                `--output type=local`) and asserts the transferred file list exactly.
+#                That step asserts the PATTERNS; A1 of the step-4 preflight asserts the
+#                LOCATION. NEITHER IS SUFFICIENT ALONE, and the probes this comment used
+#                to apologise for -- throwaway stub contexts, built outside git and
+#                discarded -- have been replaced by a step that runs on every push.
+#   FINALITY  -- nothing re-admits below this block, because a .dockerignore is
+#                last-match-wins.                       Fixed and GATED in 04a4eb1.
+#   SHAPE COVERAGE -- the shapes listed below are the ones worth denying.
+#                GATED by "the never-block must cover the declared shape set" in the
+#                `build` job (tools/check_never_block_shapes.py), which is what finally
+#                replaced the prose this heading used to rest on.
 #
-# EVERY CREDENTIAL PATTERN HERE CARRIES `**/`, AND NONE OF THEM DID UNTIL 2026-11-03.
-# A single `*` in a .dockerignore pattern does NOT cross a '/', so `.env` and `*.pem` were
-# matched against ONE PATH SEGMENT: they denied a top-level `.env` and said nothing whatever
-# about `backends/.env`. And `!backends/**` and `!skills/**` above re-admit those subtrees in
-# full -- so the side effect this block exists to prevent was the state this block was in.
+# ONE RESIDUAL RISK SURVIVES ALL THREE, and it is not closed by any of them: `docker build`
+# reads the WORKING TREE rather than the index, so a credential that is merely gitignored is
+# invisible to every git-based gate here and still enters the context. It is recorded in
+# RELEASE-SCOPE.md as the top residual risk rather than patched in passing, because closing
+# it is a decision about what this list is FOR.
 #
-# Measured, not reasoned about: a planted context built with `FROM scratch`, `COPY . /ctx/`
-# and `--output type=local` transferred `backends/.env`, `backends/leak.pem`, `skills/leak.key`
-# and `backends/sub.log` with the single-segment patterns, and transfers none of them with
-# these. `COPY backends/ /app/backends/` and `COPY skills/ /app/skills/` in the Dockerfile
-# copy whole directories, so those four files would have reached the published image.
-# `**/__pycache__/` and `**/*.pyc` were already written this way, which is exactly why they
-# were the only two entries in this block that held at depth.
+# Every pattern here is RECURSIVE (`**/`), and NONE of them was until 2026-11-03. That is
+# the whole point of the block rather than a style choice: the stated purpose is that a
+# re-admission above cannot sweep one of these in as a side effect -- and `!backends/**`
+# and `!skills/**` above are exactly such re-admissions, wholesale. A single `*` does not
+# cross a '/', so `.env` and `*.pem` were matched against ONE PATH SEGMENT: they denied a
+# top-level `.env` and said nothing whatever about `backends/.env`. The side effect this
+# block exists to prevent was the state this block was in.
+#
+# MEASURED, not reasoned about. In a planted context built with `FROM scratch`,
+# `COPY . /ctx/` and `--output type=local`: `backends/.env`, `backends/leak.pem`,
+# `skills/leak.key` and `backends/sub.log` were all transferred with the single-segment
+# patterns and none of them is with these. `COPY backends/ /app/backends/` and
+# `COPY skills/ /app/skills/` copy whole directories, so those four would have reached the
+# published image. `**/__pycache__/` and `**/*.pyc` were already written this way, which is
+# exactly why they were the only two entries in this block that held at depth.
 #
 # `**/P` also matches a top-level `P` -- measured on docker 29.9.2 -- so these REPLACE the
 # bare forms rather than joining them. Do not "restore" the bare forms; they are subsumed.
@@ -124,6 +171,30 @@
 **/.venv/
 **/venv/
 **/node_modules/
+**/*.env
+**/secrets/
+**/.secrets/
+**/*.secret
+**/*.secrets
+**/credentials.json
+**/*credential*
+**/*-credentials*
+**/auth.json
+**/.sops.yaml
+**/.sops/
+**/*.kubeconfig
+**/kubeconfig
+**/kubeconfig.*
+**/*.jks
+**/*.keystore
+**/id_rsa.*
+**/id_ed25519.*
+**/*.ppk
+**/known_hosts
+**/*.token
+**/_netrc
+**/.npmrc
+**/.pypirc
 
 # ---- top-level only, and DELIBERATELY not generalised ----
 # These three are the asymmetry, and it is the point rather than an oversight. A pattern that

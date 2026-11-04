@@ -19,9 +19,23 @@ by running it.
 
 **1. There is no dependency manifest.** `images/router/Dockerfile` needs
 `services/router/requirements.txt`, and no such file has been selected for the release — the
-private repository's version is excluded from publication. `docker build` fails on that COPY.
+private repository's version is excluded from publication. The build stops on that COPY.
 Inventing a pin set is worse than a build that stops, because a reviewer cannot tell which
 pins were measured.
+
+**Today it stops EARLIER than that, and the distinction is worth keeping straight.** Neither
+build context is assembled, so the build never reaches an instruction in either Dockerfile:
+it fails while preparing the context. Measured on 2026-11-03, Docker 29.4.2 / Compose
+v5.1.3, from `deploy/`:
+
+```
+$ docker compose -f compose.yaml build
+unable to prepare context: path ".../services/portal" not found
+```
+
+So the COPY failure above is the state you reach once step 4 has landed the source and the
+manifest is still absent — it is the *next* failure, not the current one. Until then a reader
+who sees "fails on that COPY" and gets a context error has not found a second problem.
 
 **The "131 dependency decisions" figure that used to appear here is withdrawn** — it was
 another service's. Reported 2026-11-02: 131 is two `bifrost-kb` files summed, and that
@@ -175,6 +189,39 @@ printf 'RAMEAU_OLLAMA_URL=http://host.docker.internal:11434\n' > .env   # .gitig
 On Docker Desktop, and on Linux with the stack's `extra_hosts`,
 `http://host.docker.internal:11434` reaches an ollama on the host. The three router URLs in the
 example file are also ignored: `compose.yaml` sets those itself, on purpose.
+
+**`BIFROST_HOST` is the same exception, and it is the one variable this section did not name
+until 2026-11-03.** It is the portal's nginx template variable, and `compose.yaml` declares it
+as `${BIFROST_HOST:-host.docker.internal}` under the portal's `environment:` — which outranks
+`env_file:`, exactly as it did for the five endpoints above. So putting it in
+`profiles/compose.env` does nothing, silently. Measured: with that file setting
+`BIFROST_HOST=file-wins-bifrost.example.com`, the portal still resolved
+`BIFROST_HOST=host.docker.internal`.
+
+You almost certainly do not need to set it — the default is right for this stack, because
+`compose.yaml` passes `extra_hosts: host.docker.internal:host-gateway`. If you do need to, it
+goes in your shell or in `deploy/.env`, beside `RAMEAU_OLLAMA_URL`.
+
+One more thing that measurement showed, recorded because it reads as a mistake and is not one
+worth acting on blind: both services share one `env_file:` anchor, so the portal also receives
+the `RAMEAU_*` endpoint variables, and the router also receives whatever `BIFROST_*` the file
+sets. **How many the portal receives depends on what you put in the file, so the count is
+quoted with its condition or not at all** — measured on Docker 29.4.2 / Compose v5.1.3:
+
+| what `profiles/compose.env` contains | `RAMEAU_*` the portal receives |
+|---|---|
+| `compose.env.example` copied verbatim — 9 keys | **9** |
+| only the five non-router endpoints | **5** |
+
+Neither is read — nginx substitutes only names matching `^BIFROST_`, and the router resolves
+only `RAMEAU_*` — so nothing misbehaves today. Splitting the anchor is a deploy-surface change
+and is left to whoever owns that decision; RELEASE-SCOPE.md carries it as open.
+
+**This paragraph said "six" until 2026-11-03, and six is not reachable in either case.** It
+was read off a throwaway test file that happened to set the five optional endpoints plus
+`RAMEAU_ROUTER_CHAT_URL`, and then written up as though it were a property of the shipped
+example. The first row above is the case an operator actually meets, because step 1 of this
+section tells them to copy that file.
 
 **2. Runtime config.**
 

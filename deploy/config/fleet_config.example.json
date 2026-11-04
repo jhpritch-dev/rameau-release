@@ -6,15 +6,14 @@
   "_established_from_this_repository": [
     "Mounted read-only at /app/fleet_config.json -- deploy/compose.yaml mounts it as a single FILE, not as a directory, because a directory mounted onto /app would shadow the application code.",
     "Read by the application as Path(__file__).parent / \"fleet_config.json\", so it must land at that exact path (deploy/compose.yaml, deploy/README.md).",
-    "Absent from the router build context by design: deploy/images/router/.dockerignore does not re-admit it, and deploy/images/router/Dockerfile note 1 records that the private original baked all four in and the release cannot.",
+    "Absent from the router build context by design: deploy/images/router/Dockerfile.dockerignore does not re-admit it, and deploy/images/router/Dockerfile note 1 records that the private original baked all four in and the release cannot.",
     "Re-read on mtime change on EVERY request, so editing the host file re-tiers a running router with no restart (deploy/compose.yaml, deploy/images/router/Dockerfile note 1, deploy/README.md).",
     "Editing it 're-tiers' the router, so it carries the tier mapping the router routes against -- README.md's shape diagram has 'local model hosts (one or more), each serving one or more tiers' below 'classify -> tier selection -> cascade'.",
     "The real file 'describes a specific fleet' (deploy/images/router/Dockerfile note 1), which is why the allowlist disposes it as derive-example.",
-    "Apparently read by config.py -- stated in passing at deploy/images/router/.dockerignore line 14, inside an illustration of a DIFFERENT mistake (a trailing comment on a pattern line). Weak evidence, cited as weak."
+    "Apparently read by config.py -- stated in passing in deploy/images/router/Dockerfile.dockerignore, in the TWO SYNTAX RULES block, inside an illustration of a DIFFERENT mistake (a trailing comment on a pattern line). Weak evidence, cited as weak. Cited by block rather than by line number: the previous wording gave a line number and the wrong filename, and both had already rotted."
   ],
   "_not_established": [
     "Every key name and value type EXCEPT tiers[].base_url, described below. The repository still contains no sample, loader, test or schema for this file, so nothing else here is derived from it.",
-    "Every key name, every value type, and the nesting. The repository contains no sample, no loader, no test and no schema for this file.",
     "Whether it is keyed by host, by tier, by model, or by something else.",
     "What a 'tier' is named or bounded by, and what the cascade order is read from.",
     "Whether the mtime re-read is whole-file or incremental, and what happens on a parse error mid-flight. A file re-read on every request has no restart boundary to fail at."

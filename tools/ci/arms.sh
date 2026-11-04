@@ -147,7 +147,19 @@ MUTATE64
 }
 
 # Re-extract after a mutation to ci.yml, so the step that runs is the mutated one.
+#
+# THE DIRECTORY IS CLEARED FIRST, and that is a fix rather than tidiness. Extracting over a
+# previous extraction leaves the OLD step files in place, so a mutation that inserts or
+# renames a step leaves two files carrying one index. `step_path` globs, and printf '%s'
+# over two matches concatenates them WITHOUT a separator, so the result reads like a single
+# path and the basename taken from it is the wrong step's. Found by the step-map arm below,
+# which scored FAIL-TO-FIRE on a mutation it had plainly applied: the stale
+# build__08__licence-and-scope.sh was still there beside the newly inserted one, so the
+# expectation matched and the check said ok. Every arm that renames or reorders a step was
+# exposed to this.
 reextract() {
+  rm -rf "$STEPS"
+  mkdir -p "$STEPS"
   ( cd "$AR" && python3 tools/ci/extract-steps.py .github/workflows/ci.yml "$STEPS" ) >/dev/null
 }
 
@@ -244,6 +256,190 @@ run_images_probe()    { run_step images__02; }
 run_secrets_canary()  { run_step secrets__02; }
 run_census_controls() { run_step census__01; }
 run_census_main()     { run_step census__02; }
+
+# ---------------------------------------------------------------------------------------
+# THE POSITIONAL STEP MAP, ASSERTED BEFORE ANY ARM RUNS
+# ---------------------------------------------------------------------------------------
+# EVERY RUNNER ABOVE ADDRESSES A STEP BY ITS INDEX, AND AN INDEX IS SILENT WHEN IT MOVES.
+# Measured 2026-11-03 on the merge that brought the step-5 and scrub branches together:
+# grafting three gates into `build` pushed "licence and scope invariants" from build__08 to
+# build__11 while `run_build_licence` went on addressing build__08 -- by then the
+# dockerignore gate. The apache-licence-substring arm would have mutated the licence step
+# and judged a different step's output. It would not have errored, and it would not have
+# been scored as a harness fault; it would simply have reported on the wrong subject.
+#
+# WHY A PREFLIGHT RATHER THAN A CHECK INSIDE run_step. A guard that fires inside the runner
+# returns non-zero with a message, and `judge` would compare that message against the arm's
+# expectation, miss it, and record WRONG-REASON. That is a FAIL, so not a false pass -- but
+# it reads as "the gate fired for the wrong reason" when the truth is that NOTHING WAS
+# TESTED. This is the same judgement the dependency check at the top of this file makes:
+# one arm reading WRONG-REASON is a far worse diagnosis than the whole suite refusing and
+# naming the cause. So the map is asserted once, before any arm runs, and a fault here can
+# never be dressed up as an arm's verdict.
+#
+# THE EXPECTATIONS ARE SUBSTRINGS OF THE SLUG, not whole filenames: extract-steps.py
+# truncates a long step name, so pinning the full name would make this gate go red on an
+# edit to a step's prose -- which is growth, not breakage.
+# STEP-MAP-DATA
+STEP_MAP="build__05:in-network-profile
+build__07:compose-env-must-actually-reach
+build__08:licence-and-scope
+images__02:ignore-files-patterns
+secrets__02:prove-the-scanner-fires
+census__01:discovery-library
+census__02:discover-the-population
+step4__01:assert-what-cannot-be-absent
+step4__02:obligations-that-hold
+step4__03:is-the-source-assembled
+step4__04:assembled-source-obligations
+step4__05:state"
+# /STEP-MAP-DATA
+
+# Extracted from the WORKING TREE rather than from a clone: `fresh` commits exactly those
+# modifications before extracting, so the mapping is the same one every arm will see, and
+# this costs no clone.
+mkdir -p "$STEPS"
+if ! ( cd "$SRC" && python3 tools/ci/extract-steps.py .github/workflows/ci.yml "$STEPS" ) \
+     >/dev/null 2>&1; then
+  note "ARMS REFUSED: the step extractor failed, so the positional map cannot be checked"
+  note "and every arm below would be addressing steps nobody has confirmed exist."
+  exit 2
+fi
+
+# THE MAP IS CHECKED AGAINST THE REFERENCES DISCOVERED IN THIS FILE, not trusted to be
+# complete. A hand-kept map is the same defect one level up: a runner added later without a
+# map entry would escape this check in silence, which is precisely the failure being closed.
+#
+# The two decisions below are DECLARED MATCHERS with arms of their own, like every other
+# pattern that decides something in this repository. They are the harness deciding what the
+# arms are allowed to address, so they are exactly the kind of instrument the registry
+# exists for -- and the census said so before this comment did.
+
+# MATCHER: step-map-refs
+# Every positional id this file ADDRESSES, discovered rather than listed.
+#
+# DISCOVERY IS ANCHORED ON THE ID ITSELF, not on an adjacent `run_step`/`step_path`. The
+# ids are not all written the same way: run_preflight holds four of them in a shell list
+# (`for pf_s in step4__01 ...`) and calls step_path with the loop variable, so a pattern
+# keyed on the caller finds EIGHT OF TWELVE and reports the other four as stale entries --
+# measured, on a baseline with nothing wrong with it. A guard that is red on correct
+# content gets switched off, so the pattern has to find an id however it is spelt.
+#
+# Two exclusions keep that sound: COMMENT LINES (this file's own prose names ids by way of
+# example, and an example is not a reference) and the STEP-MAP-DATA block (the map must not
+# be allowed to verify itself into completeness -- every entry would be "addressed" by its
+# own row). The file to read is an argument so an arm can point it at a mutated copy in the
+# clone; nothing else about it is configurable.
+step_map_refs() {
+  awk '
+    /^# \/STEP-MAP-DATA$/ { smr_skip = 0; next }
+    /^# STEP-MAP-DATA$/   { smr_skip = 1; next }
+    smr_skip              { next }
+    /^[[:space:]]*#/      { next }
+                          { print }
+  ' "$1" | grep -oE '\b[a-z0-9]+__[0-9]+\b' | sort -u
+}
+# /MATCHER
+
+# MATCHER: step-map-expectation
+# Whether one id resolves to the step the map says it does. Prints a finding, or nothing.
+#
+# THE EXPECTATION IS A SUBSTRING OF THE SLUG, deliberately: extract-steps.py truncates a
+# long step name, so pinning the whole filename would make this go red on an edit to a
+# step's prose -- growth, not breakage. The unresolved case is kept separate from the
+# wrong-slug case because they are different faults: a glob that matched nothing means the
+# index is off the end, and reporting that as "the wrong slug" would describe a file that
+# does not exist.
+# The glob is counted rather than passed through `step_path`, because printf '%s' over two
+# matches concatenates them with no separator and the result still LOOKS like one path. The
+# ambiguity leg is a backstop, not a measured leg: with reextract clearing the directory
+# nothing should reach it, and it is here because something did -- it is what turned a
+# FAIL-TO-FIRE into the reextract fix above rather than into a weakened expectation.
+step_map_expectation() {
+  sme_n=0
+  sme_last=""
+  for sme_p in "$STEPS"/"$1"__*.sh; do
+    [ -e "$sme_p" ] || continue
+    sme_n=$((sme_n + 1))
+    sme_last=$sme_p
+  done
+  if [ "$sme_n" -eq 0 ]; then
+    printf '    %s -- NO SUCH STEP (expected a slug containing: %s)\n' "$1" "$2"
+    return 0
+  fi
+  if [ "$sme_n" -gt 1 ]; then
+    printf '    %s -- AMBIGUOUS: %d step files carry this index (expected: %s)\n' \
+           "$1" "$sme_n" "$2"
+    return 0
+  fi
+  sme_base=${sme_last##*/}
+  case "$sme_base" in
+    *"$2"*) ;;
+    *) printf '    %s -> %s (expected a slug containing: %s)\n' "$1" "$sme_base" "$2" ;;
+  esac
+}
+# /MATCHER
+
+# The check itself, on STDOUT rather than through `note`, for one reason: an arm reads a
+# runner's STDOUT to decide whether the right thing failed, and a refusal written to stderr
+# would be judged WRONG-REASON however correct it was.
+step_map_check() {
+  smc_refs=$(step_map_refs "$1")
+  smc_mapped=$(printf '%s\n' "$STEP_MAP" | awk -F: 'NF{print $1}' | sort -u)
+  smc_unmapped=$(comm -23 <(printf '%s\n' "$smc_refs") <(printf '%s\n' "$smc_mapped"))
+  smc_stale=$(comm -13 <(printf '%s\n' "$smc_refs") <(printf '%s\n' "$smc_mapped"))
+  smc_bad=""
+  smc_checked=0
+  smc_oldifs=$IFS
+  IFS='
+'
+  for smc_row in $STEP_MAP; do
+    IFS=$smc_oldifs
+    smc_find=$(step_map_expectation "${smc_row%%:*}" "${smc_row#*:}")
+    [ -z "$smc_find" ] || smc_bad="$smc_bad$smc_find"$'\n'
+    smc_checked=$((smc_checked + 1))
+    IFS='
+'
+  done
+  IFS=$smc_oldifs
+
+  if [ -z "$smc_unmapped" ] && [ -z "$smc_stale" ] && [ -z "$smc_bad" ]; then
+    printf 'step map ok: %d positional reference(s), each resolving to the step it names\n' \
+           "$smc_checked"
+    return 0
+  fi
+
+  printf 'ARMS REFUSED: the positional step map does not describe this workflow.\n\n'
+  [ -z "$smc_unmapped" ] || {
+    printf '  ADDRESSED BUT NOT IN THE MAP -- these are checked by nothing:\n'
+    printf '%s\n' "$smc_unmapped" | awk 'NF{print "    " $0}'
+  }
+  [ -z "$smc_stale" ] || {
+    printf '  IN THE MAP AND ADDRESSED BY NOTHING -- a stale entry asserting nothing:\n'
+    printf '%s\n' "$smc_stale" | awk 'NF{print "    " $0}'
+  }
+  [ -z "$smc_bad" ] || {
+    printf '  RESOLVES TO THE WRONG STEP -- an arm here would mutate one step and judge\n'
+    printf '  another, and would report a verdict rather than an error:\n'
+    printf '%s' "$smc_bad"
+  }
+  printf '\n'
+  printf 'A step was inserted, removed or renamed. Fix the INDEX (or the expectation) in\n'
+  printf 'STEP_MAP and in the runner that addresses it -- do not delete the entry to get\n'
+  printf 'green, because the entry is the only thing standing between an index that moved\n'
+  printf 'and an arm that silently reports on the wrong subject.\n'
+  return 2
+}
+
+# The runner the two arms below use. It reads the CLONE's copy of this file, so an arm that
+# adds a runner there is discovered the same way a real one would be.
+run_step_map() { step_map_check "$AR/tools/ci/arms.sh"; }
+
+sm_rc=0
+sm_report=$(step_map_check "$SRC/tools/ci/arms.sh") || sm_rc=$?
+rm -rf "$STEPS"
+note "$sm_report"
+[ "$sm_rc" -eq 0 ] || exit "$sm_rc"
 
 # A correct, minimal services/ tree: every source-dependent obligation satisfied. Built in
 # the clone, never committed, discarded with the clone. It is NOT the real source and nothing
@@ -387,9 +583,27 @@ fires "state: INDETERMINATE when the repository step did not finish" \
 # get arms exactly as the obligations do.
 
 # ARM: gitleaks-ruleset
+# RE-ANCHORED 2026-11-03, because the step this arm mutates moved out of the workflow.
+# The canary used to be planted inline in secrets__02; it is now planted by
+# tools/prove_scanner_fires.py, which carries both halves of the control -- the eleven
+# positive shapes and the three near-misses -- in one scan. The old anchor was
+# `printf 'B%.0s' $(seq 16))"` in ci.yml, and after the move it matched ZERO times.
+# `mutate` would have exited 2 and the harness would have scored MUTATION-FAILED:
+# loud rather than silent, but still an arm testing nothing. A mutation whose anchor
+# did not match is NOT-PLANTED, never a pass.
+#
+# Same mutation, same meaning: the zero-entropy near-miss is handed a real random key
+# body, so it stops being a near-miss and the specificity half must notice.
+# No `&& reextract` -- the mutated file is not a workflow, so the extracted step script
+# is unchanged and re-extracting would be a no-op that reads as though it mattered.
+#
+# PROVED BEFORE BEING COMMITTED, on gitleaks 8.30.1: the mutated near-miss fired in 2 of
+# 13 rounds and tier 1b went red naming it and the rule (aws-access-token). Note the 2 of
+# 13: a reader of only the LAST round would have seen silence, which is why the script
+# accumulates near-miss firings across rounds rather than keeping the final round's.
 fires "gitleaks ruleset: the zero-entropy near-miss is given a real key body" \
-      "CONTROL FAILED: the scanner flagged" \
-      'mutate .github/workflows/ci.yml "printf '"'"'B%.0s'"'"' \$(seq 16))\"" "LC_ALL=C head -c 64 /dev/urandom | base32 | tr -d '"'"'='"'"' | tr -cd '"'"'A-Z0-9'"'"' | cut -c1-16)\"" && reextract' \
+      "CONTROL FAILED: a NEAR-MISS was flagged" \
+      'mutate tools/prove_scanner_fires.py "(\"B\" * 16)" "r(UPPER_NUM, 16)"' \
       run_secrets_canary
 
 # ARM: loopback-regex
@@ -684,6 +898,36 @@ assert a.count('# ARM: violation-printer\n') == 1
 io.open('tools/ci/arms.sh', 'w').write(a.replace('# ARM: violation-printer\n', '', 1))
 PY" \
       run_census_main
+
+# =======================================================================================
+# THE HARNESS'S OWN POSITIONAL MAP
+# =======================================================================================
+# The step map decides WHICH STEP every arm above addresses, so if it stops deciding
+# correctly the suite keeps printing verdicts about the wrong subjects. That is not a
+# hypothetical: a step inserted into `build` ahead of the licence step during this merge
+# moved build__08, and the arm went on mutating the new step and judging it -- `caught=3
+# MISSED=0`, about something nobody asked it to check. Both halves are armed, because the
+# two halves fail differently: one lets an unaddressed id through, the other mis-resolves
+# an addressed one.
+
+# ARM: step-map-refs
+# A runner addressing build__03, which no map entry names. Mutating the CLONE's arms.sh is
+# the point: discovery reads that copy, so this is the same shape as a runner somebody adds
+# next month and forgets to map.
+fires "step-map-refs: a runner addresses an id that is in no map entry" \
+      "ADDRESSED BUT NOT IN THE MAP" \
+      'mutate_b64 tools/ci/arms.sh cnVuX2NlbnN1c19tYWluKCkgICAgIHsgcnVuX3N0ZXAgY2Vuc3VzX18wMjsgfQo= cnVuX2NlbnN1c19tYWluKCkgICAgIHsgcnVuX3N0ZXAgY2Vuc3VzX18wMjsgfQpydW5fdW5tYXBwZWRfYXJtKCkgICAgeyBydW5fc3RlcCBidWlsZF9fMDM7IH0K' \
+      run_step_map
+
+# ARM: step-map-expectation
+# A step inserted into `build` immediately before the licence step -- THE MEASURED FAILURE,
+# replayed. Anchors are base64 because both carry leading whitespace that matters: the
+# preimage is one `- name: licence and scope invariants` line, the postimage is a dummy step
+# in front of it.
+fires "step-map-expectation: a step is inserted, shifting build__08 off licence" \
+      "RESOLVES TO THE WRONG STEP" \
+      'mutate_b64 .github/workflows/ci.yml ICAgICAgLSBuYW1lOiBsaWNlbmNlIGFuZCBzY29wZSBpbnZhcmlhbnRzCg== ICAgICAgLSBuYW1lOiBhIGR1bW15IHN0ZXAgcGxhbnRlZCBieSB0aGUgYXJtCiAgICAgICAgcnVuOiBlY2hvIGR1bW15CiAgICAgIC0gbmFtZTogbGljZW5jZSBhbmQgc2NvcGUgaW52YXJpYW50cwo=' \
+      run_step_map
 
 # =======================================================================================
 # THE HARNESS'S OWN MATCHER

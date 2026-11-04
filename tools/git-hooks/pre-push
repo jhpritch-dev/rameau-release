@@ -216,6 +216,149 @@ fi
 
 say "clean: no findings in local history"
 
+# --- the gate: PRIVATE ADDRESSES AND INTERNAL HOSTNAMES -------------------------------
+# gitleaks does not cover this, and that is measured rather than assumed: a file whose
+# entire content is `ROUTER_URL = "http://<an RFC1918 address>:8089"` is reported by
+# gitleaks as "no leaks found" with exit 0. README.md and CLAUDE.md both state the rule as
+# "credential, key, token, password, private address or internal hostname"; everything
+# above this line enforces the first four. Until this gate existed, the number of
+# instruments covering the last two was ZERO -- and the one leak this repository has
+# actually had was in that half: an earlier shared/test_resolver.py carried a private /24
+# and was caught by a person reading the file, not by any gate.
+#
+# SCOPE, stated because overclaiming is the defect this file keeps being corrected for:
+#
+#   * It scans the COMMITTED content at HEAD (`--rev HEAD`), not the working tree. A push
+#     sends objects, not files on disk, and the two can differ. The working-tree pass
+#     below stays advisory for the same reason it is advisory for gitleaks.
+#   * It is TIP-ONLY. gitleaks above walks all of local history; this does not. A private
+#     address that was committed earlier and removed by HEAD will NOT be caught here.
+#     That gap is real and is written down rather than papered over.
+#   * Addresses are covered completely. Internal hostnames are covered only where they
+#     carry a reserved DNS suffix: in a Compose project a bare single-label host is the
+#     same shape as a service name (`http://router:8080`), so no rule can tell them
+#     apart. See tools/scan_private_literals.py for that measurement.
+#
+# FAILS CLOSED, like the gitleaks gate: no interpreter means no check, and a check that
+# quietly skips itself manufactures the appearance of protection. Python is already a hard
+# dependency of this project (3.11+ per CLAUDE.md, and shared/resolver.py ships with it),
+# so refusing is the right answer rather than an inconvenience.
+PL_SCANNER="$repo_root/tools/scan_private_literals.py"
+
+# `command -v` is NOT enough, measured on this machine: Windows ships a `python3` App
+# Execution Alias that exists on PATH, prints "Python was not found..." and exits
+# NONZERO. So presence was found, the interpreter did not run, and -- because nonzero is
+# the pass condition for the control below -- the control read that crash as "the gate
+# fired". A control that cannot tell a crash from a verdict is the exact defect this file
+# has already been corrected for once, at the gitleaks step. So probe that each candidate
+# actually EXECUTES.
+_pl_py=""
+for _pl_c in python3 python; do
+    if command -v "$_pl_c" >/dev/null 2>&1 \
+       && "$_pl_c" -c 'pass' >/dev/null 2>&1; then _pl_py="$_pl_c"; break; fi
+done
+
+if [ -z "$_pl_py" ]; then
+    say ""
+    say "REFUSING: no python interpreter, so the private-address gate cannot run."
+    say "This hook fails closed on purpose. gitleaks has no rule for a private address or"
+    say "an internal hostname, so skipping this check would leave half of the documented"
+    say "rule unenforced while reporting a clean push."
+    say "Install python3, or override deliberately with RAMEAU_SKIP_SECRET_GATE=1."
+    exit 1
+fi
+
+if [ ! -f "$PL_SCANNER" ]; then
+    say ""
+    say "REFUSING: $PL_SCANNER is missing."
+    say "A gate that cannot find its own checker must not report success."
+    exit 1
+fi
+
+# The control, for the same reason gitleaks gets one: a clean verdict is the output nobody
+# re-checks. The planted address is GENERATED from $RANDOM, so this hook contains no
+# address belonging to anyone -- which is also the rule the scanner itself is built on.
+_pl_probe_dir="$control_dir/plcanary"
+mkdir -p "$_pl_probe_dir"
+printf 'ROUTER_URL = "http://10.%d.%d.%d:8089"\n' \
+    "$(( RANDOM % 254 + 1 ))" "$(( RANDOM % 254 + 1 ))" "$(( RANDOM % 254 + 1 ))" \
+    > "$_pl_probe_dir/probe.py"
+
+# Nonzero alone is NOT enough to call this control passed -- a crashing interpreter also
+# exits nonzero, which is how an earlier version of this block reported "control ok" while
+# the scanner had never run. So require the VERDICT LINE, the same shape-not-exit-code
+# discipline the gitleaks step uses, and then require it to be the FAIL verdict.
+# `|| _pl_probe_rc=$?` rather than a bare call followed by `$?`: this file runs under
+# `set -euo pipefail` (line 28), so a bare command that exits nonzero aborts the script
+# THERE -- before the status is read and before any message is printed. Measured: the
+# first version of this block made the hook exit 1 having said nothing at all, which is
+# worse than either verdict, because a silent refusal looks like a crash in git itself.
+# Nonzero is the EXPECTED outcome here, so it must not be fatal.
+_pl_probe_out="$control_dir/plcanary.out"
+_pl_probe_rc=0
+"$_pl_py" "$PL_SCANNER" --root "$_pl_probe_dir" --paths probe.py \
+    >"$_pl_probe_out" 2>&1 || _pl_probe_rc=$?
+
+if ! grep -q '^VERDICT:' "$_pl_probe_out" 2>/dev/null; then
+    say ""
+    say "CONTROL DID NOT COMPLETE: the private-address scanner printed no verdict line,"
+    say "so it did not run to a conclusion. Its output was:"
+    sed 's/^/pre-push:   /' "$_pl_probe_out" >&2
+    say ""
+    say "This is a scanner or interpreter fault, not a finding. The push is refused"
+    say "because the check is inconclusive, which is not the same as dirty."
+    exit 1
+fi
+
+if [ "$_pl_probe_rc" -eq 0 ] || ! grep -q '^VERDICT: FAIL' "$_pl_probe_out"; then
+    say ""
+    say "CONTROL FAILED: the private-address gate did not flag a generated RFC1918"
+    say "address. The scan below cannot be trusted, so this push is refused on purpose."
+    exit 1
+fi
+say "control ok: the private-address gate flags a generated private address"
+
+say "scanning committed content at HEAD for private addresses and internal hostnames..."
+
+# CRASH OR VERDICT, for the gate and not only for its control. The control above got this
+# discipline first and the gate did not, and the gap bit immediately: a bug in the
+# scanner's --audit path raised UnboundLocalError, exited nonzero, and this step reported
+# "PUSH REFUSED: a private address ... is in the committed content" -- refusing for a
+# reason that was not true. Same lesson as the gitleaks step: decide from the printed
+# verdict, never from the exit code alone.
+_pl_out="$control_dir/private-literals.out"
+_pl_rc=0
+"$_pl_py" "$PL_SCANNER" --root "$repo_root" --rev HEAD --audit \
+    >"$_pl_out" 2>&1 || _pl_rc=$?
+cat "$_pl_out" >&2
+
+if ! grep -q '^VERDICT:' "$_pl_out" 2>/dev/null; then
+    say ""
+    say "PUSH REFUSED: the private-address scan DID NOT COMPLETE -- it printed no verdict"
+    say "line, so it did not reach a conclusion. Its output is above."
+    say ""
+    say "That is a scanner fault, not a finding. Nothing is claimed about this tree; the"
+    say "push is refused because the check is inconclusive, which is not the same as dirty."
+    exit 1
+fi
+
+if [ "$_pl_rc" -ne 0 ]; then
+    say ""
+    say "PUSH REFUSED: a private address or internal hostname is in the committed content."
+    say ""
+    say "Values are NOT printed above, by design -- each finding gives rule, path, line,"
+    say "length and character class, which is enough to open the file and see it."
+    say ""
+    say "If a literal is DELIBERATE -- a test fixture proving the resolver accepts a"
+    say "private address, say -- annotate that line with 'rameau-scan: allow' and the"
+    say "exception becomes visible in the diff instead of hidden in a skip list."
+    say ""
+    say "If it is NOT deliberate: removing the line is not enough once it has been pushed."
+    say "An address that has left this machine has left it. Treat it as a disclosure."
+    exit 1
+fi
+say "clean: no private address or internal hostname in the committed content at HEAD"
+
 # --- advisory: THE WORKING TREE -------------------------------------------------------
 # ADVISORY, and deliberately not a gate. `--no-git` reads files from disk, which includes
 # untracked AND gitignored ones -- measured: both are reported. A local `.env` that

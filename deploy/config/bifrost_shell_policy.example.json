@@ -6,7 +6,7 @@
   "_established_from_this_repository": [
     "Mounted read-only at /app/bifrost_shell_policy.json -- deploy/compose.yaml mounts it as a single FILE, not as a directory, because a directory mounted onto /app would shadow the application code.",
     "Read by the application as Path(__file__).parent / \"bifrost_shell_policy.json\", so it must land at that exact path (deploy/compose.yaml, deploy/README.md).",
-    "Absent from the router build context by design: deploy/images/router/.dockerignore does not re-admit it, and deploy/images/router/Dockerfile note 1 records that the private original baked all four in and the release cannot."
+    "Absent from the router build context by design: deploy/images/router/Dockerfile.dockerignore does not re-admit it, and deploy/images/router/Dockerfile note 1 records that the private original baked all four in and the release cannot."
   ],
   "_scope_flag": "Before this file is filled in, settle the scope question. RELEASE-SCOPE.md records docker/shell-mcp/ (6 paths) as a LIVE CONTRADICTION: the cut list names 'the agent sandbox' by name and the allowlist census selected those paths anyway. John's ruling of 2026-10-27 covered the portal and autopilot and did NOT extend to it. A shell policy is plausibly the configuration surface of exactly that family. The mount is already in the committed deploy/compose.yaml, so a file has to exist for the stack to start -- which is why this placeholder is here -- but deriving a real schema for it would be deciding the open question by implementation.",
   "_not_established": [
