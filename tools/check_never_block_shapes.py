@@ -141,7 +141,19 @@ def check_derivation(declared, gitignore_text):
 def tracked_ignore_files():
     out = subprocess.run(["git", "ls-files", "*.dockerignore"],
                          capture_output=True, text=True, check=True).stdout
-    return [p for p in out.split() if p]
+    # DEDUPLICATED: `git ls-files` emits a conflicted path ONCE PER MERGE STAGE, so during
+    # an unresolved merge two ignore files report as six. Measured 2026-11-03 mid-merge --
+    # this gate printed "in each of 6 never-block(s)" for two files. The verdict was never
+    # wrong (the assertion is per-block presence, so a duplicate is the same file passing
+    # twice) but the printed FIGURE was, and a count whose scope is wrong is not a
+    # measurement. The same defect was causing a FALSE FAILURE in scan_private_literals.py,
+    # where duplicate findings were counted three times over.
+    seen, uniq = set(), []
+    for p in out.split():
+        if p and p not in seen:
+            seen.add(p)
+            uniq.append(p)
+    return uniq
 
 
 def read(path):
@@ -225,7 +237,19 @@ def main(argv):
     print("ok: %d declared shape(s) present in each of %d never-block(s), and "
           "%s names none this floor is missing"
           % (len(declared), len(ignores), GITIGNORE))
-    print("    REACH is still ungated: no step here builds a context.")
+    # This line used to read "REACH is still ungated: no step here builds a context."
+    # It stopped being true on the 2026-11-03 merge, where the `images` job gained a step
+    # that builds a PLANTED context and asserts the transferred file list exactly. A gate
+    # that prints a stale claim about a sibling control teaches its reader to distrust the
+    # part that IS measured, so it states the division of labour instead.
+    print("    this gate covers SHAPE COVERAGE only. REACH is gated by \"prove both "
+          "ignore files'")
+    print("    patterns are in force\" (images job) and LOCATION by A1 of the step-4 "
+          "preflight.")
+    print("    Residual, and closed by none of the three: `docker build` reads the "
+          "WORKING TREE,")
+    print("    so a merely gitignored credential is invisible to every git-based gate "
+          "here.")
     return 0
 
 

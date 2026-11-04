@@ -51,6 +51,12 @@
 # delegated leaf, fail-closed, while /health still answers 200. The acceptance test has to
 # exercise one delegated leaf. This is also why compose.yaml defines no healthcheck: a
 # healthcheck on /health would read green on precisely this failure.
+#
+# SUSPENDED 2026-11-02. The router source ruled into scope contains no bifrost_delegate.py
+# and no tool loop, so the trap above cannot occur in what this image will actually build
+# and the acceptance step it prescribes cannot be run. Kept rather than deleted: the
+# reasoning is sound about the artefact it was written for, and the no-healthcheck decision
+# does not depend on it. See RELEASE-SCOPE.md.
 
 FROM python:3.11-slim@sha256:e88e9763f943ec1834f992a4b51e0f24500486803e8bc534e5767af9ea65f6ce
 

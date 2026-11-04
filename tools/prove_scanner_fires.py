@@ -130,6 +130,55 @@ def _draws():
     ]
 
 
+def _near_misses():
+    """[(name, filename, content)] -- key-SHAPED non-keys, and prose naming no value.
+
+    THE NEGATIVE HALF OF THIS CONTROL, and without it the positive half is only
+    half a proof. A matcher satisfied by something that flags EVERYTHING is as
+    blind as one satisfied by something that flags nothing: both let the real
+    scan's zero go unchecked, and both print a reassuring line while doing it.
+    So the same scan that proves the scanner CAN see a credential must also
+    prove it does NOT see these.
+
+    DELIBERATELY DETERMINISTIC, AND THAT IS A CORRECTION RATHER THAN A TASTE.
+    These are planted in EVERY round, so a near-miss with any entropy at all
+    would eventually clear gitleaks' entropy threshold on some draw and red the
+    build at random -- the exact flake this file's retry design exists to
+    remove, arriving by the opposite door. Built by character REPETITION rather
+    than written out, for the same reason the positives are generated: no
+    key-shaped literal may enter a file in this repository.
+
+    Each one differs from a real key in exactly ONE property, which is what
+    makes it a near-miss rather than merely a non-key:
+      nearmiss-short       correct prefix and alphabet, fails on LENGTH (8 body)
+      nearmiss-lowentropy  correct prefix, alphabet AND length, fails on ENTROPY
+                           alone -- the sharper of the two
+      nearmiss-prose       names the vocabulary of secrets and no value at all
+
+    MEASURED CLEAN, with a generated positive in the same repository and the
+    same invocation, on gitleaks 8.30.1 + this repo's .gitleaks.toml: 12 rounds,
+    zero near-miss findings, while the positive fired in 2 of the 12 (which is
+    itself consistent with aws-access-key's known intermittency). The 8.21.2
+    reading is CI's to take, and this gate is the thing that takes it: if a
+    near-miss fires on the pinned version it goes red and names which, rather
+    than quietly becoming an over-broad control.
+    """
+    return [
+        ("nearmiss-short", "nearmiss-short.txt",
+         "aws_access_key_id = AKIA%s\n" % ("A" * 8)),
+        ("nearmiss-lowentropy", "nearmiss-flat.txt",
+         "aws_access_key_id = AKIA%s\n" % ("B" * 16)),
+        ("nearmiss-prose", "plain.txt",
+         "prose about keys and tokens and passwords, naming no value\n"),
+    ]
+
+
+def _write(d, filename, content):
+    with open(os.path.join(d, filename), "w", encoding="utf-8",
+              newline="\n") as fh:
+        fh.write(content)
+
+
 def scan_round(pending):
     """Plant ONE fresh draw of every still-undetected shape, in ONE scratch repo,
     and scan it ONCE. Returns {shape: [rule ids]} for whatever fired this round.
@@ -145,6 +194,7 @@ def scan_round(pending):
     d = tempfile.mkdtemp(prefix="canary_")
     try:
         by_file = {}
+        nm_file = {}
         for shape in pending:
             filename, content = draw_for(shape)
             if filename in by_file:
@@ -153,9 +203,21 @@ def scan_round(pending):
                     "is by filename, so this would credit one shape with the "
                     "other's finding" % (filename, by_file[filename], shape))
             by_file[filename] = shape
-            with open(os.path.join(d, filename), "w", encoding="utf-8",
-                      newline="\n") as fh:
-                fh.write(content)
+            _write(d, filename, content)
+        # The near-misses go into the SAME repository and the SAME scan as the
+        # positives. Separately scanned near-misses would be a different
+        # experiment -- specificity has to be measured under the conditions the
+        # positive was measured under, or it speaks for a scan nobody ran.
+        for name, filename, content in _near_misses():
+            if filename in by_file or filename in nm_file:
+                raise RuntimeError(
+                    "near-miss %s wants the filename %r, which is already "
+                    "planted -- attribution is by filename, so a collision "
+                    "would credit a positive's finding to a near-miss or the "
+                    "reverse, and the control would invert silently"
+                    % (name, filename))
+            nm_file[filename] = name
+            _write(d, filename, content)
         subprocess.run(["git", "init", "-q", "."], cwd=d, capture_output=True)
         subprocess.run(["git", "add", "-A"], cwd=d, capture_output=True)
         subprocess.run(["git", "-c", "user.email=ci@example.invalid",
@@ -192,12 +254,18 @@ def scan_round(pending):
             raise RuntimeError("gitleaks report unparseable: %s" % exc)
 
         fired = {}
+        nm_fired = {}
         for f in findings:
             base = os.path.basename((f.get("File") or "").replace("\\", "/"))
             shape = by_file.get(base)
             if shape:
                 fired.setdefault(shape, set()).add(f.get("RuleID", "?"))
-        return {s: sorted(v) for s, v in fired.items()}
+                continue
+            nm = nm_file.get(base)
+            if nm:
+                nm_fired.setdefault(nm, set()).add(f.get("RuleID", "?"))
+        return ({s: sorted(v) for s, v in fired.items()},
+                {n: sorted(v) for n, v in nm_fired.items()})
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
@@ -266,10 +334,20 @@ def scan_all():
     rows = {s: {"shape": s, "flagged": False, "rules": [], "attempts": 0,
                 "draws_allowed": DRAWS_PER_SHAPE} for s in shape_names()}
     pending = shape_names()
+    nm_hits = {}
+    rounds_run = 0
     for round_no in range(1, DRAWS_PER_SHAPE + 1):
         if not pending:
             break
-        fired = scan_round(pending)
+        rounds_run = round_no
+        fired, nm_fired = scan_round(pending)
+        # A near-miss firing in ANY round is a specificity failure, so the hit is
+        # accumulated rather than overwritten -- the last round's silence must not
+        # erase an earlier round's firing.
+        for name, rules in nm_fired.items():
+            rec = nm_hits.setdefault(name, {"rounds": 0, "rules": set()})
+            rec["rounds"] += 1
+            rec["rules"].update(rules)
         still = []
         for shape in pending:
             if shape in fired:
@@ -279,8 +357,10 @@ def scan_all():
                 rows[shape]["attempts"] = round_no
                 still.append(shape)
         pending = still
-    return [rows[s] for s in shape_names()], (DRAWS_PER_SHAPE if pending
-                                              else None)
+    nm_out = {n: {"rounds": v["rounds"], "rules": sorted(v["rules"])}
+              for n, v in nm_hits.items()}
+    return ([rows[s] for s in shape_names()],
+            (DRAWS_PER_SHAPE if pending else None), nm_out, rounds_run)
 
 
 def read_floor(path):
@@ -303,7 +383,7 @@ def main(argv):
     ver = subprocess.run(["gitleaks", "version"], capture_output=True, text=True)
     version = (ver.stdout or ver.stderr or "?").strip()
 
-    rows, _exhausted = scan_all()
+    rows, _exhausted, nm_hits, nm_rounds = scan_all()
     fired = [x["shape"] for x in rows if x["flagged"]]
     dead = [x["shape"] for x in rows if not x["flagged"]]
     floor = read_floor(floor_path)
@@ -314,7 +394,10 @@ def main(argv):
     if "--json" in argv:
         print(json.dumps({"gitleaks": version, "rows": rows, "fired": fired,
                           "dead": dead, "floor": floor,
-                          "floor_missing": floor_missing}, indent=2))
+                          "floor_missing": floor_missing,
+                          "near_misses": [n for n, _, _ in _near_misses()],
+                          "near_miss_rounds": nm_rounds,
+                          "near_miss_firings": nm_hits}, indent=2))
     else:
         print("gitleaks version: %s" % version)
         print("%-26s %-6s %-9s %s"
@@ -326,6 +409,10 @@ def main(argv):
                      ",".join(x["rules"]) or "-"))
         print("\n%d of %d candidate shapes detected within %d draws each."
               % (len(fired), len(rows), DRAWS_PER_SHAPE))
+        print("specificity: %d near-misses planted in each of %d round(s); %s"
+              % (len(_near_misses()), nm_rounds,
+                 "none fired" if not nm_hits
+                 else "FIRED: %s" % ", ".join(sorted(nm_hits))))
         noisy = [x for x in rows if x["flagged"] and x["attempts"] > 1]
         if noisy:
             print("Shapes that needed more than one draw (the per-draw rate is "
@@ -351,6 +438,34 @@ def main(argv):
         print("\nCONTROL FAILED: not one generated known-positive was flagged.")
         print("The scanner is not configured as expected, so a zero from the real")
         print("scan proves nothing. Failing on purpose.")
+        return 1
+
+    # TIER 1b -- SPECIFICITY. The other half of tier 1, and it fails the job just
+    # as hard. Tier 1 establishes that the scanner CAN see a planted credential;
+    # on its own that is satisfied by a matcher which flags every file it is
+    # shown, and such a matcher makes the real scan's zero meaningless while
+    # printing "control ok". So a near-miss firing is a control failure, not a
+    # curiosity, and it is reported with the rule that fired so the next reader
+    # starts from the rule rather than from the shape.
+    if nm_rounds == 0:
+        print("\nCONTROL FAILED: no round ran, so the near-misses were never")
+        print("scanned. A specificity claim over zero rounds is vacuous, and an")
+        print("empty result is not an absence. Failing rather than reporting ok.")
+        return 1
+    if nm_hits:
+        print("\nCONTROL FAILED: a NEAR-MISS was flagged. The matcher is wider")
+        print("than the shape it claims to match, so a finding from the real scan")
+        print("below cannot be read as a credential -- and a zero cannot be read")
+        print("as cleanliness either, because this control no longer distinguishes")
+        print("them. Which fired, and on what rule:")
+        for name in sorted(nm_hits):
+            print("  - %s fired in %d of %d round(s), rule(s): %s"
+                  % (name, nm_hits[name]["rounds"], nm_rounds,
+                     ",".join(nm_hits[name]["rules"]) or "?"))
+        print("Measured CLEAN on gitleaks 8.30.1 with this repo's config, so a")
+        print("firing here means the pinned version differs from that reading --")
+        print("record the version and the rule before changing the near-miss, and")
+        print("do NOT weaken it to get green: an over-broad scanner is the finding.")
         return 1
 
     # TIER 2 -- the declared floor, once one exists.

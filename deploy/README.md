@@ -68,6 +68,70 @@ an empty *directory* at a missing bind source, so a missing file mounts a direct
 
 Everything below is correct for the point at which those land.
 
+### The target layout step 4 must produce
+
+Four files decide what the build contexts have to contain — the two Dockerfiles and the two
+ignore files beside them — plus `compose.yaml` for where they live. That is four places to
+reconcile while assembling, so the result is consolidated here once.
+
+```
+services/router/
+  requirements.txt      the five-line manifest; COPY'd first, so its absence stops the
+                        build before anything is downloaded
+  *.py                  TOP LEVEL ONLY -- see the precondition below
+  backends/             whole directory, recursively
+  skills/               whole directory, recursively -- AND IT COMES FROM THE OTHER TREE
+
+services/portal/
+  package.json
+  package-lock.json     both, together: `npm ci` fails loudly when they disagree
+  index.html            the Vite entry; it names src/main.jsx
+  vite.config.js
+  public/               whole directory
+  src/                  whole directory
+  nginx.conf            copied into the SERVE stage as a template, not into conf.d
+```
+
+Nothing else from either source tree reaches the image. The ignore files deny everything
+first and re-admit exactly the above, then re-deny `.env*`, `*.pem`, `*.key`, `*.p12`,
+`id_rsa`, `id_ed25519`, `.netrc`, `.git-credentials`, `.git/`, `.github/`, `__pycache__`,
+`*.pyc`, `*.log`, `*.bak*`, `*.sqlite`, `*.db`, `.venv/`, `venv/`, `node_modules/`,
+`tests/`, `test_*.py` and `*_test.py` — so a credential or a test directory that arrives in
+the assembled tree is excluded by construction rather than by anyone remembering.
+
+**A PRECONDITION TO CHECK, NOT AN INVARIANT TO ASSUME.** `COPY *.py ./` is top level only,
+and the ignore file's `!*.py` is top level only too — deliberately, per its own comment, so
+that a `**/*.py` does not sweep in test files and vendored copies. The consequence is sharp:
+**a router module in any directory other than `backends/` or `skills/` is dropped twice —
+excluded by the ignore file and not named by any `COPY` — with no error at build time.** It
+fails at import, inside the container, after a green build.
+
+So the layout assumes the router's modules are **flat**. The closure measured on the ruled
+tree is consistent with that (top-level modules plus `backends/`), but that is a fact about
+one snapshot, not a guarantee about the one that lands. Check it when assembling: any
+package directory beyond those two needs a `COPY` group and an ignore-file admission added
+together, and adding only one of the two is silent either way.
+
+**`skills/` comes from a different source tree than the manifest.** That is recorded in
+RELEASE-SCOPE.md as an assembly obligation and is restated here because it is the one item
+on this list that cannot be satisfied by copying one directory. Do not create an empty
+`skills/` to get past the `COPY`: the build goes green and ships a router with no skills.
+
+### Verifying a landing, before trusting it
+
+```
+docker compose -f compose.yaml build          # the wiring; exercised 2026-11-02 against a stub
+git ls-files -s | awk '$1!="100644"'          # modes: every script must read 100755
+```
+
+The first proves the contexts resolve and every `COPY` is satisfiable. The second is the
+executable-bit obligation: this tree is assembled on Windows, which carries no executable
+bit, so a script that arrives `100644` is skipped silently — CI asserts this for every
+tracked file beginning `#!`, and it is listed here because the failure is invisible locally.
+
+Neither proves the manifest. That is the acceptance procedure below, and its first leg is a
+200 from any route.
+
 ## What you need
 
 - Docker with Compose **v2.24 or newer** — `compose.yaml` uses `env_file: required: false`.
@@ -292,15 +356,32 @@ removes the directory-mount failure from the list of things that can be going wr
 
 ```
 docker compose -f compose.yaml up -d
-curl -fsS http://127.0.0.1:18080/livez          # liveness, dependency-free by design
 curl -sS  http://127.0.0.1:18080/health | ...   # READ THE BODY: 200 either way
 ```
 
-`/livez` answering proves the image imports and serves. It proves nothing about the manifest
-beyond the modules reached during startup, which is the trap: an import that only happens on
-a request path has not run yet.
+**`/livez` is no longer part of this step.** It was here because `README.md` records it as a
+dependency-free liveness route; a 2026-11-02 measurement of the ruled router source counts
+zero occurrences of `livez`, so curling it would most likely 404 and be read as a broken
+build. Use any route the image actually answers. See RELEASE-SCOPE.md.
 
-**4. Exercise one delegated leaf.** This is the step that is the test.
+A 200 from any route proves the image imports and serves — and for the ruled scope that is
+**more** than it looks, because four of the five requirements resolve at module scope and
+the fifth cannot be absent from a serving process. What it does not prove is anything that
+only happens on a request path, which is what legs 2 and 3 of the staged replacement
+exist for.
+
+**4. Exercise one delegated leaf — SUSPENDED, and it cannot be carried out.**
+
+> Measured on 2026-11-02 against the router source John ruled into scope: the ruled tree
+> contains neither `bifrost_delegate.py` nor `igor_tool_loop.py`, and registers no tool or
+> function-calling surface at all — against a positive control, in the same sweep, that
+> finds FastAPI in two files, so those are absences and not a broken search.
+>
+> **There is no delegated leaf to exercise.** This step is suspended rather than deleted,
+> because the reasoning below is sound and is true of a different artefact; what changed is
+> which artefact the release ships. `RELEASE-SCOPE.md` records the measurement, a staged
+> three-leg replacement, and the ruling it waits on. Do not substitute a request of your
+> own — that was already the rule here, and it now applies to the whole step.
 
 **The specific request is deliberately not written here, because this repository cannot
 supply it.** The router source is not assembled, so the tool-loop surface — which call

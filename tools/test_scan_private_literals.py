@@ -148,6 +148,38 @@ def test_a_yaml_key_path_is_not_a_hostname():
     assert rules_fired("set networks.rameau.internal to true") == set()
 
 
+def test_a_dotfile_whose_last_segment_is_a_reserved_suffix_is_not_a_hostname():
+    """`.env.local` is a dotenv filename, and `\\b` opens the match after the dot.
+
+    REGRESSION. Found on the merge that brought this gate together with
+    origin/main's step-4 preflight, which plants `.env.local` fixtures: three
+    findings on a PUBLIC repository's own workflow file, every one false. Neither
+    branch alone held both the fixture and the rule, so neither branch's CI could
+    have gone red for it.
+
+    `.local` IS a reserved suffix (mDNS) and the rule is right to carry it -- what
+    is wrong is reading the tail out of a dotfile name as a host. A DNS name cannot
+    have an EMPTY first label, which is what a leading dot means.
+    """
+    for line in ('rm -f "$PS/router/.env.local"',
+                 "cp .env.local .env",
+                 "want=/tmp/router/.env.local"):
+        assert rules_fired(line) == set(), line
+
+
+def test_the_dotfile_exemption_does_NOT_hide_a_real_internal_host():
+    """The control for the test above: the exemption must be narrow.
+
+    An exemption keyed on "preceded by a dot" could be read as "anything ending
+    .local is fine", which would be a hole rather than a fix. A real host is not
+    preceded by a dot and must still fire -- including one sitting in a URL, where
+    the character before it is a '/' and not a '.'.
+    """
+    assert rules_fired('HOST = "db.local"') == {"internal-dns-suffix"}        # rameau-scan: allow
+    assert rules_fired("curl http://db.local/health") == {"internal-dns-suffix"}  # rameau-scan: allow
+    assert rules_fired('HOST = "box.internal"') == {"internal-dns-suffix"}    # rameau-scan: allow
+
+
 def test_the_projects_mask_sentinel_is_not_a_bearer_leak():
     """A MASKED value is the opposite of a leak.
 

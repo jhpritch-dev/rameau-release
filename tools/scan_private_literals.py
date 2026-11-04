@@ -238,7 +238,20 @@ def _tracked_files(root: str) -> list[str]:
             "This gate scans tracked files; with no file list a clean result would prove\n"
             "nothing, so this is an error (exit 2) and not a pass." % root
         )
-    return [p.decode("utf-8", "surrogateescape") for p in out.stdout.split(b"\0") if p]
+    # DEDUPLICATED, because `git ls-files` emits a conflicted path ONCE PER MERGE STAGE.
+    # Measured 2026-11-03 mid-merge: three unmerged paths produced 40 entries for 34 files
+    # and the gate reported NINE findings that were three, each counted three times. Order
+    # is preserved so the report still reads in git's order.
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for p in out.stdout.split(b"\0"):
+        if not p:
+            continue
+        rel = p.decode("utf-8", "surrogateescape")
+        if rel not in seen:
+            seen.add(rel)
+            uniq.append(rel)
+    return uniq
 
 
 def _rev_files(root: str, rev: str) -> list[tuple[str, bytes]]:
@@ -325,6 +338,26 @@ def scan_text(path: str, text: str, extra: re.Pattern[str] | None) -> tuple[list
                 if rule == "internal-dns-suffix" and (
                     _DOCKER_HOST_ALIAS.match(val) or _YAML_KEY_PATH_HEAD.match(val)
                 ):
+                    continue
+                # A MATCH PRECEDED BY A DOT IS THE TAIL OF A DOTTED FILENAME, NOT A HOST.
+                # `\b` opens a match after a leading dot, so a dotenv filename yields a
+                # bare `env` + reserved-suffix token  rameau-scan: allow
+                # and `.local` is a genuinely reserved suffix (mDNS) -- the rule is right and
+                # the token is not a hostname. A DNS name cannot carry an EMPTY first label,
+                # which is exactly what a leading dot means, so this cannot exempt a real
+                # host: a bare `<name>.local` is not preceded by a dot and still fires, and
+                # the unit test asserts exactly that.  rameau-scan: allow
+                #
+                # FOUND ON THIS MERGE, and only on it: origin/main's step-4 preflight plants
+                # `.env.local` fixtures, and this gate arrived from the scrub branch. Neither
+                # side alone had both the fixture and the rule, so neither side's CI could
+                # have gone red for it -- three findings on a PUBLIC repo's own workflow,
+                # every one a false positive. Deliberately NOT fixed by annotating those
+                # three lines with `rameau-scan: allow`: the remedy the gate suggests would
+                # have hidden a rule defect behind three exemptions, and the next `.env.local`
+                # anywhere in the tree would have failed again.
+                if rule == "internal-dns-suffix" and m.start() > 0 \
+                        and line[m.start() - 1] == ".":
                     continue
                 hits.append((rule, why, m.start() + 1, val))
 

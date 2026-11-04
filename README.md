@@ -135,8 +135,11 @@ container network -- where loopback is the container itself, so a host-oriented 
 every endpoint at nothing. CI regenerates both and diffs them against what is checked in, so
 "generated from the registry" is a gate rather than a header comment.
 
-**`.github/workflows/ci.yml` -- the CI gate.** Three jobs. The secret scan runs gitleaks over
-the working tree *and* the full history, and before trusting a clean report it plants a
+**`.github/workflows/ci.yml` -- the CI gate.** Six jobs. The secret scan runs gitleaks over
+every object in the full history -- not the working tree, which needs `--no-git` and is the
+hook's separate advisory pass; on a clean CI checkout history is a superset, so nothing goes
+unscanned, and this sentence said "working tree *and* full history" until 2026-11-03, which
+was a claim about a check that had not run. Before trusting a clean report it plants a
 generated high-entropy AWS-shaped key in a scratch repository outside the workspace and
 requires gitleaks to flag it -- because a scan that cannot be shown to fire is not evidence.
 The canary is generated rather than written literally for two reasons: a literal key would
@@ -145,7 +148,9 @@ gitleaks by default, which is how the first version of that control failed. The 
 byte-compiles, runs the tests, regenerates and diffs both env examples, asserts the
 in-network profile contains no loopback, and validates both compose files by path -- with a
 control that asserts the stack still **refuses** to resolve when `RAMEAU_OLLAMA_URL` is
-unset. The image job builds both images **through compose**, because the thing most likely to
+unset. Its loopback check and its licence check each run against a planted match and a planted
+near-miss before they are pointed at the real file, through the same function rather than a
+retyped copy of the pattern -- a control that retypes the pattern tests a different pattern. The image job builds both images **through compose**, because the thing most likely to
 be wrong at step 5 is the wiring rather than either Dockerfile -- each service's context is
 `../services/<name>` and its Dockerfile is outside that context -- and `docker build` would
 exercise none of it. Today both contexts are absent, so that job prints what is missing, names
@@ -154,6 +159,58 @@ edit. It asserts `compose.yaml` and both Dockerfiles are present *first*, so tha
 can never be what a broken checkout looks like. Every build step is written to pass on an
 empty tree and to start doing real work the moment source appears, so the gate never has to be
 switched on later.
+
+**The step-4 preflight** is the fourth job, and it exists because `RELEASE-SCOPE.md` had
+accumulated a page of obligations on the moment the source lands -- each measured, each
+correct, and each enforced by nothing but a reader remembering them. It asserts them in one
+place: that both ignore files sit where Docker actually reads one, that no GPL `.jar` or model
+weight is tracked, that `NOTICE` appears the moment any font does, and that every tracked file
+carrying a shebang is `100755` *in the index* -- git's record is what travels, and this tree is
+assembled on Windows, which has no executable bit. Seven further obligations need the
+assembled source and are reported **deferred by name** rather than counted as satisfied, among
+them the one that is silent in both directions: a router module outside `backends/` or
+`skills/` is dropped twice, by the ignore file and by no `COPY` naming it, and fails at import
+after a green build. The job reports one of four states by name, and says in its own output
+which obligations it *cannot* check so that they fall to step 5 rather than passing quietly.
+
+**No count in this repository is written beside the set it describes.** A sweep of the CI
+gates reported "twelve matchers" when there were 21, and its own correction reported 21 when
+there were 22 -- the list had been built by reading the jobs rather than by asking them, and
+it had drifted twice. The `census` job now derives the population from the source: it
+discovers the workflow files, the jobs, the files to scan, the declared matchers, the arms and
+the step-4 obligations, asserts the correspondence **by name** -- an **unarmed check** and a
+**stale arm** are different bugs and are reported separately -- and prints only numbers that
+are the length of a list it built. A pattern added anywhere in a `run:` block without a
+declaration fails that job with its file and line, which is what keeps the registry from being
+a list in disguise, and each `Dockerfile.dockerignore` in the tree is discovered as a matcher
+whose name comes from its path, so a third service's pattern set cannot arrive without an arm.
+The floors it carries are floors and not pins: they catch a matcher deleted *together with*
+its arm, which set equality cannot see, and they never go red on growth.
+
+**`tools/ci/arms.sh` -- the failing arm for every gate, committed and run.** One command,
+70 arms, under a minute, and the `arms` job runs it on every push: the census proves every
+matcher *has* an arm, and only running them proves the arm still fires. Each clones this
+repository, mutates the clone, runs one CI step against it and requires the check to catch the
+mutation. A mutation that itself fails is reported as such rather than scored as a pass --
+which is how a `git add` silently refused by `.gitignore` was caught reading green. The seven
+step-4 obligations that need an assembled source tree are armed against a planted stub, so the
+preflight reports them as *deferred with their arms already written* rather than merely
+deferred.
+
+**Every pattern-based matcher in CI has a planted positive and a planted near-miss**, and each
+reports by name. Three times a check here has printed a clean verdict because its matcher could
+not match its subject -- most recently the preflight's own flat-module `find`, where `*`
+crossing a `/` in a `-path` glob made the most valuable assertion in the job inert on the day
+it merged. An empty result is not an absence, and a matcher that flags *everything* prints
+`control ok` exactly as loudly as one that flags nothing, so each of the **thirty-four** is
+exercised both ways: the regexes, the `find` and `git ls-files` patterns, the `jq` selectors,
+`grep`'s three-way exit, and the violation counter against sets of known size. The plants run on every
+push whether or not a source tree exists, against trees built and discarded in the step.
+Among them the `images` job builds a **planted build context** against each
+`Dockerfile.dockerignore` and compares the transferred file list exactly -- which is how the
+credential block in both files was found to be matched against a single path segment, so that
+`backends/.env` and `public/leak.key` reached the context while a block headed "never, under
+any circumstances" said nothing about either. Both now carry `**/`. See `RELEASE-SCOPE.md`.
 
 **`tools/git-hooks/pre-push` -- the fail-closed local secret gate.** GitHub's push
 protection is unavailable while this repository is private on the current plan (secret
@@ -505,6 +562,15 @@ computed from an import closure therefore drops it -- after which the tool loop 
 health would read green on exactly that failure and declare the container ready. So the
 acceptance test has to **exercise one delegated leaf**; anything less tests that the process
 started.
+
+**That criterion is SUSPENDED as of 2026-11-02, and the paragraph above is about an artefact
+this release does not ship.** A measurement of the router source ruled into scope finds no
+`bifrost_delegate.py`, no tool loop and no function-calling surface, against a positive
+control in the same sweep. So there is no delegated leaf to exercise — and the insufficiency
+runs the other way: four of the five requirements resolve at module scope and the fifth
+cannot be absent from a serving process, so for the ruled scope a 200 *does* discharge the
+manifest question. RELEASE-SCOPE.md carries the measurement, a staged replacement that tests
+what a 200 genuinely does not prove, and the scope ruling this waits on.
 
 Note also that `/health` returns 200 whether the backends are up or down -- **the verdict is
 in the body.** A caller that reads the status code (`curl -f`, a container healthcheck) reads

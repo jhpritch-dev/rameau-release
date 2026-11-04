@@ -114,51 +114,61 @@ public/**/index-*.css
 **/bifrost_shell_policy.json
 
 # ---- never, under any circumstances ----
-# THIS BLOCK'S GUARANTEE RESTS ON THREE PROPERTIES, AND ONLY ONE OF THEM IS GATED.
-#   REACH     -- the patterns are recursive, so they apply inside `src/` and `public/`,
-#                which this file re-admits wholesale.   Fixed 1d69a59. NOT gated: the
-#                probes that measured it were throwaway stub contexts built outside git
-#                and discarded, and no step builds a context or tests admission.
+# THIS BLOCK'S GUARANTEE RESTS ON THREE PROPERTIES, AND ALL THREE ARE NOW GATED.
+# Corrected 2026-11-03 on the merge that made it true; both sides of that merge still
+# said "NOT gated" about two of them, each side blind to the step the other had added.
+#   REACH     -- the patterns are recursive, so they apply inside the subtrees this file
+#                re-admits wholesale.                   Fixed 1d69a59.
+#                GATED by "prove both ignore files' patterns are in force" in the `images`
+#                job: it builds a PLANTED context (`FROM scratch`, `COPY . /ctx/`,
+#                `--output type=local`) and asserts the transferred file list exactly.
+#                That step asserts the PATTERNS; A1 of the step-4 preflight asserts the
+#                LOCATION. NEITHER IS SUFFICIENT ALONE, and the probes this comment used
+#                to apologise for -- throwaway stub contexts, built outside git and
+#                discarded -- have been replaced by a step that runs on every push.
 #   FINALITY  -- nothing re-admits below this block, because a .dockerignore is
 #                last-match-wins.                       Fixed and GATED in 04a4eb1.
-#   SHAPE COVERAGE -- the shapes listed below are the ones worth denying. NOT gated, and
-#                resting on prose. The heading says "never, under any circumstances" and
-#                what follows is about a dozen shapes, which is a weaker thing than the
-#                heading claims. This repository's own .gitignore names shapes this list
-#                does not, and `docker build` reads the WORKING TREE rather than the index,
-#                so a gitignored credential is invisible to every git-based gate here and
-#                still enters the image. Recorded in RELEASE-SCOPE.md as the top residual
-#                risk rather than patched in passing, because closing it is a decision
-#                about what this list is FOR.
+#   SHAPE COVERAGE -- the shapes listed below are the ones worth denying.
+#                GATED by "the never-block must cover the declared shape set" in the
+#                `build` job (tools/check_never_block_shapes.py), which is what finally
+#                replaced the prose this heading used to rest on.
 #
-# ONE OF THREE, NOT TWO. This heading said "ONLY TWO OF THEM ARE GATED" until 2026-11-03,
-# and that was false when written: only FINALITY has a step behind it. REACH rests on
-# probes that no longer exist anywhere, which is the same "promise rather than property"
-# this block was added to be candid about -- found inside the note about that defect.
+# ONE RESIDUAL RISK SURVIVES ALL THREE, and it is not closed by any of them: `docker build`
+# reads the WORKING TREE rather than the index, so a credential that is merely gitignored is
+# invisible to every git-based gate here and still enters the context. It is recorded in
+# RELEASE-SCOPE.md as the top residual risk rather than patched in passing, because closing
+# it is a decision about what this list is FOR.
 #
 # RECURSIVE (`**/`), and on this image that matters more than on the router's. `src/**` and
 # `public/**` above are wholesale re-admissions, and a root-anchored pattern cannot reach
 # into either: Docker matches against the whole context-relative path and a single `*` does
 # not cross a `/`, so `*.pem` matches `foo.pem` and NOT `public/foo.pem`.
 #
-# WHY IT IS WORSE HERE. Vite copies `public/` verbatim into `dist/`, and the Dockerfile's
-# serve stage does `COPY --from=build /app/dist/ /usr/share/nginx/html/`. So a key under
-# `public/` does not merely enter the build context -- it is SERVED OVER HTTP by nginx.
+# WHY IT IS WORSE HERE. The serve stage does
+# `COPY --from=build /app/dist/ /usr/share/nginx/html/`, so a file under `src/` reaches the
+# build stage alone -- but Vite copies the contents of its publicDir VERBATIM into the build
+# output, so a `public/leak.key` becomes `dist/leak.key` and nginx SERVES IT at `/leak.key`.
 #
-# MEASURED in a throwaway stub context built outside git and discarded. With the previous
-# root-anchored set, `public/leaked.pem`, `public/leaked.key` and `src/leaked.key` all
-# arrived in the built image while `root.pem` was correctly excluded; so did
-# `src/BifrostPortal_fixed.jsx` and `src/BifrostPortal_v2.jsx`, which defeats the two
-# stale-copy patterns entirely -- an editor's `_fixed` copy lives in `src/`, next to the
-# original, which is the only place those patterns were ever meant to guard and the one
-# place they did not reach. With the recursive set below all of those are excluded and
-# `public/logo.svg`, `src/main.jsx`, `index.html`, `nginx.conf`, `package.json` and
-# `vite.config.js` still arrive. `**/X` was confirmed to subsume `X`, so no root-anchored
-# twin is kept beside it.
+# AND THAT LAST STEP IS AN ASSUMPTION, NOT A MEASUREMENT, which is worth keeping because it
+# is the kind of thing this file otherwise states as fact: it holds only while publicDir is
+# left at its default, and `vite.config.js` is NOT in this repository -- it arrives with the
+# context. Step 4 must read it.
+#
+# MEASURED in a planted context. With the previous root-anchored set, `public/leaked.pem`,
+# `public/leaked.key`, `src/leaked.key`, `src/.env` and `src/leak.pem` all arrived in the
+# built image while `root.pem` was correctly excluded; so did `src/BifrostPortal_fixed.jsx`
+# and `src/BifrostPortal_v2.jsx`, which defeats the two stale-copy patterns entirely -- an
+# editor's `_fixed` copy lives in `src/`, next to the original, which is the only place those
+# patterns were ever meant to guard and the one place they did not reach. With the recursive
+# set below the credential shapes are all excluded, while `public/logo.svg`, `src/main.jsx`,
+# `index.html`, `nginx.conf`, `package.json` and `vite.config.js` still arrive.
+#
+# THE TWO STALE-COPY PATTERNS ARE THE EXCEPTION AND STAY TOP-LEVEL ONLY -- see the block at
+# the foot of this file. Generalising them would drop an imported `components/Button_v2.jsx`,
+# which is a worse trade than the weight they save.
 #
 # The credential shapes are now the same set as the router's list. They diverged for no
-# recorded reason, and a context that admits `public/` wholesale has more need of them, not
-# less.
+# recorded reason, and a context that admits `public/` wholesale has more need of them.
 **/.env
 **/.env.*
 **/*.pem
@@ -177,42 +187,6 @@ public/**/index-*.css
 **/*.log
 **/*.bak
 **/*.bak-*
-**/*_fixed.jsx
-**/*_v2.jsx
-
-# ---- WIDENED 2026-11-03 to the shapes this repository's own .gitignore names ----
-# On John's ruling in chat, 2026-11-03, verbatim: *"2. widen to the portal"*. This is the
-# portal's half of N1. The router's list follows, because the two credential sets are
-# meant to be the SAME set and the note above records that they once diverged for no
-# reason anyone wrote down.
-#
-# DERIVED BY MEASUREMENT, not by reading the list and thinking of more. Every pattern
-# below is a line of `.gitignore`'s "environment and secrets", "keys and certificates"
-# and "tokens" sections that had no `**/` twin in this block -- twenty-four of them,
-# counted by comparing the two files line by line. Nothing here is a shape `.gitignore`
-# does not already refuse to stage.
-#
-# CHECKED AGAINST THE TRACKED SET FIRST: none of the twenty-four matches any of the
-# repository's tracked files, so none denies this build something it needs. That test is
-# WEAK and says so -- the release source has not landed in this tree yet, so the strong
-# version of it cannot be run today. Which is the reason the coverage is now GATED in CI
-# rather than left resting on this comment.
-#
-# WHAT IS DELIBERATELY NOT HERE, and the reason is the build CONTEXT. compose builds this
-# image with `context: ../services/portal`, so every pattern in this file is relative to
-# `services/portal/`. `.gitignore`'s assembly class -- `_scrub/`, `_preimages/`,
-# `_defect-fixes/`, `WIPE-LEDGER.md` -- lives at the REPOSITORY ROOT, outside the context,
-# where no pattern in this file can reach it. Adding those four would read as four more
-# guarantees and be four inert lines, which is the exact failure the heading above was
-# written to stop doing. The model-weights class is absent for a different reason: it is a
-# SCOPE matter rather than a credential one, and `*.bin` would deny a wasm or font asset
-# under `public/` that a portal may legitimately ship.
-#
-# `**/*credential*` subsumes `credentials.json` and `*-credentials*`. Both are kept anyway,
-# against this file's own "two spellings of one rule invite an edit to half of it" warning,
-# because the gate enforcing this set compares LINES: a reader who deletes a subsumed line
-# should be told rather than quietly agreed with. The gate resolves that tension; this
-# comment only records it.
 **/*.env
 **/secrets/
 **/.secrets/
@@ -237,3 +211,10 @@ public/**/index-*.css
 **/_netrc
 **/.npmrc
 **/.pypirc
+
+# ---- top-level only, and DELIBERATELY not generalised ----
+# Scratch copies at the app root. Not generalised for the reason the router's `test_*.py` is
+# not: `src/Component_v2.jsx` may be a module something imports, and a pattern that drops it
+# trades a harmless unused file in the bundle for a broken build.
+*_fixed.jsx
+*_v2.jsx
