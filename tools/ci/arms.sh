@@ -147,7 +147,19 @@ MUTATE64
 }
 
 # Re-extract after a mutation to ci.yml, so the step that runs is the mutated one.
+#
+# THE DIRECTORY IS CLEARED FIRST, and that is a fix rather than tidiness. Extracting over a
+# previous extraction leaves the OLD step files in place, so a mutation that inserts or
+# renames a step leaves two files carrying one index. `step_path` globs, and printf '%s'
+# over two matches concatenates them WITHOUT a separator, so the result reads like a single
+# path and the basename taken from it is the wrong step's. Found by the step-map arm below,
+# which scored FAIL-TO-FIRE on a mutation it had plainly applied: the stale
+# build__08__licence-and-scope.sh was still there beside the newly inserted one, so the
+# expectation matched and the check said ok. Every arm that renames or reorders a step was
+# exposed to this.
 reextract() {
+  rm -rf "$STEPS"
+  mkdir -p "$STEPS"
   ( cd "$AR" && python3 tools/ci/extract-steps.py .github/workflows/ci.yml "$STEPS" ) >/dev/null
 }
 
@@ -298,77 +310,136 @@ fi
 # complete. A hand-kept map is the same defect one level up: a runner added later without a
 # map entry would escape this check in silence, which is precisely the failure being closed.
 #
+# The two decisions below are DECLARED MATCHERS with arms of their own, like every other
+# pattern that decides something in this repository. They are the harness deciding what the
+# arms are allowed to address, so they are exactly the kind of instrument the registry
+# exists for -- and the census said so before this comment did.
+
+# MATCHER: step-map-refs
+# Every positional id this file ADDRESSES, discovered rather than listed.
+#
 # DISCOVERY IS ANCHORED ON THE ID ITSELF, not on an adjacent `run_step`/`step_path`. The
 # ids are not all written the same way: run_preflight holds four of them in a shell list
-# (`for pf_s in step4__01 ...`) and calls `step_path "$pf_s"`, so a pattern keyed on the
-# caller sees only the literal call sites and reports the other four as stale entries --
+# (`for pf_s in step4__01 ...`) and calls step_path with the loop variable, so a pattern
+# keyed on the caller finds EIGHT OF TWELVE and reports the other four as stale entries --
 # measured, on a baseline with nothing wrong with it. A guard that is red on correct
 # content gets switched off, so the pattern has to find an id however it is spelt.
 #
 # Two exclusions keep that sound: COMMENT LINES (this file's own prose names ids by way of
 # example, and an example is not a reference) and the STEP-MAP-DATA block (the map must not
 # be allowed to verify itself into completeness -- every entry would be "addressed" by its
-# own row).
-sm_refs=$(awk '
-  /^# \/STEP-MAP-DATA$/ { sm_skip = 0; next }
-  /^# STEP-MAP-DATA$/   { sm_skip = 1; next }
-  sm_skip               { next }
-  /^[[:space:]]*#/      { next }
-                        { print }
-' "$SRC/tools/ci/arms.sh" | grep -oE '\b[a-z0-9]+__[0-9]+\b' | sort -u)
-sm_mapped=$(printf '%s\n' "$STEP_MAP" | awk -F: 'NF{print $1}' | sort -u)
-sm_unmapped=$(comm -23 <(printf '%s\n' "$sm_refs") <(printf '%s\n' "$sm_mapped"))
-sm_stale=$(comm -13 <(printf '%s\n' "$sm_refs") <(printf '%s\n' "$sm_mapped"))
+# own row). The file to read is an argument so an arm can point it at a mutated copy in the
+# clone; nothing else about it is configurable.
+step_map_refs() {
+  awk '
+    /^# \/STEP-MAP-DATA$/ { smr_skip = 0; next }
+    /^# STEP-MAP-DATA$/   { smr_skip = 1; next }
+    smr_skip              { next }
+    /^[[:space:]]*#/      { next }
+                          { print }
+  ' "$1" | grep -oE '\b[a-z0-9]+__[0-9]+\b' | sort -u
+}
+# /MATCHER
 
-sm_bad=""
-sm_checked=0
-sm_oldifs=$IFS
-IFS='
-'
-for sm_row in $STEP_MAP; do
-  IFS=$sm_oldifs
-  sm_id=${sm_row%%:*}
-  sm_want=${sm_row#*:}
-  sm_file=$(step_path "$sm_id")
-  sm_base=${sm_file##*/}
-  case "$sm_base" in
-    *"$sm_want"*) ;;
-    *"*"*) sm_bad="$sm_bad
-    $sm_id -- NO SUCH STEP (expected a slug containing: $sm_want)" ;;
-    *) sm_bad="$sm_bad
-    $sm_id -> $sm_base (expected a slug containing: $sm_want)" ;;
+# MATCHER: step-map-expectation
+# Whether one id resolves to the step the map says it does. Prints a finding, or nothing.
+#
+# THE EXPECTATION IS A SUBSTRING OF THE SLUG, deliberately: extract-steps.py truncates a
+# long step name, so pinning the whole filename would make this go red on an edit to a
+# step's prose -- growth, not breakage. The unresolved case is kept separate from the
+# wrong-slug case because they are different faults: a glob that matched nothing means the
+# index is off the end, and reporting that as "the wrong slug" would describe a file that
+# does not exist.
+# The glob is counted rather than passed through `step_path`, because printf '%s' over two
+# matches concatenates them with no separator and the result still LOOKS like one path. The
+# ambiguity leg is a backstop, not a measured leg: with reextract clearing the directory
+# nothing should reach it, and it is here because something did -- it is what turned a
+# FAIL-TO-FIRE into the reextract fix above rather than into a weakened expectation.
+step_map_expectation() {
+  sme_n=0
+  sme_last=""
+  for sme_p in "$STEPS"/"$1"__*.sh; do
+    [ -e "$sme_p" ] || continue
+    sme_n=$((sme_n + 1))
+    sme_last=$sme_p
+  done
+  if [ "$sme_n" -eq 0 ]; then
+    printf '    %s -- NO SUCH STEP (expected a slug containing: %s)\n' "$1" "$2"
+    return 0
+  fi
+  if [ "$sme_n" -gt 1 ]; then
+    printf '    %s -- AMBIGUOUS: %d step files carry this index (expected: %s)\n' \
+           "$1" "$sme_n" "$2"
+    return 0
+  fi
+  sme_base=${sme_last##*/}
+  case "$sme_base" in
+    *"$2"*) ;;
+    *) printf '    %s -> %s (expected a slug containing: %s)\n' "$1" "$sme_base" "$2" ;;
   esac
-  sm_checked=$((sm_checked + 1))
+}
+# /MATCHER
+
+# The check itself, on STDOUT rather than through `note`, for one reason: an arm reads a
+# runner's STDOUT to decide whether the right thing failed, and a refusal written to stderr
+# would be judged WRONG-REASON however correct it was.
+step_map_check() {
+  smc_refs=$(step_map_refs "$1")
+  smc_mapped=$(printf '%s\n' "$STEP_MAP" | awk -F: 'NF{print $1}' | sort -u)
+  smc_unmapped=$(comm -23 <(printf '%s\n' "$smc_refs") <(printf '%s\n' "$smc_mapped"))
+  smc_stale=$(comm -13 <(printf '%s\n' "$smc_refs") <(printf '%s\n' "$smc_mapped"))
+  smc_bad=""
+  smc_checked=0
+  smc_oldifs=$IFS
   IFS='
 '
-done
-IFS=$sm_oldifs
-rm -rf "$STEPS"
+  for smc_row in $STEP_MAP; do
+    IFS=$smc_oldifs
+    smc_find=$(step_map_expectation "${smc_row%%:*}" "${smc_row#*:}")
+    [ -z "$smc_find" ] || smc_bad="$smc_bad$smc_find"$'\n'
+    smc_checked=$((smc_checked + 1))
+    IFS='
+'
+  done
+  IFS=$smc_oldifs
 
-if [ -n "$sm_unmapped" ] || [ -n "$sm_stale" ] || [ -n "$sm_bad" ]; then
-  note "ARMS REFUSED: the positional step map does not describe this workflow."
-  note ""
-  [ -z "$sm_unmapped" ] || {
-    note "  ADDRESSED BUT NOT IN THE MAP -- these are checked by nothing:"
-    printf '%s\n' "$sm_unmapped" | awk 'NF{print "    " $0}' >&2
+  if [ -z "$smc_unmapped" ] && [ -z "$smc_stale" ] && [ -z "$smc_bad" ]; then
+    printf 'step map ok: %d positional reference(s), each resolving to the step it names\n' \
+           "$smc_checked"
+    return 0
+  fi
+
+  printf 'ARMS REFUSED: the positional step map does not describe this workflow.\n\n'
+  [ -z "$smc_unmapped" ] || {
+    printf '  ADDRESSED BUT NOT IN THE MAP -- these are checked by nothing:\n'
+    printf '%s\n' "$smc_unmapped" | awk 'NF{print "    " $0}'
   }
-  [ -z "$sm_stale" ] || {
-    note "  IN THE MAP AND ADDRESSED BY NOTHING -- a stale entry asserting nothing:"
-    printf '%s\n' "$sm_stale" | awk 'NF{print "    " $0}' >&2
+  [ -z "$smc_stale" ] || {
+    printf '  IN THE MAP AND ADDRESSED BY NOTHING -- a stale entry asserting nothing:\n'
+    printf '%s\n' "$smc_stale" | awk 'NF{print "    " $0}'
   }
-  [ -z "$sm_bad" ] || {
-    note "  RESOLVES TO THE WRONG STEP -- an arm here would mutate one step and judge"
-    note "  another, and would report a verdict rather than an error:"
-    note "$sm_bad"
+  [ -z "$smc_bad" ] || {
+    printf '  RESOLVES TO THE WRONG STEP -- an arm here would mutate one step and judge\n'
+    printf '  another, and would report a verdict rather than an error:\n'
+    printf '%s' "$smc_bad"
   }
-  note ""
-  note "A step was inserted, removed or renamed. Fix the INDEX (or the expectation) in"
-  note "STEP_MAP and in the runner that addresses it -- do not delete the entry to get"
-  note "green, because the entry is the only thing standing between an index that moved"
-  note "and an arm that silently reports on the wrong subject."
-  exit 2
-fi
-note "step map ok: $sm_checked positional reference(s), each resolving to the step it names"
+  printf '\n'
+  printf 'A step was inserted, removed or renamed. Fix the INDEX (or the expectation) in\n'
+  printf 'STEP_MAP and in the runner that addresses it -- do not delete the entry to get\n'
+  printf 'green, because the entry is the only thing standing between an index that moved\n'
+  printf 'and an arm that silently reports on the wrong subject.\n'
+  return 2
+}
+
+# The runner the two arms below use. It reads the CLONE's copy of this file, so an arm that
+# adds a runner there is discovered the same way a real one would be.
+run_step_map() { step_map_check "$AR/tools/ci/arms.sh"; }
+
+sm_rc=0
+sm_report=$(step_map_check "$SRC/tools/ci/arms.sh") || sm_rc=$?
+rm -rf "$STEPS"
+note "$sm_report"
+[ "$sm_rc" -eq 0 ] || exit "$sm_rc"
 
 # A correct, minimal services/ tree: every source-dependent obligation satisfied. Built in
 # the clone, never committed, discarded with the clone. It is NOT the real source and nothing
@@ -827,6 +898,36 @@ assert a.count('# ARM: violation-printer\n') == 1
 io.open('tools/ci/arms.sh', 'w').write(a.replace('# ARM: violation-printer\n', '', 1))
 PY" \
       run_census_main
+
+# =======================================================================================
+# THE HARNESS'S OWN POSITIONAL MAP
+# =======================================================================================
+# The step map decides WHICH STEP every arm above addresses, so if it stops deciding
+# correctly the suite keeps printing verdicts about the wrong subjects. That is not a
+# hypothetical: a step inserted into `build` ahead of the licence step during this merge
+# moved build__08, and the arm went on mutating the new step and judging it -- `caught=3
+# MISSED=0`, about something nobody asked it to check. Both halves are armed, because the
+# two halves fail differently: one lets an unaddressed id through, the other mis-resolves
+# an addressed one.
+
+# ARM: step-map-refs
+# A runner addressing build__03, which no map entry names. Mutating the CLONE's arms.sh is
+# the point: discovery reads that copy, so this is the same shape as a runner somebody adds
+# next month and forgets to map.
+fires "step-map-refs: a runner addresses an id that is in no map entry" \
+      "ADDRESSED BUT NOT IN THE MAP" \
+      'mutate_b64 tools/ci/arms.sh cnVuX2NlbnN1c19tYWluKCkgICAgIHsgcnVuX3N0ZXAgY2Vuc3VzX18wMjsgfQo= cnVuX2NlbnN1c19tYWluKCkgICAgIHsgcnVuX3N0ZXAgY2Vuc3VzX18wMjsgfQpydW5fdW5tYXBwZWRfYXJtKCkgICAgeyBydW5fc3RlcCBidWlsZF9fMDM7IH0K' \
+      run_step_map
+
+# ARM: step-map-expectation
+# A step inserted into `build` immediately before the licence step -- THE MEASURED FAILURE,
+# replayed. Anchors are base64 because both carry leading whitespace that matters: the
+# preimage is one `- name: licence and scope invariants` line, the postimage is a dummy step
+# in front of it.
+fires "step-map-expectation: a step is inserted, shifting build__08 off licence" \
+      "RESOLVES TO THE WRONG STEP" \
+      'mutate_b64 .github/workflows/ci.yml ICAgICAgLSBuYW1lOiBsaWNlbmNlIGFuZCBzY29wZSBpbnZhcmlhbnRzCg== ICAgICAgLSBuYW1lOiBhIGR1bW15IHN0ZXAgcGxhbnRlZCBieSB0aGUgYXJtCiAgICAgICAgcnVuOiBlY2hvIGR1bW15CiAgICAgIC0gbmFtZTogbGljZW5jZSBhbmQgc2NvcGUgaW52YXJpYW50cwo=' \
+      run_step_map
 
 # =======================================================================================
 # THE HARNESS'S OWN MATCHER

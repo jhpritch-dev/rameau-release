@@ -1977,7 +1977,12 @@ jobs:
           # freely -- a pin would go red on exactly the growth this gate exists to permit.
           # Raising a floor is a one-line deliberate act; lowering one should need an
           # argument in the pull request that does it.
-          MATCHER_FLOOR=34
+          # 34 -> 36 when step-map-refs and step-map-expectation were declared. Raised in
+          # the same change that grew the population, because a floor left behind is SLACK:
+          # at 34 against 36 the DEMO arm's symmetric matcher+arm removal lands on 35 and
+          # the floor stays quiet, so the one leg that can see that removal stops seeing it.
+          # Measured, not reasoned about -- the arm scored WRONG-REASON for exactly this.
+          MATCHER_FLOOR=36
           OBLIGATION_FLOOR=12
           [ "$NM" -ge "$MATCHER_FLOOR" ] || blame "POPULATION SHRANK: $NM matchers against a floor of $MATCHER_FLOOR. Set equality cannot see a matcher deleted together with its arm, which is what this floor is for. If the removal was deliberate, lower the floor in the same change and say why." ""
           [ "$NO" -ge "$OBLIGATION_FLOOR" ] || blame "OBLIGATIONS SHRANK: $NO against a floor of $OBLIGATION_FLOOR." ""
