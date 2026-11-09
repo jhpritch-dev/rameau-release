@@ -292,14 +292,90 @@ def test_no_example_is_itself_a_private_address():
             "%s example is not an obviously-example address: %s" % (name, spec.example)
 
 
+# The vocabulary a CANONICAL variable name may be assembled from. It is an ALLOWLIST,
+# and that inversion is the whole point of it.
+#
+# This check used to be a denylist of real fleet host names, which meant it could only do
+# its job by publishing the very names it existed to keep out of the release.
+# tools/scan_private_literals.py names that trap in its own header -- "a test naming the
+# hosts would publish them" -- and this test was an instance of it. For most of those
+# names the denylist was their only reason for being in the tree at all.
+#
+# An allowlist needs no host name, and on the same population it is STRICTLY STRONGER: a
+# denylist rejects only its own entries, while this rejects every word outside the
+# permitted vocabulary -- including a host name nobody has thought of yet. The entries
+# below are checkable by eye: each is a service or role word and none names a machine, so
+# any machine name is necessarily outside the set.
+#
+# Adding an endpoint whose name uses a new word makes this test FAIL until the word is
+# added here. That is the intended cost. It puts a human in front of every new canonical
+# name rather than behind one.
+_CANONICAL_PREFIX = "RAMEAU"
+_CANONICAL_SUFFIX = "URL"
+_PERMITTED_ROLE_WORDS = frozenset({
+    "ARBITER", "BROADCASTER", "CHAT", "EMBED", "HEALTH",
+    "KB", "OLLAMA", "ROUTER", "SEARCH",
+})
+
+
+def _canonical_name_violations(env_name):
+    """The parts of `env_name` the canonical vocabulary does not permit.
+
+    Returns an empty tuple for a well-formed name. It returns rather than asserts so the
+    control below can drive it with inputs that MUST be rejected -- a predicate that can
+    only be reached through an assertion cannot be shown to fail.
+    """
+    parts = env_name.upper().split("_")
+    if len(parts) < 3:
+        return ("<shape, expected PREFIX_ROLE_SUFFIX>: %s" % env_name,)
+    if parts[0] != _CANONICAL_PREFIX:
+        return ("<prefix>: %s" % parts[0],)
+    if parts[-1] != _CANONICAL_SUFFIX:
+        return ("<suffix>: %s" % parts[-1],)
+    return tuple(p for p in parts[1:-1] if p not in _PERMITTED_ROLE_WORDS)
+
+
 def test_no_canonical_variable_names_a_machine_or_an_accelerator():
     """The release must not ask an operator to set a variable named after a host on
-    somebody else's network."""
-    banned = ("HEARTH", "FORGE", "BIFROST", "VEGA", "ANVIL", "WIN10SERVER")
+    somebody else's network.
+
+    Enforced as "every word is permitted vocabulary" rather than "no word is one of
+    these particular hosts", so that the check does not publish what it rejects.
+    """
     for name, spec in ENDPOINTS.items():
-        up = spec.env.upper()
-        offenders = [b for b in banned if b in up]
-        assert not offenders, "%s canonical name carries %s" % (name, offenders)
+        bad = _canonical_name_violations(spec.env)
+        assert not bad, "%s canonical name %s carries %s" % (name, spec.env, list(bad))
+
+
+def test_the_canonical_name_check_can_actually_fail():
+    """Control for the test above, in BOTH directions, because one direction proves
+    nothing.
+
+    A predicate that rejected everything would satisfy a rejection-only control while
+    saying nothing about the registry; a predicate that accepted everything would pass
+    the registry without looking at it. So this asserts both halves.
+
+    The rejected samples are fabricated words with no referent. Naming a real host here
+    would reintroduce precisely what this change removed, and constructing one at runtime
+    from character codes would only hide it from a scanner while leaving it legible to a
+    reader -- so neither is done. Rejecting every non-vocabulary word is the general
+    property, and it entails rejecting any host name without ever naming one.
+    """
+    # Direction 1: accepts every name the registry actually ships. Without this leg the
+    # rejections below would also pass for a predicate that simply fails on everything.
+    assert ENDPOINTS, "a vacuous registry would make the next line vacuous too"
+    for spec in ENDPOINTS.values():
+        assert not _canonical_name_violations(spec.env), spec.env
+
+    # Direction 2: rejects each way a canonical name can go wrong.
+    assert _canonical_name_violations("RAMEAU_NOTAROLEWORD_URL"), \
+        "a word outside the vocabulary must be rejected: this is the leg that catches " \
+        "a machine name, whatever that machine happens to be called"
+    assert _canonical_name_violations("RAMEAU_ROUTER_NOTAROLEWORD_URL"), \
+        "one bad word among good ones must still be rejected"
+    assert _canonical_name_violations("SOMETHINGELSE_ROUTER_URL"), "wrong prefix"
+    assert _canonical_name_violations("RAMEAU_ROUTER_ENDPOINT"), "wrong suffix"
+    assert _canonical_name_violations("ROUTER"), "not even the right shape"
 
 
 def test_an_unknown_endpoint_lists_the_known_ones():
