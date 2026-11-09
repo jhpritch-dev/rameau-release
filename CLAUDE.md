@@ -43,6 +43,30 @@ closed**: with gitleaks absent it refuses the push rather than waving it through
 gate that silently disables itself when its tool is missing is worse than no gate — it
 manufactures the appearance of protection.
 
+### Set a repository-local commit identity
+
+```
+git config --local user.email "$(gh api user --jq '.id')+$(gh api user --jq '.login')@users.noreply.github.com"
+```
+
+Every commit carries an author and a committer address into published history, and **a
+commit's own metadata cannot be corrected by a later commit.** Only a rewrite can change
+it, and on this repository a rewrite cannot un-publish anything: most of its refs are
+`refs/pull/N/head`, which GitHub maintains server-side and no client can force-push or
+delete. Measured 2026-11-09 — 21 of 26 published refs, and that count only grows; check it
+with `git ls-remote origin 'refs/pull/*'`. So the address has to be right *before* the
+commit, for the same reason a credential does.
+
+`@users.noreply.github.com` is GitHub's own published alias for an account, so it is the
+address that discloses nothing. `--local` is deliberate — it keeps this to one clone
+instead of changing the machine's global identity — and the cost of that choice is that **a
+fresh clone does not inherit it** and falls back to whatever the global address is. So this
+is a per-clone step, exactly like the hooks path above, and neither is enforced by anything
+in the tree.
+
+Commits made before this was set still carry a personal address, and that address is
+already published. Setting this does not fix those; it stops the next one.
+
 ## What this environment can and cannot reach
 
 This session runs against the repository only. **It has no network path to the deployment
