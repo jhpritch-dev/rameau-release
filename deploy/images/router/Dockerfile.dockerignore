@@ -72,6 +72,23 @@
 # ---- the skill registry, baked at build time ----
 !skills/
 !skills/**
+# The endpoint registry, for layer 3b. This context is deny-all (`**` above) with explicit
+# allowances, so without these two lines `COPY shared/` has nothing to copy.
+#
+# MEASURED 2026-11-13, because the guess was wrong and the wrong guess was the comfortable
+# one. Removing these two lines and rebuilding does NOT silently produce an image with an
+# empty /app/shared -- which is what this comment claimed until it was tested, and which
+# would have meant a router failing at import on `from shared.resolver import resolve`.
+# buildkit fails the build instead:
+#
+#     COPY shared/ /app/shared/
+#     ERROR: failed to compute cache key: ... "/shared": not found
+#
+# So this allowance is load-bearing and its absence is loud. Good -- but the pleasant
+# behaviour is the measured one, not the assumed one, and it is recorded here so the next
+# person does not have to re-derive it.
+!shared/
+!shared/**
 
 # ---- NOT admitted, and deliberately so ----
 # The four runtime JSON files are absent from this context by design. The release ships them

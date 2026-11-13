@@ -38,7 +38,7 @@ later rewrite un-sends it.
 | OpenAI-compatible endpoint | chat completions, streaming and non-streaming |
 | request classification | the pre-generation classifier and its tier bands |
 | tier selection and cascade | fallthrough when a tier is unavailable |
-| request cache | the near-duplicate cache in front of the classifier |
+| request cache | the near-duplicate cache in front of the classifier -- **in the image since 2026-11-13, shipped OFF**; see the ruling below |
 | configuration | a single documented config surface plus `.env.example` |
 | deployment | Docker Compose, including a profile that runs with no egress |
 | observability | structured logs and basic request metrics |
@@ -72,13 +72,45 @@ is the build context the image is `COPY`'d from, holds **8** — `arbiter`, `cla
 gets a router that classifies, selects a tier and cascades, and does **not** cache, plan or
 delegate.
 
-**That may be correct and it is not asserted either way here.** "In v0.1" has meant "enters
-this tree" throughout this document, and by that reading every row is satisfied — the code is
-published. The open question is whether the default IMAGE is meant to be the reduced router
-it currently is, or whether `services/router/` is short of modules the allowlist selected. It
-is a scope question, not a defect, and it needs the same kind of ruling the last four rows
-got. What would be a defect is a reader inferring from the table that the container runs the
-cache, so the table now says where to look instead.
+The open question was whether the default IMAGE is meant to be the reduced router it was, or
+whether `services/router/` was short of modules the allowlist selected. It was a scope
+question, not a defect, and it needed the same kind of ruling the last four rows got.
+
+#### RULED 2026-11-13 by John: the cache goes IN the image, the autopilot stays OUT
+
+Asked as that question and answered in those terms — "include the cache system, leave
+autopilot out". What changed in the tree:
+
+| row | image state after this ruling |
+|---|---|
+| request cache | **IN.** `routing_cache.py` and `routing_cache_serve_path.py` are in `services/router/`, byte-identical to the published source and pinned there by a test. Wired through `routing_cache_wiring.py`, `numpy` pinned in the image manifest, `shared/resolver.py` added to the build context so the embedding endpoint resolves through the registry |
+| autopilot | **OUT of the image, still published as source.** `autopilot_graph.py` and `autopilot_state.py` stay under `harness/router/` only |
+| delegated tool execution | unchanged — still repository-level only; this ruling did not reach it |
+
+**THIS REVERSES PART OF THE 2026-10-27 RULING, and the reversal is the point of saying so.**
+The in-scope table above carries "autopilot | the planning graph and its orchestration —
+**ruled in by John 2026-10-27**", and the cut table's overnight row was narrowed on the same
+day specifically to protect it. Both of those stand as written: the autopilot remains in v0.1
+in the sense this document has always used — it is in this tree and it is published. What
+2026-11-13 settles is the narrower question those rows never addressed, which is what the
+default container runs. Autopilot: not that.
+
+So the two rulings are consistent only because "in v0.1" and "in the image" are different
+claims, which is the distinction this whole section exists to draw. Do not collapse them when
+quoting either one.
+
+**The cache ships OFF.** `routing_cache.serve_enabled()` is false for an unset
+`BIFROST_ROUTING_CACHE_SERVE`, and with it unset no cache is constructed and no persisted
+file is read, so the shipped default behaviour is identical to the router before this ruling.
+Including a feature and enabling it are also different claims; this ruling is the first.
+
+`embed_similarity.py` is NOT part of this. It is the separate advisory second-signal feature
+tied to the cut NPU path, it is not the cache's vector source, and it carries a
+masked-address literal fallback of exactly the kind the resolver exists to prevent. It stays
+under `harness/router/` with the autopilot.
+
+What would be a defect is a reader inferring from the table that the container runs
+everything in it, so the table now says where to look instead.
 
 ## Explicitly NOT in v0.1
 

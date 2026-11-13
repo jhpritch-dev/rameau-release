@@ -3,3 +3,11 @@ uvicorn[standard]>=0.27.0
 httpx>=0.27.0
 pydantic>=2.0.0
 prometheus_client>=0.20.0
+# routing_cache.py holds its search matrix and row norms resident and scans them with numpy;
+# without this the router imports fine and then fails at the first request with the cache
+# switched on. PINNED where its five neighbours are ranges, deliberately: this is not a floor
+# I chose, it is the exact pin the repository's own requirements.txt already carries for this
+# same module, measured on CPython 3.11 -- which is what deploy/images/router/Dockerfile
+# builds on. numpy 2.5.x requires 3.12+, so an unpinned range here resolves DOWNWARD on this
+# base image to whatever is newest-compatible, silently and differently per build date.
+numpy==2.4.4
