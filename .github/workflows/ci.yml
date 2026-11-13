@@ -1319,15 +1319,24 @@ jobs:
           # the control block below calls it, and a shell function defined after its
           # caller is "command not found" at the point it matters.
           #
-          # THE COMMENT FILTER IS LOAD-BEARING. The Dockerfile RECORDS the cut in a
-          # comment that contains this exact line, so a matcher that read comments would
-          # fire on the record of the removal and make the cut impossible to document.
+          # THE ANCHOR DOES THE COMMENT FILTERING, and this carried a redundant second
+          # grep until an arm proved otherwise. The worry was real -- the Dockerfile
+          # RECORDS this cut in a comment containing the very line being matched, so a
+          # matcher that read comments would fire on the record of the removal and the
+          # only way to green B8 would be to delete the explanation. The fix was already
+          # present: `^[[:space:]]*COPY` cannot match a line whose first non-space
+          # character is '#', so a `| grep -v` on comment lines had nothing left to do.
           #
-          # AND IT GOES AFTER non-empty-directory's CLOSER, not between that matcher and
-          # its own. Placed inside that span it left has_no_files covered by nothing and
-          # produced two consecutive closers; the census's undeclared-construct leg
-          # reported it as UNDECLARED, which is that leg doing precisely its job.
-          skills_copy_lines() { grep -nE '^[[:space:]]*COPY[[:space:]]+skills/' "$1" 2>/dev/null | grep -v '^[0-9]*:[[:space:]]*#' || true; }
+          # IT WAS THE ARM THAT ESTABLISHED THIS, not reading the regex again. The arm
+          # that deleted the filter reported FAIL-TO-FIRE -- removing it changed no
+          # outcome, which is exactly what dead code looks like from the outside. Its
+          # near-miss control stays and is now the control for the ANCHOR.
+          #
+          # Placement: after non-empty-directory's CLOSER, not between that matcher and
+          # its own. Inside that span it left has_no_files covered by nothing and produced
+          # two consecutive closers; the census's undeclared-construct leg reported it as
+          # UNDECLARED, which is that leg doing precisely its job.
+          skills_copy_lines() { grep -nE '^[[:space:]]*COPY[[:space:]]+skills/' "$1" 2>/dev/null || true; }
           # /MATCHER
           # MATCHER: credential-shaped-find
           cred_shaped()  {

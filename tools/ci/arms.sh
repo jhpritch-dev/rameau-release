@@ -803,14 +803,19 @@ fires "*.py count: narrowed to an extension nothing uses" \
 fires "skills COPY matcher: the pattern no longer matches a COPY of skills/" \
       "CONTROL FAILED: skills_copy_lines missed a live COPY naming skills/" \
       "mutate .github/workflows/ci.yml 'COPY[[:space:]]+skills/' 'COPY[[:space:]]+skillz/'"
-# THE COMMENT FILTER GETS ITS OWN ARM, because losing it fails in the opposite
-# direction and nothing above would notice. The Dockerfile records the cut in a comment
-# containing this very line, so a matcher that read comments would fire on the record of
-# the removal -- B8 would go red precisely because the directory IS cut and documented,
-# and the only way to green it would be to delete the explanation.
-fires "skills COPY matcher: the comment filter dropped, so the cut note fires B8" \
-      "CONTROL FAILED: skills_copy_lines matched a COMMENTED-OUT COPY" \
-      "mutate .github/workflows/ci.yml \"| grep -v '^[0-9]*:[[:space:]]*#' || true\" \"|| true\""
+# A SECOND ARM LIVED HERE, FOR A COMMENT FILTER THAT TURNED OUT TO BE DEAD CODE, and it
+# is worth saying what it bought. The matcher carried `| grep -v` on comment lines
+# because the Dockerfile records this cut in a comment containing the matched line, so a
+# matcher that read comments would fire on the record of the removal. This arm deleted
+# that filter and expected the near-miss control to fail. It reported FAIL-TO-FIRE:
+# removing the filter changed NO outcome, because `^[[:space:]]*COPY` already cannot
+# match a line whose first non-space character is '#'.
+#
+# So the arm did its job by failing -- it found redundant code in the matcher it was
+# written to defend, which reading the regex a second time had not. The filter is gone
+# and this arm goes with it; the near-miss control it would have broken stays, as the
+# control for the ANCHOR. The ARM marker above is unchanged, so the census still sees
+# one arm for one matcher.
 
 # ARM: non-empty-directory
 fires "non-empty directory: -type f dropped, so a tree of directories reads non-empty" \
