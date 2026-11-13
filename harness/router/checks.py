@@ -14,7 +14,9 @@ Extracting only the bodies (not the decorated functions) is deliberate: a bare
 `from checks import run_ruff` at module scope would NOT register an MCP tool and
 would drop the policy gate.
 
-Machine: Bifrost (D:\\Projects\\bifrost-router\\)
+Origin: the private deployment's router tree. The machine name and build-host path that
+stood on this line are removed: this file ships inside the shell-mcp image, and neither
+is a property of the software. Nothing reads them.
 """
 
 import subprocess
