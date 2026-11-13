@@ -5,22 +5,37 @@ in front of several locally hosted models of different sizes, classifies each in
 request, and routes it to the smallest tier that can answer it -- falling through a cascade
 when a tier is unavailable.
 
-**Status: pre-release, and the source has landed.** Both build contexts now exist --
-`services/router/` (29 files) and `services/portal/` (28 files) -- alongside the test
-harness under `harness/`. See [RELEASE-SCOPE.md](RELEASE-SCOPE.md) for what v0.1 does and
-does not contain, and why the repository was assembled in this order.
+**Status: pre-release, and the source has landed.** Three build contexts now exist --
+`services/router/` (29 files), `services/portal/` (28) and `services/shell-mcp/` (2) --
+alongside the test harness under `harness/`. See [RELEASE-SCOPE.md](RELEASE-SCOPE.md) for
+what v0.1 does and does not contain, and why the repository was assembled in this order.
 
-**Can you run it today? Not yet, and the honest answer has changed shape.** Until the source
-landed, `docker compose build` could not reach a single instruction in either Dockerfile: it
-stopped while preparing a context that did not exist. That is no longer the failure mode --
-both contexts are present, so the build now reaches the Dockerfiles and CI's image job
-becomes a real gate rather than a skipped one. **Neither image has yet been observed to
-build.** That is the next thing to find out, not something this file will assert ahead of
-the evidence.
+**All three images build.** This sentence replaces "neither image has yet been observed to
+build", which was true when it was written and is the kind of claim this file retires by
+citing a run rather than by deleting. Measured on the CI runner at `30ba18d`, every job
+green:
 
-What IS measured today: 1,968 tests pass against the harness (114 test files), the
-credential scanner reads clean over every file in the tree with a planted-address control
-proving it can still fire, and the Compose stack parses.
+| image | build context | image |
+|---|---|---|
+| `rameau/router` | 145.29 kB | 181 MB |
+| `rameau/portal` | 862.58 kB | 70.1 MB |
+| `rameau/shell-mcp` | 15.41 kB | 324 MB |
+
+Those are the runner's own `transferring context` figures, not a local measurement. The
+distinction is not pedantry: this tree is assembled on Windows, where a CRLF checkout of an
+LF blob is larger than the blob, and the router context measures 145.80 kB locally against
+145.29 kB on Linux. The portal's figure is identical on both because its bulk is woff2.
+
+**Can you run it today? Closer, and the remaining gap is configuration rather than code.**
+The stack builds and parses; what it cannot do is start without the four runtime JSON files,
+whose schemas this repository does not contain -- see
+[deploy/README.md](deploy/README.md#one-thing-is-still-not-ready). `shell-mcp` additionally
+refuses to start without a bearer token, by design rather than by omission.
+
+What IS measured today: **2,156 tests pass** against the harness (116 test files, 0 failures,
+0 errors), the credential scanner reads clean over all 358 tracked files with a planted
+address and a planted user-home path both caught first, all three images build, and the
+Compose stack parses with three services.
 [How to deploy the stack](#how-to-deploy-the-stack) documents the real path end to end and
 marks which steps are verified.
 
@@ -161,10 +176,10 @@ near-miss before they are pointed at the real file, through the same function ra
 retyped copy of the pattern -- a control that retypes the pattern tests a different pattern. The image job builds both images **through compose**, because the thing most likely to
 be wrong at step 5 is the wiring rather than either Dockerfile -- each service's context is
 `../services/<name>` and its Dockerfile is outside that context -- and `docker build` would
-exercise none of it. Today both contexts are absent, so that job prints what is missing, names
-step 4 as the reason and passes; it starts gating the moment the directories appear, with no
-edit. It asserts `compose.yaml` and both Dockerfiles are present *first*, so that "skipped"
-can never be what a broken checkout looks like. Every build step is written to pass on an
+exercise none of it. All three contexts now exist, so that job gates rather than skipping --
+it did start gating the moment the directories appeared, with no edit, which is what it was
+written to do. It asserts `compose.yaml` and the Dockerfiles are present *first*, so that
+"skipped" can never be what a broken checkout looks like. Every build step is written to pass on an
 empty tree and to start doing real work the moment source appears, so the gate never has to be
 switched on later.
 
@@ -282,8 +297,8 @@ the worse of the two.
 Nine bundled `.woff2` faces (Instrument Sans, Instrument Serif, JetBrains Mono) and their
 three license texts are in the release set under **SIL OFL 1.1**. That is compatible with
 Apache-2.0 but is **not** Apache-2.0, so the third-party attribution has to be stated rather
-than implied by the root `LICENSE`. The file does not exist yet because the fonts have not
-landed; it goes in with them.
+than implied by the root `LICENSE`. [`NOTICE`](NOTICE) carries it; it landed with the fonts
+in `245d1a9`, naming each face by family, and declaring that the faces are subset.
 
 ### Also outstanding
 
@@ -346,14 +361,16 @@ reader in a hurry should read it first.**
 
 ### What the stack defines
 
-Two services on one bridge network named `rameau`.
+Three services on one bridge network named `rameau`.
 
 | service | what it is | container port | published by default |
 |---|---|---|---|
 | `router` | the OpenAI-compatible endpoint, the pre-generation classifier, tier selection, the cascade and the request cache | 8080 | `127.0.0.1:18080` |
 | `portal` | the existing web UI, as it stands -- nginx serving a Vite bundle | 80 | `127.0.0.1:13110` |
+| `shell-mcp` | the delegated-shell MCP server, static-analysis subset only: `run_ruff`, `run_mypy`, `run_checks`. Bearer-authenticated, and it **refuses to start** without a token of at least 32 characters | 8086 | `127.0.0.1:8086` |
 
-Override the published addresses with `RAMEAU_ROUTER_PUBLISH` and `RAMEAU_PORTAL_PUBLISH`.
+Override the published addresses with `RAMEAU_ROUTER_PUBLISH`, `RAMEAU_PORTAL_PUBLISH` and
+`RAMEAU_SHELL_MCP_PUBLISH`.
 Both defaults bind **127.0.0.1 explicitly**: a bare `18080:8080` would bind `0.0.0.0` and
 publish a router that proxies to a local model to every machine on the host's network. If
 you want a port exposed, override the variable, so that the exposure is something somebody
@@ -612,11 +629,11 @@ before any instruction in either Dockerfile is reached -- including the missing
 Both are true; the missing context is simply the one you hit first. Nothing here is a
 misconfiguration to debug: it is step 4 of the assembly order not having happened.
 
-No image has ever been built **from this tree**, because neither context exists in it. Both
-Dockerfiles have, separately, been exercised against a throwaway stub context that was created
-and then discarded, and all three digest-pinned base images resolved when that was done on
-2026-11-02. Nothing from that stub is in this repository: `services/` is absent here, not
-ignored, so the day it appears it will be the assembled source and nothing else.
+All three images now build from this tree, on the CI runner at `30ba18d`. Before step 4 the
+Dockerfiles had only been exercised against a throwaway stub context, created and then
+discarded; the digest-pinned base images resolved when that was done on 2026-11-02. Nothing
+from that stub is in this repository -- `services/` holds the assembled source and nothing
+else, which was the point of keeping it absent rather than ignored until the day it appeared.
 
 ## Provenance, stated plainly
 

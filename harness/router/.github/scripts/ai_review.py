@@ -18,12 +18,27 @@ def _int_env(name, default):
 
 CAP = _int_env('AI_REVIEW_CAP_BYTES', 150000)
 
+# WHERE THE DIFF COMES FROM AND THE REVIEW GOES BACK. `/tmp` is correct on the Actions
+# runner and stays the default for that reason; AI_REVIEW_DIR exists so a caller can point
+# this somewhere else without editing the script.
+#
+# The reason it is not a constant any more: on Windows `/tmp` is DRIVE-RELATIVE, so a test
+# run from a repository on F: resolved it to F:\tmp, silently created that directory, and
+# left the suite depending on it. Removing the stray directory then failed ten tests with
+# `FileNotFoundError: '\tmp\pr.diff'` -- a hardcoded absolute path in a script, surfacing as
+# a test suite that only passes on a host someone has already polluted. The tests now point
+# this at pytest's tmp_path and touch nothing outside it.
+IO_DIR = os.environ.get('AI_REVIEW_DIR', '/tmp')
+DIFF_PATH = os.path.join(IO_DIR, 'pr.diff')
+REVIEW_PATH = os.path.join(IO_DIR, 'review.md')
+FAILED_PATH = os.path.join(IO_DIR, 'ai_review_failed')
+
 try:
-    diff = open('/tmp/pr.diff', encoding='utf-8', errors='replace').read()
+    diff = open(DIFF_PATH, encoding='utf-8', errors='replace').read()
 except FileNotFoundError:
     diff = ''
 if not diff.strip():
-    open('/tmp/review.md', 'w', encoding='utf-8').write('_ai-review: empty diff, nothing to review._')
+    open(REVIEW_PATH, 'w', encoding='utf-8').write('_ai-review: empty diff, nothing to review._')
     raise SystemExit(0)
 
 
@@ -88,7 +103,7 @@ _fallbacks = [m.strip() for m in os.environ.get('AI_REVIEW_FALLBACK_MODELS', '')
 chain = [primary] + [m for m in _fallbacks if m != primary]   # de-dup, keep order
 
 if not key:
-    open('/tmp/review.md', 'w', encoding='utf-8').write('_ai-review: OPENROUTER_API_KEY secret not set; skipping._')
+    open(REVIEW_PATH, 'w', encoding='utf-8').write('_ai-review: OPENROUTER_API_KEY secret not set; skipping._')
     raise SystemExit(0)
 
 sys_prompt = (
@@ -158,7 +173,7 @@ if review is None:
     # 2026-08-03: the request failing used to leave this job GREEN -- 8 consecutive
     # failures (2026-07-31..08-03) all reported success. Drop a marker so a final
     # workflow step can fail the check AFTER the comment is posted.
-    open('/tmp/ai_review_failed', 'w', encoding='utf-8').write(' | '.join(attempts) or 'no model attempted')
+    open(FAILED_PATH, 'w', encoding='utf-8').write(' | '.join(attempts) or 'no model attempted')
 
 # The header must name the model that ACTUALLY produced the review, not the one that was
 # configured, and must say so when a fallback was used. A silent downgrade to a weaker
@@ -171,7 +186,7 @@ if used_model != primary:
     fallback_md = ('> **FALLBACK MODEL.** `%s` was unavailable, so this review came from `%s`.\n'
                    '> Failed attempts: %s\n\n' % (primary, used_model, '; '.join(attempts)))
 
-with open('/tmp/review.md', 'w', encoding='utf-8') as fh:
+with open(REVIEW_PATH, 'w', encoding='utf-8') as fh:
     # Banner FIRST, above the header: a reader skimming to the model's one-line verdict
     # must not be able to reach it without passing the coverage notice.
     fh.write("%s%s## AI Review (model: %s)\n\n%s\n" % (banner_md, fallback_md, used_model, review))

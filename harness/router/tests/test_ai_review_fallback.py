@@ -48,12 +48,18 @@ def _run(monkeypatch, tmp_path, env, responses):
     for k, v in env.items():
         monkeypatch.setenv(k, v)
 
-    pathlib.Path("/tmp/pr.diff").write_text(
+    # AI_REVIEW_DIR, so this writes inside pytest's tmp_path instead of a shared absolute
+    # path on the host. It used to write /tmp/pr.diff, which on Windows is DRIVE-RELATIVE:
+    # run from a repository on F: it created F:\tmp, and this whole file then depended on
+    # that directory continuing to exist. Removing the stray directory failed ten tests
+    # here, with FileNotFoundError on '\tmp\pr.diff'.
+    #
+    # tmp_path is per-test, so there is nothing to clean up between runs either -- the three
+    # removals this replaced existed only because the directory was shared.
+    monkeypatch.setenv("AI_REVIEW_DIR", str(tmp_path))
+    (tmp_path / "pr.diff").write_text(
         "diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n"
     )
-    for f in ("/tmp/review.md", "/tmp/ai_review_failed"):
-        if os.path.exists(f):
-            os.remove(f)
 
     buf, old_stdout = io.StringIO(), sys.stdout
     sys.stdout = buf
@@ -64,8 +70,9 @@ def _run(monkeypatch, tmp_path, env, responses):
     finally:
         sys.stdout = old_stdout
 
-    md = pathlib.Path("/tmp/review.md").read_text() if os.path.exists("/tmp/review.md") else ""
-    return calls, md, os.path.exists("/tmp/ai_review_failed")
+    review = tmp_path / "review.md"
+    md = review.read_text() if review.exists() else ""
+    return calls, md, (tmp_path / "ai_review_failed").exists()
 
 
 BASE = {"OPENROUTER_API_KEY": "k"}
