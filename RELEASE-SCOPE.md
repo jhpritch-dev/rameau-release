@@ -5,8 +5,9 @@ It is the contract: anything cut is listed here as cut, by name.
 
 ## Assembly order, and why it is this order
 
-This repository was created as scaffolding first and will receive source second. That is
-deliberate, not an accident of scheduling.
+This repository was created as scaffolding first and received source second. That is
+deliberate, not an accident of scheduling. Steps 1-4 are done and step 5 is substantially
+done; each is marked below rather than described in a status line that would drift from it.
 
 1. **Scaffolding** — license, ignore rules, secret-scanning CI, this document. *Done.*
 2. **Allowlist** — an explicit, mechanically generated list of which paths from the private
@@ -14,9 +15,17 @@ deliberate, not an accident of scheduling.
    something; a release built by including only what is approved will not.
 3. **Scrub** — credential removal, verified by more than one independent scanner over both
    the working tree and the full history of the source archive.
-4. **Source lands** — assembled from the allowlist, into a history that begins here.
-5. **Containerization** — the Compose stack and an offline profile.
-6. **Hardening and release** — documentation, an independent final scan, then the tag.
+4. **Source lands** — assembled from the allowlist, into a history that begins here. *Done
+   2026-11-13, in `245d1a9` and the four commits that made it green.* Three contexts:
+   `services/router/` (29 files), `services/portal/` (28), `services/shell-mcp/` (2).
+5. **Containerization** — the Compose stack and an offline profile. *The stack is here and
+   all three images build on the runner. The offline profile
+   (`deploy/compose.no-egress.yaml`) is written and CI validates that it overlays
+   `compose.yaml` and still resolves — which is parsing, not running. Nothing has yet
+   brought the stack up under it, so "the egress restrictions hold" is unproven and is not
+   claimed here.*
+6. **Hardening and release** — documentation, an independent final scan, then the tag. *Not
+   started.*
 
 Step 4 does not begin until step 3 reads clean. The ordering is the whole point: a
 credential committed to a private repository has still left the machine it was on, and no
@@ -41,6 +50,35 @@ later rewrite un-sends it.
 The last four rows were added by ruling, not by drafting, and the reason is recorded
 below under "A scope gap and a scope contradiction, both settled by ruling" -- the
 census had already selected both families and this table did not name them.
+
+### THIS TABLE IS SATISFIED AT THE REPOSITORY LEVEL, NOT AT THE IMAGE LEVEL — measured 2026-11-13
+
+Recorded because the distinction is invisible from the table and a reader will not guess it.
+Four of the rows above name code that **is in this repository and is not in the router
+image**:
+
+| row | where it actually lives |
+|---|---|
+| request cache | `harness/router/routing_cache.py`, `routing_cache_serve_path.py`, `embed_similarity.py` |
+| autopilot | `harness/router/autopilot_graph.py`, `autopilot_state.py` |
+| delegated tool execution | `harness/router/bifrost_delegate.py`, `igor_tool_loop.py`, `decomposer_prompt.py` |
+| the shell-MCP server | its own image and service since 2026-11-13 — this row IS wired |
+
+The measurement: `harness/router/` holds **55** top-level modules; `services/router/`, which
+is the build context the image is `COPY`'d from, holds **8** — `arbiter`, `classifier`,
+`commands`, `config`, `main`, `metrics`, `review_prompts`, `strategies`. The shipped
+`main.py` imports none of the modules above; its local imports are `classifier`, `config`,
+`strategies`, `review_prompts`, `commands` and the three backends. So `docker compose up`
+gets a router that classifies, selects a tier and cascades, and does **not** cache, plan or
+delegate.
+
+**That may be correct and it is not asserted either way here.** "In v0.1" has meant "enters
+this tree" throughout this document, and by that reading every row is satisfied — the code is
+published. The open question is whether the default IMAGE is meant to be the reduced router
+it currently is, or whether `services/router/` is short of modules the allowlist selected. It
+is a scope question, not a defect, and it needs the same kind of ruling the last four rows
+got. What would be a defect is a reader inferring from the table that the container runs the
+cache, so the table now says where to look instead.
 
 ## Explicitly NOT in v0.1
 
@@ -140,8 +178,11 @@ rows that used to contradict it say what they cut.
 - **A `NOTICE` file is required at the root.** Nine `.woff2` faces (Instrument Sans,
   Instrument Serif, JetBrains Mono) and their three OFL license texts are in the release
   set. SIL OFL 1.1 is compatible with Apache-2.0 but is *not* Apache-2.0, so the third-party
-  attribution has to be stated rather than implied. This file does not exist yet because the
-  fonts have not landed; it goes in with them, not before.
+  attribution has to be stated rather than implied. **DISCHARGED in `245d1a9`**: the fonts
+  landed and `NOTICE` landed with them, as this note said it should. The step-4 preflight's
+  A4 now asserts the coupling rather than trusting it — `NOTICE` must exist the moment any
+  font is tracked — and its arm was re-anchored in `f12f524`, because once `NOTICE` existed
+  the old mutation was testing the case A4 is supposed to accept.
 - **`docker/.env.example` must be read line by line before it is copied.** It was classified
   into the release set on its *filename* alone. A `.example` suffix is a convention, not a
   guarantee, and this is exactly the kind of file where the convention is most often broken.
@@ -190,8 +231,10 @@ No model weights exist anywhere in the source archive, so none can leak into the
 ### Containerization findings of 2026-11-02, recorded before step 5 begins
 
 Both Dockerfiles were exercised against a throwaway stub build context, created outside git
-and discarded; no stub reached this repository and `services/` is still absent here rather
-than ignored. Four defects were found and discharged. Two obligations remain, and they
+and discarded; no stub reached this repository and `services/` was still absent at the time
+rather than ignored. (It is present now — step 4 landed 2026-11-13 — so this section is a
+record of what was found before the real contexts existed, and is left in the past tense it
+was written in rather than back-dated.) Four defects were found and discharged. Two obligations remain, and they
 remain because this repository cannot settle them, which is why they are written here
 rather than left in commit messages.
 
@@ -319,7 +362,11 @@ than fixing something.
   CI's regenerate-and-diff step is what keeps it true.
 - The no-egress overlay changes **exactly one key** and nothing else. Diffed resolved against
   resolved: `networks.rameau.internal: true` is added, `driver: bridge` survives the merge, and
-  the two services are identical between base and overlay.
+  the services are identical between base and overlay. (Two services when this was measured,
+  three since 2026-11-13. The overlay needed no edit for the third, and that is a property of
+  where it acts rather than luck: it restricts the NETWORK, so every service on `rameau` is
+  covered by construction. A per-service overlay would have silently left `shell-mcp` with
+  egress.)
 - `shared/test_resolver.py`: 87 passed.
 
 #### OPEN after 2026-11-03, and deliberately not taken here
@@ -652,8 +699,9 @@ So adopting `.CORRECTED` would convert three request-time routes into config-loa
 it moves three failures from *degrade* to *does not start*.
 
 **That is the wrong direction for this release specifically**, and the reason is already
-settled in this document: v0.1 defines two services and ships no image for `arbiter`, `kb`,
-`broadcaster` or `search`. A portal whose upstreams are all resolved at config load is a
+settled in this document: v0.1 defines three services -- `router`, `portal` and `shell-mcp`,
+the third added 2026-11-13 -- and ships no image for `arbiter`, `kb`, `broadcaster` or
+`search`. A portal whose upstreams are all resolved at config load is a
 portal that must have every backend present to start at all. Under the live variant the same
 absence costs those panels and leaves the site up.
 
@@ -1370,8 +1418,40 @@ failed** as `MUTATION-FAILED` rather than scoring it as a pass; that caught one 
 
 ## The byte ceiling: owner, trigger and command, 2026-11-03
 
-The ceiling on the transferred build context remains **unset**, and deliberately: the window is
-still open. The context grows when `services/` lands, and a ceiling pinned against today's
+**THE TRIGGER FIRED ON 2026-11-13 AND THE FIGURES ARE BELOW.** The measurement this section
+asked for exists; the ceiling itself is still unset, and the difference between those two
+statements is the point of the section. Measured on the first green `images` run after step 4
+landed — commit `30ba18d` on `main`, every job green — with the provenance this section
+demanded rather than the figures alone:
+
+| service | `transferring context` | image | Dockerfile |
+|---|---|---|---|
+| router | **145.29 kB** | `rameau/router` 181 MB | 18.16 kB |
+| portal | **862.58 kB** | `rameau/portal` 70.1 MB | 17.96 kB |
+| shell-mcp | **15.41 kB** | `rameau/shell-mcp` 324 MB | 6.65 kB |
+
+Measured on runner image `ubuntu-24.04`, docker **28.0.4**, buildx **v0.38.2**. A third
+service exists that this section did not anticipate: `shell-mcp` landed with step 4.
+
+**THE BASIS IS THE RUNNER, NOT A WORKSTATION, and that is not pedantry.** This tree is
+assembled on Windows, where a CRLF checkout of an LF blob is larger than the blob. The router
+context measures **145.80 kB** locally against 145.29 kB here — a 0.35% disagreement that
+would have been invisible in a figure quoted without its instrument, and is the same
+stat-versus-blob confusion this document already carries a section about. The portal's
+862.58 kB is identical on both bases because its bulk is woff2, which no checkout rewrites.
+
+**WHAT REMAINS IS A DECISION, NOT A MEASUREMENT.** A ceiling is a measured figure plus a
+margin, and the margin is a judgement about how much growth is ordinary — which one run
+cannot supply. One observation per service establishes no variance, so a ceiling written from
+it would be a pin wearing a ceiling's clothes, red on the first legitimate addition. That is
+the trap this section was created to avoid and it is not avoided by having a number at last.
+So: the figures are recorded, the ceiling stays unset, and setting it wants either a second
+basis or an explicit margin someone is willing to defend.
+
+The paragraph below is the reasoning as it stood before the trigger fired, kept because it is
+still the argument for why exact set equality is the better gate:
+
+The context grows when `services/` lands, and a ceiling pinned against today's
 stub figures would go red on exactly the growth it exists to permit. A figure invented to make
 a gate green is what the withdrawn "131" was.
 

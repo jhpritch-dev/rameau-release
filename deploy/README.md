@@ -5,10 +5,11 @@ the stack's route off the machine.
 
 | file | |
 |---|---|
-| `compose.yaml` | the stack — router and portal |
-| `compose.no-egress.yaml` | overlay that makes the network `internal: true` |
+| `compose.yaml` | the stack — router, portal and shell-mcp |
+| `compose.no-egress.yaml` | overlay that makes the network `internal: true`, which covers every service on it |
 | `images/router/` | the router image and its build context list |
 | `images/portal/` | the portal image and its build context list |
+| `images/shell-mcp/` | the shell-MCP image and its build context list |
 | `profiles/compose.env.example` | endpoint values for inside the container network, generated from `shared/resolver.py` |
 | `config/` | the four `*.example.json` placeholders, and where your own copies go (see step 2) |
 
@@ -31,13 +32,15 @@ service is not in this release; the router's manifest is five range specifiers. 
 restated here rather than quietly dropped, because a withdrawn figure that stops being
 mentioned is one a reader can find in the history and believe again.
 
-**2. Both build contexts are assembled.** `services/router/` (29 files) and
-`services/portal/` (28 files) are the two contexts `compose.yaml` names, and both now exist.
-They landed together on purpose: the `images` job in CI skips only while BOTH are absent,
-and treats one-present-one-missing as a half-assembled tree and fails it, because a stack
-with one of its two services unbuildable is not a stack.
+**2. All three build contexts are assembled.** `services/router/` (29 files),
+`services/portal/` (28) and `services/shell-mcp/` (2) are the contexts `compose.yaml` names,
+and all three exist. The first two landed together on purpose: the `images` job in CI skips
+only while they are ALL absent, and treats some-present-some-missing as a half-assembled tree
+and fails it, because a stack with one of its services unbuildable is not a stack.
 
-**NEITHER IMAGE HAS BEEN BUILT.** What changed is the failure mode, not the outcome. Until
+**ALL THREE IMAGES BUILD** — the figures are two paragraphs down. The rest is kept because
+the failure mode it describes is the one a reader will hit if they check out a tree from
+before step 4, and because a claim retired by evidence is more use than a claim deleted. Until
 step 4 the build could not reach an instruction in either Dockerfile -- it stopped while
 preparing a context that did not exist, measured 2026-11-03 on Docker 29.4.2 / Compose
 v5.1.3 from `deploy/`:
@@ -47,9 +50,14 @@ $ docker compose -f compose.yaml build
 unable to prepare context: path ".../services/portal" not found
 ```
 
-That error is now unreachable. The build reaches both Dockerfiles, CI's image job stops
-skipping and becomes a real gate, and whether the images build is the next thing to find
-out. This file will say so when there is a run to cite.
+That error is now unreachable, and there is a run to cite. All three images build on the CI
+runner at `30ba18d` on `main`, every job green — `rameau/router` 181 MB, `rameau/portal`
+70.1 MB, `rameau/shell-mcp` 324 MB, on runner image `ubuntu-24.04` with docker 28.0.4. The
+image job is a real gate now rather than a skipped one.
+
+What a green build does **not** prove is that the stack runs: the COPY groups resolve and
+nothing is missing from a context, which is a different claim from the services coming up.
+"Accepting a build: do not stop at a health check" below is the procedure for the rest.
 
 ## One thing is still not ready
 
@@ -237,7 +245,7 @@ The four are `fleet_config.json`, `capability_registry.json`, `capability_profil
 — a directory mounted onto `/app` would shadow the application code.
 
 The copies you just made are **placeholders with no schema in them** and will not start the
-router — see "Two things are not ready yet" above. `.gitignore` excludes
+router — see "One thing is still not ready" above. `.gitignore` excludes
 `config/*.json` while keeping `config/*.example.json` tracked, because your copies describe
 your fleet and the examples describe nothing.
 
