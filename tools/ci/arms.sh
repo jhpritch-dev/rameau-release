@@ -722,6 +722,31 @@ io.open(p, "w").write("\n".join(out))
 PY' \
       run_images_probe
 
+# ARM: shell-mcp-ignore-patterns
+# The third pattern set, and the reason the census derives ids from the FILE rather than from
+# a registry: this arm had to exist before the file could be added. The mutation is the same
+# one the two above use -- strip `**/` so every credential pattern becomes top-level-only --
+# and the expectation is a credential planted ONE LEVEL DOWN, because that is precisely the
+# depth a single-segment pattern stops reaching. `.env` at the context root would still be
+# denied after the mutation and would prove nothing.
+fires "shell-mcp ignore patterns: reverted to single-segment credential patterns" \
+      "sub/.env" \
+      'python3 - deploy/images/shell-mcp/Dockerfile.dockerignore <<PY
+import io, sys
+p = sys.argv[1]
+lines = io.open(p).read().split("\n")
+out, n = [], 0
+for line in lines:
+    if line.startswith("**/"):
+        out.append(line[3:]); n += 1
+    else:
+        out.append(line)
+if n == 0:
+    sys.stderr.write("no **/ patterns to revert\n"); sys.exit(2)
+io.open(p, "w").write("\n".join(out))
+PY' \
+      run_images_probe
+
 # ARM: jar-pathspec
 fires "jar pathspec: narrowed to an extension nothing uses" \
       "CONTROL FAILED: tracked_jars" \

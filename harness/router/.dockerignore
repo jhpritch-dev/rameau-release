@@ -188,3 +188,57 @@ tools/warmup.py
 # build -dirty -- an image matching NO commit. Caught by dirtycheck.py on v454;
 # the tempting wrong answer there is -Force, which ships exactly that image.
 *-preimage-*
+
+# ---- added for the never-block floor ----
+# harness/router/ is a context ROOT for the four Dockerfiles beside this file, so
+# this ignore file is live even though nothing in deploy/compose.yaml builds here.
+# It carried none of the credential floor; it does now.
+
+# ---- never, under any circumstances ----
+# Every pattern below is the floor in deploy/images/NEVER-BLOCK-SHAPES.txt, carried
+# verbatim. The floor is a MINIMUM: a never-block may deny more. Do not reflow or
+# re-order these lines -- tools/check_never_block_shapes.py compares them as text.
+
+# --- environment and secrets ---
+**/.env
+**/.env.*
+**/*.env
+**/secrets/
+**/.secrets/
+**/*.secret
+**/*.secrets
+**/credentials.json
+**/*credential*
+**/*-credentials*
+**/auth.json
+**/.sops.yaml
+**/.sops/
+**/*.kubeconfig
+**/kubeconfig
+**/kubeconfig.*
+
+# --- keys and certificates ---
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.keystore
+**/id_rsa
+**/id_rsa.*
+**/id_ed25519
+**/id_ed25519.*
+**/*.ppk
+**/known_hosts
+
+# --- tokens ---
+**/*.token
+**/.netrc
+**/_netrc
+**/.npmrc
+**/.pypirc
+
+# --- repository metadata, which carries remotes and credentials of its own ---
+**/.git-credentials
+**/.git/
+**/.github/

@@ -1,0 +1,71 @@
+# Dockerfile.dockerignore -- RAMEAU shell-MCP
+#
+# Named for the Dockerfile beside it, not `.dockerignore`. That naming is load-bearing: a
+# plain `.dockerignore` here would sit outside the build context (which is
+# services/shell-mcp/) and Docker would read it not at all.
+#
+# THE CONTEXT IS TWO FILES, so almost nothing here has work to do today, and that is the
+# point rather than an argument for leaving it out. The never-block below is what stops a
+# credential that appears in that directory later from reaching a published image, and the
+# `images` job builds a planted context against this exact file and compares the transferred
+# list, so these patterns are asserted rather than asserted-about.
+
+# ---- build and editor droppings ----
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.pytest_cache/
+**/*.log
+**/*.bak
+**/*.sqlite
+
+# ---- never, under any circumstances ----
+# Every pattern below is the floor in deploy/images/NEVER-BLOCK-SHAPES.txt, carried
+# verbatim. The floor is a MINIMUM: a never-block may deny more. Do not reflow or
+# re-order these lines -- tools/check_never_block_shapes.py compares them as text.
+
+# --- environment and secrets ---
+**/.env
+**/.env.*
+**/*.env
+**/secrets/
+**/.secrets/
+**/*.secret
+**/*.secrets
+**/credentials.json
+**/*credential*
+**/*-credentials*
+**/auth.json
+**/.sops.yaml
+**/.sops/
+**/*.kubeconfig
+**/kubeconfig
+**/kubeconfig.*
+
+# --- keys and certificates ---
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.keystore
+**/id_rsa
+**/id_rsa.*
+**/id_ed25519
+**/id_ed25519.*
+**/*.ppk
+**/known_hosts
+
+# --- tokens ---
+**/*.token
+**/.netrc
+**/_netrc
+**/.npmrc
+**/.pypirc
+
+# --- repository metadata, which carries remotes and credentials of its own ---
+**/.git-credentials
+**/.git/
+**/.github/

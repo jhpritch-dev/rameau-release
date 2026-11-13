@@ -156,7 +156,8 @@ Endpoints you are not running **must** be left blank — a blank value counts as
 
 **Blanking them is now load-bearing, where before it was optional.** The example ships
 **non-empty** values for six names `compose.yaml` does not define — `ollama`, `embed`, `kb`,
-`arbiter`, `broadcaster` and `search` — and `compose.yaml` defines only `router` and `portal`.
+`arbiter`, `broadcaster` and `search` — and `compose.yaml` defines only `router`, `portal` and
+`shell-mcp`, none of which is among those six.
 So copying the example and starting the stack **without editing** hands the router five
 endpoints that resolve to nothing. Measured with `docker compose config` on Docker 29.4.2 /
 Compose v5.1.3 against this file as shipped: the router receives `http://embed:11434`,
@@ -243,6 +244,34 @@ your fleet and the examples describe nothing.
 They are mounted read-only, so the container cannot drift from what you edited.
 `fleet_config.json` re-reads on mtime change on every request, so editing it re-tiers a
 **running** router with no restart.
+
+**4. A bearer token for the shell-MCP service.**
+
+`shell-mcp` **refuses to start without one** — not as a misconfiguration but by design: in
+http mode it requires a token of at least 32 characters and exits 2 rather than serving
+unauthenticated. Measured against the built image, which prints exactly this:
+
+```
+[bifrost-shell-static] REFUSING to start: http mode needs a bearer token of at least 32 chars in /run/secrets/shell_mcp_token
+```
+
+No token ships in this repository and none ever should. Generate one:
+
+```
+umask 077 && openssl rand -hex 32 > config/shell_mcp.token
+```
+
+**The `.token` extension is load-bearing, not a style choice.** `.gitignore` ignores
+`/deploy/config/*.json` and `*.token`. A file named `shell_mcp_token` matches **neither** —
+it was checked, and it showed up as an untracked, perfectly committable secret inside a
+tracked directory. `*.token` is also one of the 36 never-block shapes, so the same name keeps
+it out of every build context. Rename it and you lose both protections at once.
+
+To keep it elsewhere, set `RAMEAU_SHELL_MCP_TOKEN_FILE` to an absolute path.
+
+**If the file does not exist when the stack starts, Docker creates a DIRECTORY at that bind
+path** and the server then fails on an unreadable token rather than a missing one. The
+message is confusing for a simple cause, so: create the file first.
 
 ## Bring it up
 
