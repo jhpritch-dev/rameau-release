@@ -1,0 +1,13 @@
+{
+  "id": "moderate_002",
+  "band": "MODERATE",
+  "assigned_tier": "T1A",
+  "description": "Implement an LRU cache with get/put operations",
+  "prompt": "Write a Python class `LRUCache` with: __init__(self, capacity: int), get(self, key: int) -> int (returns -1 if not found), put(self, key: int, value: int) -> None (evicts least recently used when at capacity). Do NOT use functools. Use OrderedDict or a custom doubly-linked list. Include test_lru_cache() testing: basic get/put, capacity eviction, access-order update on get.",
+  "expected_behavior": "LRU cache correctly evicts least recently used items, get() updates recency",
+  "validation_criteria": {
+    "l3": "Code parses without syntax errors",
+    "l4": "test_lru_cache() passes: put/get, eviction, recency update",
+    "l5": "O(1) get and put operations, correct eviction order"
+  }
+}

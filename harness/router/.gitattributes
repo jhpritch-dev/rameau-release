@@ -1,0 +1,32 @@
+# Line-ending policy (#143, 2026-08-17). Mirrors the #139 fix already in autoagent.
+#
+# Without `text=auto` the stored form of every file depends on each machine's local
+# core.autocrlf setting, so the same file lands in the index as LF from one host and CRLF
+# from another. Measured here before this file was written: index was 483 LF but ONE CRLF,
+# and the worktree held 152 CRLF plus 40 genuinely MIXED files (both endings inside one
+# file). Mixed files are the real damage -- they produce spurious whole-file diffs and
+# make review noise indistinguishable from real change.
+#
+# `text=auto` means: normalise to LF in the repository, check out per-platform. Nothing
+# below changes what a Windows editor sees in the worktree.
+* text=auto
+
+# Shell scripts must be LF even on Windows checkouts -- CRLF breaks the shebang line.
+*.sh text eol=lf
+
+# Batch files are read by cmd.exe, which wants CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Ceremony-of-record files: preserve bytes exactly.
+# orch_apply pre/post SHA-256 gates are computed on LF bytes; git CRLF normalization
+# on checkout silently rewrites them and makes staged ceremonies fail their pre-sha
+# check (this is exactly what invalidated the tier-hearth-note ceremony, 2026-07-03).
+#
+# NOTE (#143): this entry is why `* text=auto` above is safe. fleet_config.json is the
+# ONE file whose index form is CRLF, and it is deliberate -- `-text` exempts it from
+# renormalisation. Verified 2026-08-17: it is also the ONLY file in this repo carrying a
+# git attribute, and the repo has NO POSTIMAGE/PREIMAGE/.diff ceremony files (autoagent's
+# .gitattributes protects those; bifrost-router has none), so nothing else needs exempting.
+# If byte-exact files are ever added here, give them `-text` BEFORE committing them.
+fleet_config.json -text

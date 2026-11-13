@@ -22,7 +22,7 @@ WHAT IT DOES NOT TEST, so a green here is not read as more than it is:
 
 ON FINDING THE MARKER. This script and that awk pass are, unavoidably, two
 readers of the same marker, and ci.yml warns in so many words against letting two
-spellings diverge. The normalisation here is therefore the same one: strip a
+spellings diverge. The normalization here is therefore the same one: strip a
 trailing CR, then strip surrounding whitespace, then compare the whole line. If
 the two ever disagree about whether a marker exists, one of them goes red, which
 is visible -- and that is the honest position rather than a claim that there is
@@ -65,7 +65,7 @@ _SECTION_RE = re.compile(r"^#\s*-{2,}\s*(.*?)\s*-{2,}\s*$")
 
 
 def norm(line):
-    """The same normalisation ci.yml's awk pass uses: CR, then surrounding space."""
+    """The same normalization ci.yml's awk pass uses: CR, then surrounding space."""
     return line.rstrip("\r").strip()
 
 
@@ -241,7 +241,7 @@ def main(argv):
     # It stopped being true on the 2026-11-03 merge, where the `images` job gained a step
     # that builds a PLANTED context and asserts the transferred file list exactly. A gate
     # that prints a stale claim about a sibling control teaches its reader to distrust the
-    # part that IS measured, so it states the division of labour instead.
+    # part that IS measured, so it states the division of labor instead.
     print("    this gate covers SHAPE COVERAGE only. REACH is gated by \"prove both "
           "ignore files'")
     print("    patterns are in force\" (images job) and LOCATION by A1 of the step-4 "

@@ -261,7 +261,25 @@ jobs:
           }
           # No discovery step, and no contradiction check: it could not fire either, since
           # the anchor matches `test_*.py` itself. See the byte-compile step above.
-          python -m pip install --quiet --disable-pip-version-check pytest
+          # THE RUNTIME DEPENDENCIES, not just pytest. The suite imports fastapi,
+          # httpx, pydantic, numpy, langgraph and nest_asyncio at module scope; with only
+          # pytest installed, collection dies on the first of them. This step predates the
+          # source and was correct while shared/test_resolver.py -- standard library only
+          # -- was the whole suite.
+          python -m pip install --quiet --disable-pip-version-check \
+            -r requirements.txt -r requirements-dev.txt
+
+          # THE ENVIRONMENT, from .env.example rather than a list pasted here. resolver.py
+          # resolves every endpoint from the environment and deliberately never falls back
+          # to a literal, so an unset variable is a ConfigError at IMPORT time and takes
+          # collection down with it -- measured as
+          # `no endpoint configured for 'broadcaster'`. Sourcing the example file means
+          # this step cannot drift from the registry, because the step below regenerates
+          # that file and diffs it.
+          set -a
+          . ./.env.example
+          set +a
+
           python -m pytest -q --tb=line
           echo "tests ok"
 

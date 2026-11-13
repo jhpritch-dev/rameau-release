@@ -160,7 +160,17 @@ ENDPOINTS: Dict[str, Endpoint] = {
         example="http://127.0.0.1:11436",
         # HEARTH_VEGA8_URL named a specific machine and a specific iGPU. Neither
         # belongs in a public variable name, so it survives only as an alias.
-        aliases=("HEARTH_VEGA8_URL",),
+        #
+        # The two BIFROST_*_EMBED_URL names are per-consumer overrides the archive grew
+        # independently -- the routing cache and the autopilot graph each read their own
+        # variable rather than one shared name. Both are recorded here as aliases rather
+        # than as endpoints of their own, because this is NOT a new service: each
+        # literal they defaulted to was the embedding port, so the registry is recording
+        # what the code already pointed at. An operator who sets only RAMEAU_EMBED_URL
+        # now configures all three call sites, which is the behavior the registry is
+        # for; an operator still carrying either old name keeps working.
+        aliases=("HEARTH_VEGA8_URL", "BIFROST_ROUTING_CACHE_EMBED_URL",
+                 "BIFROST_AUTOPILOT_EMBED_URL"),
         required_for="embeddings",
         # The one endpoint whose host and in-network ports legitimately differ -- see
         # HOST_PORT_DIFFERS below.
@@ -208,6 +218,24 @@ ENDPOINTS: Dict[str, Endpoint] = {
         required_for="search",
         listens_on=8080,
     ),
+    # Added 2026-11-12. The portal was the one service this release SHIPS -- image,
+    # compose service and source -- that had no entry here, and the gap had a cost: the
+    # dev server's vite config carried a literal LAN address as its proxy target,
+    # because there was no name to read instead. It is the only endpoint whose consumer
+    # is JavaScript rather than Python, so nothing here resolves it; the registry's job
+    # for this one is to OWN THE NAME, so the JS side and an operator agree on it.
+    #
+    # `aliases` is deliberately empty, and that is a statement rather than an omission:
+    # the archive had no variable for this: the address was a hardcoded const. There is
+    # no old name to stay compatible with.
+    "portal": Endpoint(
+        env="RAMEAU_PORTAL_URL",
+        purpose="the portal's nginx, which serves the SPA and reverse-proxies the "
+                "service routes the browser calls by relative path",
+        example="http://127.0.0.1:13110",
+        required_for="portal",
+        listens_on=80,
+    ),
 }
 
 
@@ -252,6 +280,12 @@ HOST_PORT_DIFFERS: Dict[str, HostPort] = {
                                   "the two cannot share one host port."),
     "search": HostPort(8888, "searxng's image binds 8080, which the router also binds, "
                              "so on one host the two cannot both have it."),
+    "portal": HostPort(13110,
+                       "nginx binds 80 in its own container. On a host, 80 is the "
+                       "default HTTP port and is not a port a deployment can assume is "
+                       "free, so this one is published high: deploy/compose.yaml "
+                       "publishes `${RAMEAU_PORTAL_PUBLISH:-127.0.0.1:13110}:80`, and "
+                       "13110 is that default."),
 }
 
 
@@ -327,7 +361,7 @@ PROVENANCE: Dict[str, Provenance] = {
     "search": Provenance("the searxng image binds 8080: the deployment this example came "
                          "from publishes it as `8888:8080`, i.e. host 8888 to container "
                          "8080", 8080),
-    # The weakest of the eight, and labelled rather than dressed up: the private
+    # The weakest of the eight, and labeled rather than dressed up: the private
     # deployment runs its embedding instance natively on a host rather than in a
     # container, so there is no artifact that sets a container port. 11434 is ollama's
     # default bind port, which is what an embed CONTAINER would use.
@@ -335,6 +369,11 @@ PROVENANCE: Dict[str, Provenance] = {
                         "this service, so this is the recipe's assumption, not a "
                         "measurement", 11434),
     "ollama": Provenance("ollama's default bind port", 11434),
+    # The second of the eight that is checkable from inside this repository, and the
+    # strongest kind: the image ships here, so the test that reads the cited file can
+    # confirm the number rather than take it on report.
+    "portal": Provenance("EXPOSE 80 in this repo's own portal image", 80,
+                         "deploy/images/portal/Dockerfile"),
 }
 
 
@@ -450,7 +489,7 @@ def resolve(name: str, env: Optional[Dict[str, str]] = None) -> str:
                 "  example:    %s=%s"
                 % (var, complaint, spec.purpose, spec.env, spec.example))
         if var != spec.env:
-            # Honoured, but say so once: the alias names a private machine or a
+            # Honored, but say so once: the alias names a private machine or a
             # specific accelerator and will not be read forever.
             _warn_alias(var, spec)
         return raw.rstrip("/")
@@ -536,6 +575,7 @@ COMPOSE_SERVICE = {
     "arbiter": "arbiter",
     "broadcaster": "broadcaster",
     "search": "search",
+    "portal": "portal",
 }
 
 

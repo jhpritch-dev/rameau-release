@@ -1,0 +1,7 @@
+# EOL policy for reproducible container builds.
+* text=auto eol=lf
+*.py text eol=lf
+Dockerfile text eol=lf
+# patch_chroma.py is captured VERBATIM from image 1.18 (CRLF+BOM, hand-authored).
+# Keep exact bytes so a rebuild's /app byte-matches (step-3 check).
+patch_chroma.py -text

@@ -1,0 +1,13 @@
+{
+  "id": "moderate_001",
+  "band": "MODERATE",
+  "assigned_tier": "T1A",
+  "description": "Build a stack-based expression evaluator for basic arithmetic",
+  "prompt": "Write a Python module with: (1) `tokenize(expr: str) -> list[str]` that splits a math expression into tokens, (2) `evaluate(expr: str) -> float` that evaluates infix expressions with +, -, *, / and parentheses using the shunting-yard algorithm. Include test_evaluate() testing: '2+3'->5, '(2+3)*4'->20, '10/3'->3.333..., '2+3*4'->14 (respecting precedence).",
+  "expected_behavior": "Correctly evaluates infix arithmetic with operator precedence and parentheses",
+  "validation_criteria": {
+    "l3": "Code parses without syntax errors",
+    "l4": "test_evaluate() passes with tolerance for float division",
+    "l5": "Respects operator precedence, handles parentheses, division by zero returns error"
+  }
+}

@@ -1,0 +1,60 @@
+RAMEAU
+Copyright 2026 The RAMEAU Authors
+
+This product includes software developed by The RAMEAU Authors, licensed under the
+Apache License, Version 2.0. See LICENSE for the full text.
+
+--------------------------------------------------------------------------------
+THIRD-PARTY FONT SOFTWARE
+--------------------------------------------------------------------------------
+
+This file exists because the release set carries nine webfont faces whose license is
+NOT the one at the root of this repository. SIL OFL 1.1 is compatible with Apache-2.0,
+which is why the faces can ship at all -- but compatible is not the same as identical,
+and the OFL requires its copyright notice and license to travel with the font software.
+Stating that here, rather than letting the root LICENSE imply it, is the whole point of
+an Apache NOTICE file (see LICENSE, section 4(d)).
+
+The full, unmodified license text for each family sits beside the faces it governs, at
+services/portal/src/assets/fonts/. These are copies, not links: a license that is only
+reachable over the network is not distributed with the work.
+
+Instrument Sans
+  Copyright 2022 The Instrument Sans Project Authors
+  https://github.com/Instrument/instrument-sans
+  SIL Open Font License 1.1 -- services/portal/src/assets/fonts/OFL-InstrumentSans.txt
+  Faces in this release (2):
+    InstrumentSans-latin-normal-400-700.woff2
+    InstrumentSans-latin-ext-normal-400-700.woff2
+
+Instrument Serif
+  Copyright 2022 The Instrument Serif Project Authors
+  https://github.com/Instrument/instrument-serif
+  SIL Open Font License 1.1 -- services/portal/src/assets/fonts/OFL-InstrumentSerif.txt
+  Faces in this release (4):
+    InstrumentSerif-latin-normal-400.woff2
+    InstrumentSerif-latin-italic-400.woff2
+    InstrumentSerif-latin-ext-normal-400.woff2
+    InstrumentSerif-latin-ext-italic-400.woff2
+
+JetBrains Mono
+  Copyright 2020 The JetBrains Mono Project Authors
+  https://github.com/JetBrains/JetBrainsMono
+  SIL Open Font License 1.1 -- services/portal/src/assets/fonts/OFL-JetBrainsMono.txt
+  Faces in this release (3):
+    JetBrainsMono-full-normal-400.woff2
+    JetBrainsMono-full-normal-500.woff2
+    JetBrainsMono-full-normal-600.woff2
+
+THE FACES ARE SUBSETS, AND THAT IS A MODIFICATION WORTH DECLARING. The filenames record
+it: `latin` and `latin-ext` are character-range subsets, and the `400-700` faces are
+variable fonts with their weight axis retained over that range. OFL 1.1 permits
+modification and redistribution; it requires that the result not be sold on its own and
+not use the Reserved Font Names, and neither applies here -- the families above declare
+no Reserved Font Name, and the subset names are unchanged from upstream's own naming.
+
+NO OTHER THIRD-PARTY SOFTWARE IS VENDORED IN THIS REPOSITORY. Runtime dependencies are
+declared in requirements*.txt and services/*/requirements.txt and are fetched at build
+time rather than copied in; npm dependencies are declared in services/portal/package.json
+and resolved from services/portal/package-lock.json by `npm ci`. Their licenses are not
+restated here because their code is not distributed here.

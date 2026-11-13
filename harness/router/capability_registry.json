@@ -1,0 +1,992 @@
+{
+  "_comment": "BIFROST Router capability registry (Phase 0a, 2026-06-13). Per-alias capability metadata for routing decisions. Hot-reloaded on mtime change by capability_registry.py (same pattern as fleet_config.json). Seeded from fleet_config.json: ctx_len from num_ctx fields; tok_s/vram_gb from benchmark + _num_ctx_note where measured; null where unmeasured (honest gap, do not fabricate). tool_calls per CC brief Phase 0a matrix cross-checked against fleet_config capabilities.tool_use. The 'tier' field maps each alias to its fleet_config tier string so the Phase 0b tool-aware reroute guard can resolve a routed Tier -> capability. outcome_history reserved for future per-alias accept/latency learning (empty seed).",
+  "_updated": "2026-07-04: advertise SANDBOX-EXECUTION-PATH capability (see _sandbox_exec). Prior: 2026-06-24 Run5 +12 cloud/embed honest-gap entries (classification field; tool_calls/ctx_len=null). 21->33 entries.",
+  "_sandbox_exec": {
+    "tool": "run_in_sandbox",
+    "policy_class": "SANDBOX",
+    "advertised_to_roles": [
+      "igor",
+      "leaf"
+    ],
+    "note": "Isolated code execution in the k3d `sandbox` namespace (deny-all NetworkPolicy + ResourceQuota + sandbox_monitor auto-quarantine; fail-closed on the reconcile race; pod auto-deleted). Enabled where EXECUTE stays denied because it is isolated-by-construction. Advertised here + in bifrost_shell_policy.json (SANDBOX class) + the gateway launcher --tools allowlist. Requires kubectl + scoped RBAC in the bifrost-shell-mcp container (Dockerfile + gateway launcher, non-protected infra)."
+  },
+  "aliases": [
+    {
+      "alias": "bifrost-coder-toolmaster",
+      "model": "qwen3-coder:30b-a3b-q4_K_M",
+      "tier": "2_qwen_coder",
+      "host": "192.168.x.50",
+      "port": 11434,
+      "tool_calls": true,
+      "_note": "Figures RE-MEASURED 2026-09-04 at the tier ACTUAL num_ctx 16384: 21.77 GB, 67.4 tok/s, 7.0s cold, 100% GPU. The previous ctx_len 131072 / vram_gb 44 / tok_s 57.9 / cold_load_s 46 were correct MEASUREMENTS taken at 131072, but tier 2_qwen_coder was lowered to 16384 on 2026-07-07 (thrash-relief B) and this row was never followed. Corroboration: measured KV is 3.40 GB per 16k on 18.37 GB of weights, so 131072 predicts 45.6 GB against the recorded 44. The Modelfile wrapper costs ZERO VRAM -- bare qwen3-coder:30b measured 21.77 GB at the same ctx.",
+      "ctx_len": 16384,
+      "vram_gb": 21.77,
+      "tok_s": 67.4,
+      "cold_load_s": 7.0,
+      "profile_tags": [
+        "agent",
+        "coding"
+      ],
+      "keep_alive_override": "30m",
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": []
+    },
+    {
+      "alias": "bifrost-t2-gemma4",
+      "model": "bifrost-t2-gemma4-16k",
+      "tier": "2",
+      "host": "192.168.x.50",
+      "port": 11434,
+      "tool_calls": true,
+      "ctx_len": 16384,
+      "vram_gb": 17.95,
+      "tok_s": 49.9,
+      "cold_load_s": 6.3,
+      "profile_tags": [
+        "evaluator",
+        "moderate",
+        "complex"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "gemma4 25.8B Q4_K_M (arch=gemma4, multimodal+thinking, Apache-2.0) on Forge Ollama :11434. tool_calls=true EMPIRICAL but ~2/3 reliable -- OPPORTUNISTIC, NOT a dependable tool fan; role = resident EVALUATOR (VERDICT judge). keep_alive_override 0->null 2026-07-07 (stays resident; Ollama LRU evicts only when Igor loads for synth/eval). == gemma4:26b blob. RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves. model string aligned to the tier 2026-09-04: SAME weights either way, blob 7121486771cb (gemma4 25.8B Q4_K_M) -- this one was a naming difference, not a wrong model."
+    },
+    {
+      "alias": "bifrost-t2-general",
+      "model": "qwen3:8b",
+      "tier": "2a_bifrost_mistral",
+      "host": "192.168.x.50",
+      "port": 11434,
+      "tool_calls": true,
+      "ctx_len": 16384,
+      "vram_gb": 9.9,
+      "tok_s": 39,
+      "cold_load_s": 2.5,
+      "profile_tags": [
+        "general"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "qwen3:8b. fleet_config tier 2a_bifrost_mistral currently points host=Forge :11434 (FORK-1B 2026-06-06). DECISIONS_NEEDED A5 recommends relocating to Bifrost :11434 (Option B) for two-agent isolation; not yet applied. Seeded from current fleet_config (Forge). RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves."
+    },
+    {
+      "alias": "bifrost-1a-hearth",
+      "model": "qwen3.5-4b-32k:latest",
+      "tier": "1a-hearth",
+      "host": "192.168.x.4",
+      "port": 11434,
+      "tool_calls": true,
+      "ctx_len": 32768,
+      "vram_gb": 3.78,
+      "tok_s": 35.3,
+      "cold_load_s": null,
+      "profile_tags": [
+        "general",
+        "coding",
+        "prose"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [
+        {
+          "date": "2026-09-18",
+          "model": "qwen3.5-4b-32k:latest",
+          "task": "stalerow: one tool of five cooperating functions (as_date, days_apart, classify, counts, quiet_ids) doing date arithmetic on string dates, graded by an 18-check seeded test",
+          "result": "FAILED 7 of 7 on this tier: C38 7/8, C46 8/9, C49 1/10, C52 6/17, C55 8/17, C58 13/17, and X30 7/18 on the exact brief and test that the t2-gemma4 tier (A30) and the Bifrost granite tool tier (HX30) each passed 18/18 on the first attempt",
+          "finding": "Multi-function date calls are past this tier's ceiling. It spends its turns reading the test piece by piece instead of fixing on the test's failures, misreads shape descriptions as literals, and runs out at 18 turns. The cause is the tier, not the contract: X30 held the contract fixed.",
+          "route": "Send multi-function date-arithmetic builds to bifrost-t2-gemma4 (Lane A) or the Bifrost granite tool lane (Lane B), not here.",
+          "evidence": "F:\\Documents\\AI_Cloud\\inhouse\\coordination\\pending\\STACK-lane-queue-2026-09-17.md, wave 19; run_brief logs 20260917_205347 .. 20260918_111801048272"
+        },
+        {
+          "date": "2026-10-08",
+          "model": "qwen3.5-4b-32k:latest",
+          "task": "U1 kb_dup_report: write one function that groups /retrieve chunks by collection and reports returned vs distinct counts. Strictly explicit brief, 5,458 B, seeded 16-case gate.",
+          "result": "ARTIFACT CORRECT, RUN UNSCORABLE, twice. Both dispatches wrote a correct module at iteration 0 (16 passed, 0 failed of 16 when the gate was run by hand) and then took four 502s at iteration 1: 'router 502 (reply swallowed, NO content) for bifrost-1a-hearth', CASCADE_EXHAUSTED. FINAL: BLOCKED(router-error), attribution ABORTED-ENVIRONMENT (scorable=False).",
+          "finding": "SINGLE ITERATION ONLY. This tier completes iteration 0 and returns empty content at iteration 1, which the router renders as a 502. The difference between the two iterations is prompt size, not task difficulty: iteration 1 carries the brief plus the system prompt plus the iteration-0 tool result. A small probe cannot detect this -- an 18-token call to the same alias through the same router returns READY at 78 tok/s, and /api/generate with num_predict=256 returns READY. Unloading and reloading the models did not help. Being strictly explicit fixes the CONTENT (measured 15/15 previously); it does not buy a second iteration.",
+          "route": "Give this tier work that finishes in ONE write, with no verify-and-rewrite round trip. If a unit needs the lane to read a gate result and correct itself, send it to bifrost-granite (Lane B) or bifrost-t2-gemma4 (Lane A). When a run here ends BLOCKED, run the seeded gate by hand before discarding the artifact -- it may be complete.",
+          "evidence": "F:\\Documents\\AI_Cloud\\inhouse\\coordination\\pending\\OUTCOME-stack1-U1-U2-dispatched-2026-10-08.md; run_brief logs 20261008_095633202279 and 20261008_100216134978; gate C:\\Temp\\r27-laneC\\gate_kb_dup_report.py"
+        }
+      ],
+      "_note": "SWITCHED 2026-09-12 (signed John): tier 1a-hearth now serves qwen3.5-4b-32k:latest @32768 on the same host. vram_gb 3.78 = /api/ps at 32768, 100% GPU, with nomic 0.30 co-resident. tok_s 35.3 = median of 3 warm calls, 254-258 generated tokens each, think off (generation rate, not prefill; prefill measured 155 tok/s on a 12.7k-token prompt). cold_load_s is null ON PURPOSE: measuring it needs an unload, and John's minimize-swaps rule keeps this model resident. The 9b figures below (5.53 / 28.2 / 26.7 @8192) are the PREVIOUS pin. T1A-RECONCILE 2026-07-17: aligned to fleet_config active_model + live (bifrost-1a-hearth-mistral:latest, the 2026-07-09 fleet-merged migration). Prior 2026-07-07 qwen3:8b->ministral-8b-tekken step was superseded by the mistral migration; registry was one migration behind. Pinned keep_alive=-1 ctx 8192 (5.9GB 100% GPU alone, MAX_LOADED=1). Daytime tool leaf + overnight Session-O council + HA. MEASURED 2026-09-04 on the host named above: unload, timed load for cold_load_s, /api/ps for vram_gb, then a second warm call with a unique nonce for tok_s (generation rate, not prefill). Not copied from any other row. This is the PRODUCTION tier-1a incumbent and it had no measured numbers at all until now. Note it generates at 65.3 tok/s against the 9b candidate's 28.2 -- more than twice the token rate -- yet loses on end-to-end task latency (113.8s vs 60.4s median, n=100 each). The candidate is faster per TASK, not per token. PROMOTED 2026-09-04: tier 1a-hearth now serves qwen3.5-9b:latest (block-52 result, signed John), so this row moves with it. Values re-stated from the 2026-09-04 campaign measurement of the 9b on Hearth at num_ctx 8192. NOTE this row was ALREADY stale before the promotion: it named bifrost-1a-hearth-mistral:latest while the tier had served ministral-8b-tekken:latest since the 2026-08-25 repoint (45dbe6b). The 2026-09-04 model-string audit did not flag it, so that audit was not exhaustive -- treat its 8 rows as a floor, not a census."
+    },
+    {
+      "alias": "bifrost-auto",
+      "model": "auto",
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "auto"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "Auto-routing alias: the classifier resolves it to a concrete tier per complexity band. No fixed backend; capability fields are not meaningful and are NOT consulted by the Phase 0b reroute guard (which inspects the resolved concrete tier, never 'bifrost-auto'). tool_calls=null -> is_tool_capable() returns False, which is correct: nothing routes tools to the abstract auto alias directly."
+    },
+    {
+      "alias": "bifrost-igor-solo",
+      "model": "gpt-oss-igor-65k",
+      "tier": "2.5-solo",
+      "host": "192.168.x.50",
+      "port": 11434,
+      "tool_calls": true,
+      "ctx_len": 65536,
+      "vram_gb": 64.47,
+      "tok_s": 36.9,
+      "cold_load_s": 19.4,
+      "profile_tags": [
+        "agent",
+        "reasoning"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "gpt-oss-igor-65k 65k-context build on Forge 96GB UMA. tool_calls=true (igor). 70GB resident -> mutually exclusive with T2.5 32k (Ollama LRU). Warm /api/chat 3.1s; cold load 28.8s. tok_s TBD (bench pending). RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves."
+    },
+    {
+      "alias": "bifrost-oss20b",
+      "model": "bifrost-panel-gpt-oss-20b-16k:latest",
+      "tier": "2_panel_oss20b",
+      "host": "192.168.x.50",
+      "port": 11434,
+      "tool_calls": true,
+      "ctx_len": 16384,
+      "vram_gb": 12.87,
+      "tok_s": 50.6,
+      "cold_load_s": 5.2,
+      "profile_tags": [
+        "agent",
+        "tools"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "CEREMONY-96 (2026-08-23). tool_calls=true from the MEASURED template (7216 chars, renders .Tools and .System), not from ollama capabilities. 13.79GB MXFP4 20.9B. tok_s and cold_load_s unmeasured -- left null rather than guessed. RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves."
+    },
+    {
+      "alias": "bifrost-toolmaster",
+      "model": "bifrost-kat-long:latest",
+      "tier": "2_kat_long",
+      "host": "192.168.x.50",
+      "port": 11434,
+      "tool_calls": true,
+      "ctx_len": 65536,
+      "vram_gb": 21,
+      "tok_s": 59.5,
+      "cold_load_s": 7,
+      "profile_tags": [
+        "agent",
+        "general"
+      ],
+      "keep_alive_override": "30m",
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "REPOINTED 2026-08-22 to bifrost-kat-long (kat-coder-v2.5, qwen35moe 34.7B) on Forge, tier 2_kat_long. Every figure here was MEASURED that day on Forge: cold load 7.2s, warm 59.5 tok/s, 21.2GB resident at 65,536 ctx -- not carried over from the previous occupant, which read 46s / 57.9 / 44GB. ctx_len is the CONFIGURED 65536 measured on the live instance, not the native 262144; the previous entry recorded a native 131072 against a fleet_config num_ctx of 16384, which is the inconsistency this replaces. Reason for the move: qwen3-coder scored 0/5 on the model matrix and 7/28 across four kilo campaigns, and produced the only MEASURED fabrication in the corpus -- it ran the command, received 4/4/30 and reported 10/30/300. kat-long scored 5/5 and 10/10. CAUTION: bifrost-coder-toolmaster has its own entry ABOVE this one and carried an IDENTICAL value block; it is still qwen3-coder and must stay that way. Reverting is one line: the bifrost-coder-toolmaster -> Tier.T2_QWEN_CODER entry in main.py's alias-to-Tier map -- grep the alias, because the LINE NUMBER MOVES. This note said main.py:1548, which as of 2026-09-04 is 'last_error = e'; the pin had drifted to 1669. Cite a symbol, not a line. HISTORY: this alias was devstral until R-14 (2026-08-12). agent_self_approved: false -- signed John 2026-08-22."
+    },
+    {
+      "alias": "bifrost-devstral",
+      "model": "devstral:latest",
+      "tier": "2_devstral",
+      "host": "192.168.x.50",
+      "port": 11434,
+      "tool_calls": false,
+      "ctx_len": 16384,
+      "vram_gb": 19.78,
+      "tok_s": 14.9,
+      "cold_load_s": 8.2,
+      "profile_tags": [
+        "general"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "devstral:latest on Forge, tier 2_devstral. tool_calls=FALSE DELIBERATELY, and that is the entire point of this entry. R-14 (2026-08-12) measured devstral failing tool use twice -- 0 tool calls, tool-call JSON printed as prose, and a fabricated symbol and path -- and repointed bifrost-toolmaster off it. That repoint left NO registry entry mapping to this tier, so _tier_tool_capability returned None (UNKNOWN); the reroute guard only reroutes AWAY from a KNOWN-incapable target, so the one tier with recorded tool-use failures was the one it could not avoid. This entry makes the measured incapability KNOWN. NOT a Router-served alias -- the alias key exists only to satisfy the registry shape; the by-tier and by-model indexes are what the guard consumes. The tier is still live in fleet_config.json:662 and still offered to the decomposer (_DECOMPOSE_TIERS, autopilot_graph.py:1213), which is why it needs a capability answer at all; retiring the tier instead remains the open alternative (see PENDING-capability-registry-2devstral-gap-2026-08-15.md section 5). tok_s/cold_load_s null -- not measured for this build, and not invented here. Added 2026-08-15, signed. RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves."
+    },
+    {
+      "alias": "bifrost-coder-kilo2",
+      "tier": "2_qwen_coder_kilo2",
+      "tool_calls": true,
+      "ctx_len": 32768,
+      "vram_gb": 25.61,
+      "tok_s": 15.1,
+      "cold_load_s": 6.6,
+      "profile_tags": [
+        "agent",
+        "coding",
+        "verifier"
+      ],
+      "keep_alive_override": "30m",
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "model": "bifrost-coder-kilo2",
+      "host": "192.168.x.50",
+      "port": 11434,
+      "_note": "v162: devstral:latest-based (Mistral/EU, Bucket A). Adversarial verifier for run_brief --verify. tool_calls=true (devstral native). ctx_len 32768; num_predict 4096 default. RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves."
+    },
+    {
+      "alias": "bifrost-cerebras",
+      "model": "llama-3.3-70b",
+      "tier": "3-cerebras",
+      "host": "api.cerebras.ai",
+      "port": 443,
+      "tool_calls": true,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "agent",
+        "coding",
+        "speed",
+        "trivial"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "v162 T3 expansion. Cerebras free ~2000 tok/s. CEREBRAS_API_KEY pending (Phase D)."
+    },
+    {
+      "alias": "bifrost-perplexity",
+      "model": "sonar",
+      "tier": "3-perplexity",
+      "host": "api.perplexity.ai",
+      "port": 443,
+      "tool_calls": false,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "research",
+        "web",
+        "current"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "v162 T3 expansion. Perplexity web-grounded sonar. PERPLEXITY_API_KEY pending (Phase D)."
+    },
+    {
+      "alias": "bifrost-cohere",
+      "model": "command-r-plus",
+      "tier": "3-cohere",
+      "host": "api.cohere.ai",
+      "port": 443,
+      "tool_calls": false,
+      "ctx_len": 128000,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "rag",
+        "document",
+        "research"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "v163 T3 expansion. Cohere command-r-plus RAG-native (OpenAI-compat /compatibility/v1). COHERE_API_KEY wired Phase B 2026-06-14. tool_calls=false per brief (fleet_config capabilities.tool_use=true -- intentional: RAG path, not agentic)."
+    },
+    {
+      "alias": "bifrost-1a-coder",
+      "model": "granite4.2-8b-16k",
+      "tier": "1a-coder",
+      "host": "192.168.x.33",
+      "port": 11434,
+      "tool_calls": false,
+      "ctx_len": 16384,
+      "vram_gb": 9.99,
+      "tok_s": 76.5,
+      "cold_load_s": 6.9,
+      "profile_tags": [
+        "coding",
+        "local"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "SWITCHED 2026-09-12 (signed John): tier 1a-coder now serves granite-4.1-8b-tekken @16384, the same runner as tier 1b; figures are granite's 09-12 measurement (9.99 GiB for 2 slots x 16384, 76.5 tok/s warm, 6.9 s reload). tool_calls left false: routing unchanged by this switch. Prior figures 8.28 / 54.7 / 12.2 were mistral-nemo:12b @8192. qwen2.5-coder:7b on Bifrost RX 9070 XT (tier 1a-coder). tool_calls=false per fleet_config capabilities.tool_use=false. RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves. model string CORRECTED 2026-09-04: verified by weight blob b559938ab7a0 (llama 12.2B Q4_0) against qwen2.5-coder:7b's 60e05f210007 (qwen2 7.6B Q4_K_M) -- DIFFERENT WEIGHTS. This completes ceremony 96fdc4e, which corrected main.py and fleet_config.json but not this file, so the disproved string survived here. The tier serves these weights through the bifrost-1a-coder Modelfile wrapper, which may bake its own system prompt or options; ollama reports details.parent_model=mistral-nemo:12b. The bare tag is kept in `model` because that field is the _by_model lookup key (capability_registry.py:45), not prose -- an annotated string there resolves to nothing. CORRECTED 2026-09-25: this row no longer serves granite-4.1-8b-tekken; model is granite4.2-8b-16k. The SWITCHED 2026-09-12 sentence above is kept as the dated record of that day. tool_calls=false remains CORRECT for this row: fleet_config tier 1a-coder (tiers[0]) capabilities.tool_use is false, so the false here mirrors the tier and is a policy choice, not staleness."
+    },
+    {
+      "alias": "bifrost-forge-t1",
+      "model": "qwen2.5-coder:7b",
+      "tier": "forge-t1",
+      "host": "192.168.x.50",
+      "port": 11434,
+      "tool_calls": true,
+      "ctx_len": 4096,
+      "vram_gb": 5.12,
+      "tok_s": 45.6,
+      "cold_load_s": 2.2,
+      "profile_tags": [
+        "forge",
+        "tool"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "phi4-mini on Forge (tier forge-t1). tool_calls=true; ~2.5GB, ~64 tok/s per fleet_config notes. RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves. model string CORRECTED 2026-09-04: resolves to blob 60e05f210007 (qwen2 7.6B Q4_K_M) -- qwen2.5-coder:7b's weights; ollama's own details.parent_model says qwen2.5-coder:7b. Forge has NO phi4 of any tag. UNRECORDED DRIFT, unlike the other seven rows: the tier was created as phi4-mini in d068f2f (2026-04-22) and NO commit has changed its model since, yet qwen2.5-coder:7b was pulled to Forge 2026-05-09 13:06 and the bifrost-forge-t1 Modelfile rebuilt from it at 19:31 the same day. The tier notes in fleet_config.json still describe phi4-mini (2.5GB, ~64 tok/s, Microsoft/US) and are now false -- correcting them is a separate protected-file ceremony. This row also CORRECTS the 96fdc4e note that qwen2.5-coder:7b is 'served by NO alias': true on Bifrost, false on the fleet. Corroborated by measurement -- 5.12 GB fits a 7.6B at Q4_K_M, not a ~3.8B phi4-mini; the old recorded 2.5 GB matched phi4-mini and was wrong. Tier forge-t1 took 0 of 18,793 routing decisions in the last 30 days. The tier serves these weights through the bifrost-forge-t1 Modelfile wrapper; ollama reports details.parent_model=qwen2.5-coder:7b. Bare tag kept in `model` for the same _by_model lookup-key reason."
+    },
+    {
+      "alias": "bifrost-igor",
+      "model": "gpt-oss-igor-65k",
+      "tier": "2.5",
+      "host": "192.168.x.50",
+      "port": 11434,
+      "tool_calls": true,
+      "ctx_len": 65536,
+      "vram_gb": 64.47,
+      "tok_s": 36.2,
+      "cold_load_s": 26.5,
+      "profile_tags": [
+        "forge",
+        "heavy"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "gpt-oss-igor-32k on Forge (tier 2.5). tool_calls=true; ~65GB resident, 35.76 tok/s per fleet_config benchmark (gpt-oss base). RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves. model string CORRECTED 2026-09-04: tier 2.5 serves blob 1194192cf2a1 (qwen3moe 30.5B Q4_K_M). gpt-oss-igor-32k does NOT exist on Forge (/api/tags shows gpt-oss-igor-65k only). The old vram 65 GB / tok_s 35.76 described gpt-oss and were wrong for this row. SUPERSEDED 2026-09-04 (signed John): tier 2.5 has been RESTORED to gpt-oss-igor-65k, so everything above about this row serving qwen3-coder describes the 2026-06-19 to 2026-09-04 window only. Current: gpt-oss-igor-65k, blob 6be6d66a3f54, 64.47 GB at ctx_len 65536, 36.2 tok/s, 26.5s cold. The alias name and the model finally agree."
+    },
+    {
+      "alias": "bifrost-interactive",
+      "model": "granite4.2-8b-16k",
+      "tier": "1b",
+      "host": "192.168.x.33",
+      "port": 11434,
+      "tool_calls": true,
+      "ctx_len": 16384,
+      "vram_gb": 9.99,
+      "tok_s": 86.1,
+      "cold_load_s": 6.9,
+      "profile_tags": [
+        "coding",
+        "interactive"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "RE-MEASURED 2026-09-12 at num_ctx 16384 with OLLAMA_NUM_PARALLEL=2 (signed John): vram_gb 9.99 = /api/ps (2 slots x 16384, 100% GPU); tok_s 76.5 = median of 3 warm calls, 300 generated tokens, /api/chat; cold_load_s 6.9 = an observed reload from page cache. Prior figures 6.68 / 56.6 / 6.8 were at 8192 with 1 slot. gemma3:12b on Bifrost (tier 1b Interactive). tool_calls=false; 59.3 tok/s per fleet_config notes. Tier mapping inferred from 1a-coder catalog + 1b label. RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves. model string CORRECTED 2026-09-04: tier 1b serves blob ed902ac9eb6a (granite 8.8B Q4_K_M); gemma3:12b is blob e8ad13eff07a (gemma3 12.2B) and exists on the host but is NOT what this alias serves. The previously recorded tok_s 59.3 was measured against gemma3:12b and has been replaced by 56.6 for granite. CORRECTED 2026-09-25 (ceremony): tool_calls changed false -> true. fleet_config tier 1b (tiers[2]) capabilities.tool_use is true, and the sibling alias bifrost-granite on the same tier, model and host already had tool_calls true; this row contradicted both. While it read false, capability_registry.py refused to route tool-calling requests here and they were rerouted off the resident tool model. Note: the neighbouring 1a-coder rows bifrost-1a-coder and bifrost-coder keep tool_calls false CORRECTLY, because fleet_config tiers[0] tool_use is false. 2026-09-25: tok_s re-measured at 86.1 tok/s (median of 3 warm /api/chat calls, num_ctx 16384, num_predict 300, unique nonce per call, warm-up discarded; rates 84.4/86.1/86.5, spread 2.1) -- the same method this note states for the 76.5 figure, so the two are comparable. Field updated 76.5 -> 86.1. The 76.5 figure dates from 2026-09-12 and the tier has since been repinned to granite 4.2, so 76.5 is most likely STALE RELATIVE TO THE REPIN rather than mistaken; the granite build behind 76.5 was not recorded and has not been verified, so that explanation is offered, not asserted. Earlier figures 56.6 and 59.3 are kept above for the same reason: each may have been correct for the model it was taken against."
+    },
+    {
+      "alias": "bifrost-npu",
+      "model": "gemma3:4b",
+      "tier": "npu",
+      "host": "192.168.x.50",
+      "port": 8003,
+      "tool_calls": false,
+      "ctx_len": 4096,
+      "vram_gb": 0,
+      "tok_s": 17.7,
+      "cold_load_s": 1.3,
+      "profile_tags": [
+        "forge",
+        "xdna2"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "gemma3:4b on Forge XDNA2 NPU :8003 (tier npu). GPU-free path (vram_gb=0); tool_calls=false; 10.7 tok/s. RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves."
+    },
+    {
+      "alias": "bifrost-t25-oss",
+      "model": "gpt-oss-igor-65k",
+      "tier": "2.5",
+      "host": "192.168.x.50",
+      "port": 11434,
+      "tool_calls": true,
+      "ctx_len": 65536,
+      "vram_gb": 64.47,
+      "tok_s": 36.2,
+      "cold_load_s": 26.5,
+      "profile_tags": [
+        "forge",
+        "t2.5"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "gpt-oss-igor-32k on Forge (tier 2.5). tool_calls=true; shares the T2.5 gpt-oss backend with bifrost-igor. RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves. model string CORRECTED 2026-09-04: shares tier 2.5 with bifrost-igor; blob 1194192cf2a1. gpt-oss-igor-32k is absent from Forge. Note the alias NAME still says oss while the tier serves qwen3-coder -- whether that binding is intended is a separate question. RESOLVED 2026-09-04 (signed John): the tier is back on gpt-oss-igor-65k, so the oss in this alias name is once again accurate. Current: blob 6be6d66a3f54, 64.47 GB at ctx_len 65536, 36.2 tok/s, 26.5s cold."
+    },
+    {
+      "alias": "bifrost-coder",
+      "model": "granite4.2-8b-16k",
+      "tier": "1a-coder",
+      "host": "192.168.x.33",
+      "port": 11434,
+      "tool_calls": false,
+      "ctx_len": 16384,
+      "vram_gb": 9.99,
+      "tok_s": 76.5,
+      "cold_load_s": 6.9,
+      "profile_tags": [
+        "coding",
+        "local"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "SWITCHED 2026-09-12 (signed John): tier 1a-coder now serves granite-4.1-8b-tekken @16384, the same runner as tier 1b; figures are granite's 09-12 measurement (9.99 GiB for 2 slots x 16384, 76.5 tok/s warm, 6.9 s reload). tool_calls left false: routing unchanged by this switch. Prior figures 8.28 / 54.7 / 12.2 were mistral-nemo:12b @8192. Direct-address duplicate of tier 1a-coder (Router main.py _model_alias_tier_pins -> Tier.T1A_CODER; same backend as bifrost-1a-coder: qwen2.5-coder:7b on Bifrost .33). tool_calls=false per fleet_config tier 1a-coder capabilities.tool_use=false. CORRECTS the bifrost_delegate.py curator note which mislabeled this mistral-nemo:12b/tool-capable. RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves. model string CORRECTED 2026-09-04: shares tier 1a-coder with bifrost-1a-coder and therefore the same weights, blob b559938ab7a0 (llama 12.2B Q4_0). Same 96fdc4e residue. Same wrapper and same lookup-key reasoning as bifrost-1a-coder. CORRECTED 2026-09-25: this row no longer serves granite-4.1-8b-tekken; model is granite4.2-8b-16k. The SWITCHED 2026-09-12 sentence above is kept as the dated record of that day. tool_calls=false remains CORRECT for this row: it shares tier 1a-coder with bifrost-1a-coder and fleet_config tiers[0] capabilities.tool_use is false."
+    },
+    {
+      "alias": "bifrost-1a-oss",
+      "model": null,
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "Source not in fleet_config; capability fields null pending alias-map location."
+    },
+    {
+      "alias": "bifrost-1a-oss-32k",
+      "model": null,
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "Source not in fleet_config; capability fields null pending alias-map location."
+    },
+    {
+      "alias": "bifrost-ha-agent",
+      "model": "bifrost-1a-overflow",
+      "tier": "1a-overflow",
+      "host": "192.168.x.4",
+      "port": 11436,
+      "tool_calls": false,
+      "ctx_len": 4096,
+      "vram_gb": 0,
+      "tok_s": 9.7,
+      "cold_load_s": 7.4,
+      "profile_tags": [
+        "overflow",
+        "home-automation"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "Router main.py _model_alias_tier_pins -> Tier.T1A_OVERFLOW (fleet_config tier 1a-overflow, Hearth Vega8 iGPU :11436, active_model bifrost-1a-overflow). tool_calls=false per capabilities.tool_use=false. Grounded during 2026-06-24 Bifrost-502 triage (alias map located). RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves."
+    },
+    {
+      "alias": "bifrost-cloud",
+      "model": null,
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "cloud",
+        "escalation-only"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": null,
+      "outcome_history": [],
+      "classification": "cloud",
+      "_note": "Cloud/remote API alias; not local-hosted. tool_calls/ctx_len unmeasured (honest gap, 2026-06-24)."
+    },
+    {
+      "alias": "bifrost-gemini",
+      "model": null,
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "cloud",
+        "escalation-only"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": null,
+      "outcome_history": [],
+      "classification": "cloud",
+      "_note": "Cloud/remote API alias; not local-hosted. tool_calls/ctx_len unmeasured (honest gap, 2026-06-24)."
+    },
+    {
+      "alias": "bifrost-groq",
+      "model": null,
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "cloud",
+        "escalation-only"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": null,
+      "outcome_history": [],
+      "classification": "cloud",
+      "_note": "Cloud/remote API alias; not local-hosted. tool_calls/ctx_len unmeasured (honest gap, 2026-06-24)."
+    },
+    {
+      "alias": "bifrost-openrouter",
+      "model": null,
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "cloud",
+        "escalation-only"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": null,
+      "outcome_history": [],
+      "classification": "cloud",
+      "_note": "Cloud/remote API alias; not local-hosted. tool_calls/ctx_len unmeasured (honest gap, 2026-06-24)."
+    },
+    {
+      "alias": "claude-haiku-4-5",
+      "model": null,
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "cloud",
+        "escalation-only"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": null,
+      "outcome_history": [],
+      "classification": "cloud",
+      "_note": "Cloud/remote API alias; not local-hosted. tool_calls/ctx_len unmeasured (honest gap, 2026-06-24)."
+    },
+    {
+      "alias": "claude-haiku-4-5[1m]",
+      "model": null,
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "cloud",
+        "escalation-only"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": null,
+      "outcome_history": [],
+      "classification": "cloud",
+      "_note": "Cloud/remote API alias; not local-hosted. tool_calls/ctx_len unmeasured (honest gap, 2026-06-24)."
+    },
+    {
+      "alias": "claude-opus-4-7",
+      "model": null,
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "cloud",
+        "escalation-only"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": null,
+      "outcome_history": [],
+      "classification": "cloud",
+      "_note": "Cloud/remote API alias; not local-hosted. tool_calls/ctx_len unmeasured (honest gap, 2026-06-24)."
+    },
+    {
+      "alias": "claude-opus-4-7[1m]",
+      "model": null,
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "cloud",
+        "escalation-only"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": null,
+      "outcome_history": [],
+      "classification": "cloud",
+      "_note": "Cloud/remote API alias; not local-hosted. tool_calls/ctx_len unmeasured (honest gap, 2026-06-24)."
+    },
+    {
+      "alias": "claude-sonnet-4-6",
+      "model": null,
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "cloud",
+        "escalation-only"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": null,
+      "outcome_history": [],
+      "classification": "cloud",
+      "_note": "Cloud/remote API alias; not local-hosted. tool_calls/ctx_len unmeasured (honest gap, 2026-06-24)."
+    },
+    {
+      "alias": "claude-sonnet-4-6[1m]",
+      "model": null,
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "cloud",
+        "escalation-only"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": null,
+      "outcome_history": [],
+      "classification": "cloud",
+      "_note": "Cloud/remote API alias; not local-hosted. tool_calls/ctx_len unmeasured (honest gap, 2026-06-24)."
+    },
+    {
+      "alias": "bifrost-embed-hearth",
+      "model": null,
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "embed"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": null,
+      "outcome_history": [],
+      "classification": "embed",
+      "_note": "Embedding model; not a chat/tool target. Perf unmeasured (honest gap, 2026-06-24)."
+    },
+    {
+      "alias": "nomic-embed-text",
+      "model": null,
+      "tier": null,
+      "host": null,
+      "port": null,
+      "tool_calls": null,
+      "ctx_len": null,
+      "vram_gb": null,
+      "tok_s": null,
+      "cold_load_s": null,
+      "profile_tags": [
+        "embed"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": null,
+      "outcome_history": [],
+      "classification": "embed",
+      "_note": "Embedding model; not a chat/tool target. Perf unmeasured (honest gap, 2026-06-24)."
+    },
+    {
+      "alias": "bifrost-granite",
+      "suited_for": ["verbatim_citation", "structured_output", "long_context_quoting", "free_text_summary"],
+      "not_suited_for": ["multi_hop_navigation", "binary_classification"],
+      "evidence": "SPECIALIZE 2026-08-29. Block 52 leg g41: output contract 96/100, citation fidelity 90/91. Navigation failure is the fleet own documented finding at main.py:762 CEREMONY-95 -- calls tools correctly, never navigates, MISSED with the answer in hand -- and is QUOTED, not re-measured; it deserves one live confirmation before anything enforces on it. See PACKET-specialize-hearth-bifrost-legs-2026-08-29.md. TRIAGE-V3 2026-08-29, n=147: fills a 5-field template 145/147 (FORM holds) but both booleans land below a lazy constant -- NAMES_HOST 113/145 vs 117/147 (recall 57%, precision 47%), HAS_COMMAND 111/145 vs 129/147 (recall 56%, precision 28%). Free text 141/147 substantive, 3 echoed the brief. An earlier 89% precision figure for HAS_COMMAND is WITHDRAWN: it was scored against a truth regex that counted any fenced block as a command, and of 88 documents it called commands, 81 had no command verb at all.",
+      "model": "granite4.2-8b-16k",
+      "tier": "1b",
+      "host": "192.168.x.33",
+      "port": 11434,
+      "tool_calls": true,
+      "ctx_len": 16384,
+      "vram_gb": 9.99,
+      "tok_s": 76.5,
+      "cold_load_s": 6.9,
+      "profile_tags": [
+        "coding",
+        "agent",
+        "tools",
+        "local"
+      ],
+      "keep_alive_override": null,
+      "quantum_amenable": false,
+      "confidence": 1.0,
+      "outcome_history": [],
+      "_note": "RE-MEASURED 2026-09-12 at num_ctx 16384 with OLLAMA_NUM_PARALLEL=2 (signed John): vram_gb 9.99 = /api/ps (2 slots x 16384, 100% GPU); tok_s 76.5 = median of 3 warm calls, 300 generated tokens, /api/chat; cold_load_s 6.9 = an observed reload from page cache. Prior figures 6.68 / 56.6 / 6.8 were at 8192 with 1 slot. IBM Granite 4.1 8B (tekken), Apache-2.0. Bifrost single pinned tool model (keep_alive=-1 via BIFROST-Granite-Repin). Native tool_calls PROVEN 2026-07-07. Bifrost 9070 XT 16GB, ~6.7GB @32k. RE-MEASURED 2026-09-04 on this row's own host at its tier num_ctx: unload, timed load for cold_load_s, /api/ps for vram_gb, then a warm call with a unique nonce for tok_s. Any previous figure for these fields is superseded; several were taken against a model the tier no longer serves."
+    }
+  ],
+  "_practices_doc": "Practice registry for 8B-30B local-model authoring (DESIGN-practice-registry-8b30b-2026-07-29). Every entry is a MEASURED failure mode from demo banks -- provenance names the bank/graph that taught it. applies_to: which authored artifact the rule constrains (checker|code|tests|decompose). family: task families it is relevant to ('any' = always). status: prompt = injected text only; gate = also enforced deterministically in the verify path (the promotion target). Selection is TAG-BASED and deterministic -- never semantic retrieval.",
+  "practices": [
+    {
+      "id": "chk-return-not-raise",
+      "applies_to": [
+        "checker",
+        "tests"
+      ],
+      "family": [
+        "cli"
+      ],
+      "text": "The entrypoint contract is main(argv: list[str]) -> int: it RETURNS exit codes and never raises. Judge returncode, never require SystemExit. Sole exception: argparse itself raises SystemExit(0) on --help/--version and SystemExit(2) on a malformed argument.",
+      "provenance": "v257 bank 6/6 test_help_flag SystemExit; v266 7/10 DID-NOT-RAISE; v274 smoke",
+      "status": "prompt+gate (convention-reconcile, subtask_graph)"
+    },
+    {
+      "id": "chk-semantic-parse-not-bytes",
+      "applies_to": [
+        "checker"
+      ],
+      "family": [
+        "any"
+      ],
+      "text": "Parse output semantically: case-insensitive regex that allows surrounding text, float compares with tolerance. Never compare exact bytes, exact whitespace, capitalization, column order, or punctuation. Assert required VALUES and exit codes only.",
+      "provenance": "v276 bank: 11 checker over-strict rejections; v274: col_1-vs-age exact-string guesses",
+      "status": "prompt"
+    },
+    {
+      "id": "chk-typical-good-example",
+      "applies_to": [
+        "checker"
+      ],
+      "family": [
+        "any"
+      ],
+      "text": "The self-validation good example must be a TYPICAL passing case, not a corner case; the bad example must be unambiguously wrong (wrong value, not wrong phrasing).",
+      "provenance": "v276 over-strict checkers passed self-validation then rejected reasonable impls",
+      "status": "prompt+gate (in-harness good/bad self-validation)"
+    },
+    {
+      "id": "chk-entrypoint-candidates",
+      "applies_to": [
+        "checker",
+        "tests"
+      ],
+      "family": [
+        "any"
+      ],
+      "text": "Never assume the entrypoint is named main. State the expected entry name, but callers must resolve it at runtime from a candidate list (declared entrypoint, spec function_name, main) and skip gracefully if none resolves.",
+      "provenance": "v277 bank: harness NameError 'main is not defined' sank s1 in 3+ takes",
+      "status": "gate (runtime globals() resolution in acceptance + snapshot harnesses)"
+    },
+    {
+      "id": "chk-tabular-row-semantics",
+      "applies_to": [
+        "checker",
+        "decompose",
+        "code"
+      ],
+      "family": [
+        "cli-csv"
+      ],
+      "text": "For tabular tasks, pin whether the header row counts with an explicit worked example (a file with a header + 3 data rows reports Rows: 3 -- data rows only, header excluded). Both the impl gate and the test must inherit this from the pinned example, never assume.",
+      "provenance": "v271-noS0: Rows-3-vs-4 assert failures; v273 smoke: 'Expected 2 rows, got 3' repair target",
+      "status": "prompt"
+    },
+    {
+      "id": "impl-parse-given-argv",
+      "applies_to": [
+        "code"
+      ],
+      "family": [
+        "cli"
+      ],
+      "text": "Parse the argv you are GIVEN: parser.parse_args(argv), never argv[1:]. Golden calls pass args-only lists (main(['data.csv'])), with no program name at index 0.",
+      "provenance": "v269 bank: SystemExit(2) on every golden call after argv[1:] convention mismatch",
+      "status": "prompt (s0-era preamble, retained)"
+    },
+    {
+      "id": "impl-errors-return-nonzero",
+      "applies_to": [
+        "code"
+      ],
+      "family": [
+        "cli"
+      ],
+      "text": "Handle errors by printing to stderr and RETURNING a nonzero int. Do not call sys.exit() inside the entrypoint; the __main__ shim owns process exit.",
+      "provenance": "v266/v274: return-vs-raise divergence between impl and test",
+      "status": "prompt+gate (acceptance checker judges rc)"
+    },
+    {
+      "id": "test-call-dont-subprocess",
+      "applies_to": [
+        "tests"
+      ],
+      "family": [
+        "any"
+      ],
+      "text": "The implementation is textually prepended into your module: call its functions directly. Never import it by any name, never invoke a CLI via subprocess/os.system/runpy, never assert on a process returncode.",
+      "provenance": "pre-v257 banks: ModuleNotFoundError + returncode asserts failed every take",
+      "status": "prompt+gate (dep-inclusive merge neutralises dep-id imports)"
+    },
+    {
+      "id": "test-zero-arg-functions",
+      "applies_to": [
+        "tests"
+      ],
+      "family": [
+        "any"
+      ],
+      "text": "Every test function takes ZERO parameters. The runner is stdlib-only: pytest fixtures (capsys, tmp_path, monkeypatch) are never injected and a parameterized test is scored as a FAILURE. Capture stdout with io.StringIO + contextlib.redirect_stdout; create fixture files with plain open().",
+      "provenance": "v264 bank graph 94335197: 4 attempts, byte-identical fixture-SKIP verdict each time",
+      "status": "prompt"
+    },
+    {
+      "id": "test-assert-only-read-names",
+      "applies_to": [
+        "tests"
+      ],
+      "family": [
+        "any"
+      ],
+      "text": "Call ONLY names that literally appear in the implementation shown to you. Do not invent internal helpers (validate_path, parse_row, compute_stats). Test observable behaviour: return value, printed output, raised exceptions.",
+      "provenance": "2026-07-26 banks: NameError validate_path every take; undefined-name gate era",
+      "status": "prompt+gate (undefined-name static gate)"
+    },
+    {
+      "id": "test-import-what-you-use",
+      "applies_to": [
+        "tests"
+      ],
+      "family": [
+        "any"
+      ],
+      "text": "DO import what your tests use (pytest, os, io, tempfile, contextlib). The no-import rule applies ONLY to the implementation under test, which is already in your namespace.",
+      "provenance": "v258 bank: NameError pytest -- the import ban over-generalised",
+      "status": "prompt"
+    },
+    {
+      "id": "test-no-exact-phrasing-asserts",
+      "applies_to": [
+        "tests"
+      ],
+      "family": [
+        "any"
+      ],
+      "text": "Assert parsed values and patterns, never exact output phrasing the spec does not pin. If the spec is silent on wording, do not assert on it -- format conformance belongs to the acceptance checker and snapshot bind, not to guessed string literals.",
+      "provenance": "v277/v279: bare AssertionError exact-string failures against checker-verified impls",
+      "status": "prompt+gate (snapshot-bind respell/drop)"
+    },
+    {
+      "id": "infra-coder-tier-fallback",
+      "applies_to": [
+        "decompose"
+      ],
+      "family": [
+        "any"
+      ],
+      "text": "Any tier hosting a code or test leg must have a cross-coder escalation fallback; a chain-end tier with no fallback turns one transient 502 into FAILED_NEEDS_HUMAN.",
+      "provenance": "v278 bank: s1-on-2.5 dead at attempt 1-2, takes 2/3/6; fixed by 2.5->2_qwen_coder map",
+      "status": "gate (escalation chain-exhausted fallback, subtask_graph)"
+    },
+    {
+      "id": "impl-no-explicit-help",
+      "applies_to": [
+        "code"
+      ],
+      "family": [
+        "cli"
+      ],
+      "text": "argparse ALREADY provides -h/--help automatically. NEVER call parser.add_argument(\"--help\") -- it raises ArgumentError: conflicting option string and every call to the entrypoint fails. A spec that mentions a --help flag is satisfied by argparse's built-in one.",
+      "provenance": "v267 bank (A15 smoke-gate origin); recurred v283 R2c: 4/4 attempts, all tiers",
+      "status": "prompt+gate (smoke-call harness catches it; this entry PREVENTS it)"
+    },
+    {
+      "id": "impl-entrypoint-module-level",
+      "applies_to": [
+        "code"
+      ],
+      "family": [
+        "any"
+      ],
+      "text": "Define the entrypoint function at MODULE level. NEVER nest def main inside if __name__ == \"__main__\": -- the module is imported by the verifier, the guard is False, the function is never defined, and every dependent test dies with NameError. The guard block should contain ONLY the call: sys.exit(main(sys.argv[1:])).",
+      "provenance": "v284 R2d: s1 hid def main inside the __main__ guard; harness skip made it a vacuous pass; s4 3/3 NameError",
+      "status": "prompt+gate (acceptance harness now FAILS on unresolvable entry)"
+    }
+  ],
+  "practices_version": 1,
+  "practices_updated": "2026-07-30"
+}

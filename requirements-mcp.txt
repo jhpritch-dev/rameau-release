@@ -1,0 +1,36 @@
+# Optional: the MCP tool loop, the bifrost-shell MCP server, and the Instructor decomposer.
+#
+# ---------------------------------------------------------------------------------------
+# THIS FILE IS NOT CO-INSTALLABLE WITH requirements.txt. MEASURED, NOT ASSUMED:
+#
+#   pip install --dry-run --ignore-installed -r requirements.txt -r requirements-mcp.txt
+#       -> ResolutionImpossible   (CPython 3.11, 2026-11-13)
+#
+# mcp 2.x requires pydantic>=2.12.0 and uvicorn>=0.31.1, while the runtime core pins
+# pydantic==2.8.2 and uvicorn==0.30.6 -- the versions actually measured in this repository.
+# Raising the core pins to satisfy this file would discard that measurement, so the conflict
+# is stated here instead of resolved by guessing.
+#
+# Install this set in its own virtual environment, or raise the core pins deliberately and
+# re-measure.
+#
+# Nothing here is needed to serve. Each import is guarded or function-level:
+#   mcp         igor_tool_loop.py   -- function-level, inside the tool loop
+#   fastmcp     bifrost_shell.py, bifrost_shell_static.py, bifrost_delegate.py
+#               -- a DIFFERENT service, built by its own Dockerfile
+#   openai,
+#   instructor  autopilot_graph.py  -- try/except around the Instructor decomposer
+#
+# Verified to resolve on its own, the same way and the same day.
+
+mcp==2.3.0                             # [unmeasured]  igor_tool_loop.py.
+                                       #   The source docstring records the private manifest as
+                                       #   mcp==2.0.0 (2026-08-12). 2.0.0 is real on PyPI, but
+                                       #   fastmcp 4.1.8 requires newer, so the two pin together at
+                                       #   2.3.0. Pinning 2.0.0 here fails to resolve.
+fastmcp==4.1.8                         # [unmeasured]  the bifrost-shell MCP server
+openai==3.3.0                          # [unmeasured]  NOT the current 3.50.0: instructor 1.17.0
+                                       #   requires jiter<0.15 while openai>=3.4 requires
+                                       #   jiter>=0.16. ResolutionImpossible was measured on the
+                                       #   obvious pin; 3.3.0 is the resolver's own answer.
+instructor==1.17.0                     # [unmeasured]  structured Decomposer output in autopilot_graph.py

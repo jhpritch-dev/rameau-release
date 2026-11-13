@@ -31,7 +31,7 @@ from resolver import (  # noqa: E402
 def test_resolves_the_canonical_variable():
     # rameau-scan: allow -- an RFC1918 fixture, and deliberately one. An operator on a
     # private LAN will configure exactly this, so the resolver MUST accept it; swapping in
-    # a documentation-range address would leave that behaviour unproven.
+    # a documentation-range address would leave that behavior unproven.
     env = {"RAMEAU_ROUTER_URL": "http://10.0.0.9:8089"}
     assert resolve("router", env=env) == "http://10.0.0.9:8089"  # rameau-scan: allow
 
@@ -142,7 +142,7 @@ def test_x_x_x_x_is_UNREACHABLE_not_unfixed():
 
     `x.x.x.x` is structurally identical to `a.b.c.d` -- four single-character non-octet
     labels, zero octets -- so no shape-based rule can refuse one and accept the other.
-    This test records the behaviour so a later reader sees a decision rather than a gap.
+    This test records the behavior so a later reader sees a decision rather than a gap.
     """
     url = "http://x.x.x.x:8089"
     assert resolve("router", env={"RAMEAU_ROUTER_URL": url}) == url
@@ -212,7 +212,7 @@ def test_the_redaction_rule_s_documented_blind_spot():
 def test_a_real_address_with_four_octets_is_NOT_mistaken_for_a_redaction():
     """Positive twin for the test above: the placeholder check must not be so eager
     that it rejects ordinary addresses."""
-    # rameau-scan: allow -- same reason as the parametrised list above: the RFC1918 entry
+    # rameau-scan: allow -- same reason as the parametrized list above: the RFC1918 entry
     # is the point of the test, since the eager-placeholder check must not reject it.
     for good in ("http://192.0.2.4:8089", "http://10.1.2.3:80",
                  "http://127.0.0.1:11434", "https://router.example.com"):
@@ -295,7 +295,16 @@ def test_no_example_is_itself_a_private_address():
 def test_no_canonical_variable_names_a_machine_or_an_accelerator():
     """The release must not ask an operator to set a variable named after a host on
     somebody else's network."""
-    banned = ("HEARTH", "FORGE", "BIFROST", "VEGA", "ANVIL", "WIN10SERVER")
+    # The five fleet LABELS are this project's own vocabulary and are written throughout
+    # the public release, so naming them here discloses nothing. A machine HOSTNAME is a
+    # different thing, and one used to sit in this tuple -- in a test whose purpose is to
+    # stop machine names reaching the release. It now comes from the operator's
+    # RAMEAU_SCAN_EXTRA_HOSTS, the same never-committed mechanism the scanner uses.
+    banned = ("HEARTH", "FORGE", "BIFROST", "VEGA", "ANVIL") + tuple(
+        n.strip().upper()
+        for n in os.environ.get("RAMEAU_SCAN_EXTRA_HOSTS", "").split(",")
+        if n.strip()
+    )
     for name, spec in ENDPOINTS.items():
         up = spec.env.upper()
         offenders = [b for b in banned if b in up]

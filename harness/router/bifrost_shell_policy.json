@@ -1,0 +1,65 @@
+{
+  "_version": "Docker-MCP-2-A 2026-05-20",
+  "_doc": "Policy gate for bifrost-shell MCP tools. A: READ + ANALYZE enabled, WRITE + EXECUTE present-but-denied. B: flip enabled:true on WRITE/EXECUTE + fill enforcement bodies (write allowlist; subprocess jail with resource limits, no network, scratch cwd). Pattern: Session O coevolution Policy layer applied to MCP tool execution.",
+  "classes": {
+    "READ": {
+      "enabled": true,
+      "note": "Container-bounded reads (no host FS in A); network-dependent READ tools fail at runtime when container has no network \u2014 not a policy denial."
+    },
+    "ANALYZE": {
+      "enabled": true,
+      "note": "ruff + mypy on inline code; no FS or network deps; safest subset."
+    },
+    "WRITE": {
+      "enabled": false,
+      "note": "Docker-MCP-2-B: enable + fill enforcement (allowlist of writable paths via env var; reject writes outside)."
+    },
+    "EXECUTE": {
+      "enabled": false,
+      "note": "Docker-MCP-2-B: enable + fill enforcement (subprocess jail: resource limits, no network, scratch cwd, timeout already exists)."
+    },
+    "DELEGATE": {
+      "enabled": true,
+      "note": "Network call to leaf via bifrost-delegate MCP. Lower risk than EXECUTE."
+    },
+    "COMPUTE": {
+      "enabled": false,
+      "note": "2026-08-04: INERT BY OPERATOR DECISION. The quantum leg was retired 2026-07-11 (operator-signed ceremony), but the tool is deliberately KEPT registered so the capability and its proven SSH-to-Forge pattern are not lost. Sole member: quantum_circuit_test. Re-enable by flipping this flag -- no code change needed."
+    },
+    "SANDBOX": {
+      "enabled": true,
+      "note": "Arbitrary code, but isolated-by-construction: runs in the k3d `sandbox` namespace which enforces a deny-all NetworkPolicy (no egress) + ResourceQuota + continuous sandbox_monitor.py auto-quarantine (Phases 1-3, proven). Fail-closed: the payload runs only AFTER egress deny-all is confirmed (guards the kube-router reconcile race), and the pod is always deleted. This IS the isolated-execution jail the EXECUTE class lacks -> enabled where EXECUTE is denied. Lower risk than host EXECUTE; mirrors the COMPUTE pattern (isolated, bounded)."
+    },
+    "READ_FS": {
+      "enabled": true,
+      "note": "2026-08-04 (audit C2/C3): filesystem reads by caller-supplied path, scoped via _sb_resolve. Split out of READ so host-FS reads can be disabled without also disabling the network status tools. READ's old note claimed 'container-bounded reads (no host FS in A)' -- that stopped being true when bifrost-investigate.yaml began mounting three host paths, including sandbox-kubeconfig at /kc."
+    },
+    "WEB": {
+      "enabled": true,
+      "note": "2026-10-08 (Ceremony 107, signed John, option b): outbound HTTP to the SearXNG instance for public-web lookups. Split out of READ -- deliberately NOT folded into it -- so third-party egress can be revoked in one move without also disabling kb_search, router_status and router_health. Sole member: web_search. Mirrors the READ_FS split of 2026-08-04. Granted to igor only; leaf was explicitly NOT granted it (John 2026-10-08)."
+    }
+  },
+  "tools": {
+    "run_ruff": "ANALYZE",
+    "run_mypy": "ANALYZE",
+    "run_checks": "ANALYZE",
+    "router_health": "READ",
+    "router_status": "READ",
+    "git_status": "READ",
+    "git_log": "READ",
+    "kb_search": "READ",
+    "autopilot_status": "READ",
+    "read_file": "READ_FS",
+    "grep_repo": "READ_FS",
+    "list_dir": "READ_FS",
+    "git_read": "READ_FS",
+    "write_file": "WRITE",
+    "run_python": "EXECUTE",
+    "autopilot_submit": "EXECUTE",
+    "delegate_subtask": "DELEGATE",
+    "quantum_circuit_test": "COMPUTE",
+    "run_in_sandbox": "SANDBOX",
+    "tool_output_page": "READ",
+    "web_search": "WEB"
+  }
+}

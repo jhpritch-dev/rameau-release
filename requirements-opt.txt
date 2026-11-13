@@ -1,0 +1,31 @@
+# Optional runtime features.
+#
+# Every import below is guarded in the source with try/except ImportError. That guard is the
+# evidence these are optional -- not a judgment call made here. The router starts, serves and
+# cascades without this file.
+
+trafilatura==2.3.1                     # [unmeasured]  /fetch content extraction.
+                                       #   main.py: `try: from trafilatura import extract`, and the
+                                       #   except branch answers "trafilatura not installed in Router
+                                       #   image". That error string is evidence the deployed image
+                                       #   did NOT install it. Pulls lxml, justext, courlan, htmldate.
+# DELIBERATELY ABSENT: langgraph-checkpoint-sqlite
+#
+# Durable autopilot checkpoints would come from this package, and autopilot_graph.py already
+# imports langgraph.checkpoint.sqlite behind a try/except ModuleNotFoundError that falls back
+# to an in-memory saver. So it reads like a safe optional extra. It is not, and the reason was
+# MEASURED on 2026-11-13 rather than reasoned about:
+#
+#   pip install langgraph==1.2.21 langgraph-checkpoint-sqlite==3.1.3
+#   python -m pytest -q      ->  38 collection errors, every one of them
+#
+#     TypeError: Invalid checkpointer provided. Expected an instance of
+#     `BaseCheckpointSaver`, `True`, `False`, or `None`. Received _GeneratorContextManager.
+#
+# In 3.x, SqliteSaver.from_conn_string() returns a CONTEXT MANAGER; the call site passes its
+# result straight to StateGraph.compile(checkpointer=...). The guard cannot help: it catches
+# ModuleNotFoundError, and this is a TypeError raised at graph-compile time. So INSTALLING the
+# optional extra breaks the router, where omitting it merely costs durability.
+#
+# Fix the call site to enter the context manager, then pin this package and re-measure. Until
+# then a pin here would hand a new installation a one-line way to break its own deployment.

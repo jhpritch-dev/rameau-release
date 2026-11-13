@@ -157,7 +157,7 @@ RULES: list[tuple[str, re.Pattern[str], str]] = [
         re.compile(r"\b169\.254\.\d{1,3}\.\d{1,3}\b"),
         "a 169.254/16 link-local address literal",
     ),
-    # R4 -- reserved internal DNS suffixes. All of these are generic and standardised;
+    # R4 -- reserved internal DNS suffixes. All of these are generic and standardized;
     # none is specific to a deployment. Two exemptions are applied in scan_text():
     #   * host.docker.internal -- Docker's OWN documented name for the host as seen from a
     #     container. It appears 26 times in this tree and in essentially every Docker
@@ -173,6 +173,29 @@ RULES: list[tuple[str, re.Pattern[str], str]] = [
             re.I,
         ),
         "a hostname on a reserved internal DNS suffix",
+    ),
+    # R9 -- a user home directory path. Added 2026-11-13, after the gate read clean over a
+    # tree carrying the operator's account name in ten files: it was looking for addresses
+    # and reserved suffixes, and an account name is neither.
+    #
+    # THE SHAPE, NOT THE NAME. `\\Users\\<x>` and `/home/<x>` are the two places an account
+    # name appears in a path on the platforms this project runs on. Matching the shape is
+    # what lets this rule be published; a rule carrying the name would disclose the thing it
+    # is meant to prevent, which is the same argument the module header already makes about
+    # hostnames.
+    #
+    # NOT generalized to every drive-absolute path. Counted over this tree before choosing:
+    # a `[A-Za-z]:\\...` rule hits 94 times in 35 files, nearly all of them prose about where
+    # a file lives, and a rule that needs 94 exemptions teaches the reader to skim them.
+    (
+        "user-home-path",
+        re.compile(
+            r"(?:[A-Za-z]:[\\/]Users[\\/]|(?<![A-Za-z0-9_])/(?:home|Users)/)"
+            r"(?!(?:Public|Default|All\ Users|Shared)(?![A-Za-z0-9._-]))"
+            r"[A-Za-z0-9._-]{1,64}",
+            re.I,
+        ),
+        "a user home directory path, which carries an account name",
     ),
     # R6 -- credentials carried in a URL.
     (
@@ -206,6 +229,13 @@ _BEARER = re.compile(
 )
 
 ALLOW_MARKER = "rameau-scan: allow"
+
+# Rules a BARE marker may not excuse -- it has to name them: `rameau-scan: allow <rule>`.
+# allowed_at() reaches up through an entire comment block, which is right for an address
+# discussed in surrounding prose and wrong for an account name that merely shares the
+# paragraph. Measured 2026-11-13: a marker written for a Docker bridge subnet excused a user
+# home path 17 lines below it and the file reported clean.
+_STRICT_RULES = frozenset({"user-home-path"})
 
 
 def _charclass(s: str) -> str:
@@ -300,13 +330,67 @@ def _extra_hosts() -> re.Pattern[str] | None:
     return re.compile(r"\b(?:%s)\b" % "|".join(re.escape(n) for n in names), re.I)
 
 
+# JS-family sources, where an unquoted dotted name is ambiguous in a way it is not in
+# YAML or Python.
+_JS_SUFFIXES = (".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx")
+
+
+def _in_quoted_span(line, idx):
+    """True when line[idx] sits inside a '...', "..." or `...` span opened on this line.
+
+    Deliberately a LINE scanner and not a parser. It tracks one quote character at a time
+    and honours a backslash escape, which is all that is needed to tell a quoted host from
+    a bare property access. A template literal opened on an EARLIER line reads as
+    unquoted here, and
+    that direction is the safe one for a scanner whose job is to over-report: an
+    unrecognised string is still scanned, never skipped.
+    """
+    q = None
+    esc = False
+    for i, ch in enumerate(line):
+        if i >= idx:
+            break
+        if esc:
+            esc = False
+            continue
+        if ch == "\\":
+            esc = True
+            continue
+        if q is None:
+            if ch in "\"'`":
+                q = ch
+        elif ch == q:
+            q = None
+    return q is not None
+
+
 def scan_text(path: str, text: str, extra: re.Pattern[str] | None) -> tuple[list[dict], int]:
     """Return (findings, allowed_count) for one file's text."""
     lines = text.splitlines()
     findings: list[dict] = []
     allowed = 0
 
-    def allowed_at(idx: int) -> bool:
+    def _marker_rules(line: str) -> tuple[str, ...]:
+        """Rule names written after the marker, before any `--` prose tail.
+
+        `rameau-scan: allow`                       -> ()  a bare marker
+        `rameau-scan: allow user-home-path -- why` -> ("user-home-path",)
+
+        The `--` tail is how every annotation already in this tree is written, so reading
+        the rule list only up to it leaves all of them bare and unchanged.
+        """
+        tail = line.split(ALLOW_MARKER, 1)[1].split("--", 1)[0]
+        return tuple(t for t in tail.replace(",", " ").split() if t)
+
+    def _excuses(line: str, rule: str) -> bool:
+        if ALLOW_MARKER not in line:
+            return False
+        named = _marker_rules(line)
+        if rule in named:
+            return True
+        return not named and rule not in _STRICT_RULES
+
+    def allowed_at(idx: int, rule: str) -> bool:
         """The marker applies to its own line, or to the first code line after the
         contiguous comment block that carries it.
 
@@ -314,15 +398,20 @@ def scan_text(path: str, text: str, extra: re.Pattern[str] | None) -> tuple[list
         unrelated code below it. The comment block is the natural unit -- a reviewer
         reading the annotation sees exactly what it excuses -- and it is bounded by the
         first non-comment, non-blank line going up.
+
+        THE BLOCK REACH IS ALSO THE HAZARD, which is why `rule` is a parameter. A block can
+        be long, and a marker written about one finding sits above everything else in it.
+        For a rule in _STRICT_RULES the marker must name the rule; for every other rule the
+        behaviour is exactly what it was.
         """
-        if ALLOW_MARKER in lines[idx]:
+        if ALLOW_MARKER in lines[idx] and _excuses(lines[idx], rule):
             return True
         j = idx - 1
         while j >= 0:
             stripped = lines[j].strip()
             if not (stripped == "" or stripped.startswith("#") or stripped.startswith("//")):
                 return False
-            if ALLOW_MARKER in lines[j]:
+            if ALLOW_MARKER in lines[j] and _excuses(lines[j], rule):
                 return True
             j -= 1
         return False
@@ -359,6 +448,32 @@ def scan_text(path: str, text: str, extra: re.Pattern[str] | None) -> tuple[list
                 if rule == "internal-dns-suffix" and m.start() > 0 \
                         and line[m.start() - 1] == ".":
                     continue
+                # AN UNQUOTED DOTTED NAME IN A JS-FAMILY SOURCE IS A PROPERTY ACCESS.
+                # `metrics.local`, `node.lan`, `props.corp` are ordinary JS  # rameau-scan: allow
+                # and name nobody's fleet, but R4 cannot tell them from a real  # rameau-scan: allow
+                # `bifrost.lan` by  # rameau-scan: allow
+                # shape -- the two are character-for-character the same construct. Until the
+                # portal there was no JavaScript in this tree and the rule had never met the
+                # case: the first .jsx file scanned produced eight findings, of which FIVE
+                # were property accesses.
+                #
+                # FIXED IN THE RULE RATHER THAN ANNOTATED, for the reason recorded a few
+                # lines above about `.env.local`: five `rameau-scan: allow` markers would
+                # have described a rule defect as five deliberate literals, and the next
+                # .jsx file in the tree would have failed in exactly the same way.
+                #
+                # THE EXEMPTION IS NARROW AND ITS RESIDUAL IS STATED RATHER THAN ASSERTED
+                # AWAY. It applies only to JS-family extensions, and only where the match is
+                # NOT inside a quoted span -- so every hostname that could actually be
+                # requested still fires, because a host has to be a string before anything
+                # can fetch it. What it gives up is a bare hostname written in a `//`
+                # comment in a .jsx file. That is prose rather than an endpoint, and it is
+                # the price of not flagging every property access in the UI. The tests
+                # beside this assert BOTH directions: quoted still fires, unquoted does not.
+                if rule == "internal-dns-suffix" \
+                        and path.lower().endswith(_JS_SUFFIXES) \
+                        and not _in_quoted_span(line, m.start()):
+                    continue
                 hits.append((rule, why, m.start() + 1, val))
 
         # R8 -- bearer/basic with an opaque value, excluding this project's mask sentinel.
@@ -377,10 +492,16 @@ def scan_text(path: str, text: str, extra: re.Pattern[str] | None) -> tuple[list
 
         if not hits:
             continue
-        if allowed_at(i):
-            allowed += len(hits)
-            continue
-        for rule, why, col, val in hits:
+        # PER HIT, not per line: exemption now depends on the rule, and two rules can fire
+        # on one line. Exempting the line as a unit would let a marker naming one rule carry
+        # the other one with it -- the same over-reach this change exists to remove.
+        kept = []
+        for hit in hits:
+            if allowed_at(i, hit[0]):
+                allowed += 1
+            else:
+                kept.append(hit)
+        for rule, why, col, val in kept:
             findings.append(
                 dict(rule=rule, why=why, path=path, line=i + 1, col=col,
                      length=len(val), charclass=_charclass(val))
@@ -437,7 +558,7 @@ def main(argv: list[str]) -> int:
 
     for rel, raw in blobs:
         # Binary files are scanned as latin-1 rather than skipped. Skipping by extension
-        # is precisely the gitleaks behaviour that leaves a whole file class unread --
+        # is precisely the gitleaks behavior that leaves a whole file class unread --
         # measured on this repository's nine .woff2 faces, which gitleaks does not read by
         # extension OR by content, and which sit on a path the portal image serves.
         text = raw.decode("utf-8", "replace") if b"\0" not in raw[:8192] \

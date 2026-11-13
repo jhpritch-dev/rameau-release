@@ -9,7 +9,7 @@ a public issue.
 Please do not open a public issue for a suspected vulnerability, and please do not include a
 working exploit against a third party's deployment.
 
-Expect an acknowledgement within a week. This is a small project with one maintainer; a
+Expect an acknowledgment within a week. This is a small project with one maintainer; a
 realistic timeline is stated rather than an aspirational one.
 
 ## Supported versions

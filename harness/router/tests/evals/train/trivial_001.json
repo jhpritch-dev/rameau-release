@@ -1,0 +1,13 @@
+{
+  "id": "trivial_001",
+  "band": "TRIVIAL",
+  "assigned_tier": "T1A",
+  "description": "Write a function that returns the Fibonacci number at position n",
+  "prompt": "Write a Python function `fibonacci(n: int) -> int` that returns the nth Fibonacci number (0-indexed). fibonacci(0)=0, fibonacci(1)=1, fibonacci(10)=55. Include a test_fibonacci() function that asserts correctness for n=0,1,5,10.",
+  "expected_behavior": "fibonacci(0) returns 0, fibonacci(1) returns 1, fibonacci(10) returns 55, fibonacci(5) returns 5",
+  "validation_criteria": {
+    "l3": "Code parses without syntax errors",
+    "l4": "test_fibonacci() passes all assertions",
+    "l5": "Function handles edge cases correctly and uses efficient implementation"
+  }
+}

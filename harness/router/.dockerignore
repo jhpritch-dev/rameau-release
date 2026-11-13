@@ -1,0 +1,190 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.*
+*.db
+*.sqlite
+models/
+skills/
+*.log
+.git/
+.pytest_cache/
+data/
+.gitignore
+README.md
+*.md
+tests/
+patch-*.py
+mode.json
+
+# v114.10 PROGRESSIVE-SKILLS-1: re-include skills/ runtime registry
+# (overrides earlier skills/ and *.md exclusions; Docker .dockerignore last-match-wins)
+!skills/
+!skills/**
+
+# 2026-07-14 build-hygiene: keep dev-scratch out of the production image.
+# The sweep found 16 of these shipped into live-v214 via `COPY . .` (bloat + attack surface).
+bench_*.py
+analysis_*.py
+_inspect_*.py
+_dispatch_inspect_*.py
+
+# ============================================================================
+# 2026-07-14 comprehensive build-hygiene (source-provenance sweep, step 4 follow-on).
+# The live v214 image was shipping ~23 dev/ops dirs, hundreds of *.bak files, a 14MB
+# .jar, BifrostPortal.jsx, every Dockerfile, and deploy scripts into PRODUCTION.
+# SAFE by construction: excludes ONLY provably-non-runtime content. Real source (*.py),
+# runtime config (fleet_config.json, capability_registry.json, bifrost_shell_policy.json,
+# executors.json, capability_profiles.json) and package dirs (backends/ sandbox/ skills/
+# scripts/ tools/) are UNTOUCHED. The 130 excluded scratch .py were verified: none has a
+# .pyc in the running pod AND none is imported by any kept source (grep-clean).
+# NOTE: a pure `*`-floor whitelist is the ideal end-state -- deferred to the frozen
+# rebuild where the minimal include-set can be smoke-tested (see handoff note).
+# ============================================================================
+
+# --- backups / superseded snapshots (never runtime) ---
+*.bak
+*.bak-*
+*.pre-*bak
+*.pre-*-bak
+*.pre-training
+*.pre-numctx-bak
+*.pre-routervt-bak
+*.broken-*
+*.v72_backup
+*_backup
+*.block*.bak
+decisions.md.bak-*
+
+# 2026-09-04 (K-4). The patterns ABOVE match NOTHING. Measured against the running v410 image:
+# 63 backup files shipped and zero were excluded, for three separate reasons --
+#   42 files  `<name>.pre-<label>` (e.g. autopilot_graph.py.pre-v74). Every .pre- pattern above
+#             requires a TRAILING "bak" (`*.pre-*bak`, `*.pre-*-bak`), and these do not have one.
+#   18 files  live in a SUBDIRECTORY (backends/ollama.py.bak-...). In .dockerignore `*` does not
+#             cross `/`, unlike .gitignore, so a bare `*.bak-*` is root-only. This is the cause
+#             most likely to recur, because the pattern LOOKS right.
+#    3 files  `.bak2`, `.bak3`, `.bak4` -- `*.bak` matches only exactly ".bak".
+# Verified with excluded_from_image() from dirtycheck.py (the matcher that decides the build's
+# -dirty stamp, 19 tests) over the full 363-file shipped list: catches 62 of 63, and newly
+# excludes ZERO real files. The 63rd is under skills/, see the note at the end of this file.
+**/*.bak*
+**/*.pre-*
+**/*.broken-*
+**/*_backup
+
+# --- dev/ops directories baked into the image (not runtime) ---
+.claude/
+.github/
+.gitnexus/
+.kilo/
+.mypy_cache/
+.ruff_cache/
+_readtest/
+backups/
+dispatch-journal/
+evals/
+k8s/
+logs/
+mcp-catalog/
+modelfiles/
+patches/
+phase2/
+plans/
+rawmark/
+reports/
+rfp-outputs/
+scratch/
+sessions/
+systemd/
+verify_gates/
+
+# --- non-runtime file types (build/ops/portal artifacts) ---
+*.jar
+*.jsx
+*.bat
+*.jsonl
+*.csv
+Dockerfile*
+docker-compose*
+*.yaml
+*.ps1
+*_results.json
+ap_test.json
+test_forge.json
+Temp_kilo2_smoke.json
+sft_test.jsonl
+output.csv
+
+# --- dev-scratch .py (verified never-imported in prod + unreferenced by kept source) ---
+patch_*.py
+patch-*.py
+fix_*.py
+fix2.py
+smoke_*.py
+test_*.py
+qaoa_*.py
+rag_query*.py
+rag_recheck.py
+rag_collections_probe.py
+run_benchmark_*.py
+save_safety_*.py
+retest_gate.py
+tune_gate.py
+verify_gate.py
+write_rfp_script.py
+phase0_embed_probe.py
+v113_smoke_tests.py
+opencode_smoke.py
+worktree_remove_clean.py
+worktree_status_check.py
+wait_for_handoff.py
+fp1_acceptance_tests.py
+gen_capability_profiles.py
+harness_setup.py
+benchmark_forge.py
+token_offload_report.py
+block2_4_opener.py
+block5_6_opener.py
+add_cleanup_step.py
+pk_record_backlog_patch.py
+pk_record_mp_patch.py
+debug_strip.py
+debug_tier.py
+
+# Re-assert the skills runtime registry include LAST (last-match-wins) so nothing above drops it.
+!skills/
+!skills/**
+
+# 2026-08-03: keep the restored demo-bank harness tracked in git but OUT of the prod image.
+scratchpad/
+
+# 2026-09-03: three modules that COPY . . sweeps into the image although .gitignore already
+# excludes them (lines 63, 72, 73) and NOTHING imports them -- verified 0 importers, no
+# literal credentials. They fail the criterion .gitignore sets for itself: its 2026-08-12
+# PROVENANCE FIX un-ignored four files BECAUSE main.py imports them at runtime. These are not
+# imported by anything. Excluding them stops shipping code nothing runs and makes the image
+# .py count match the git-tracked set, which is what the source_digest baseline records.
+bifrost_telegram.py
+format_stress_guard.py
+tools/warmup.py
+
+# 2026-09-04 (K-4), KNOWN AND LEFT ALONE: skills/router/SKILL.md.bak-ps1-20260519-200928 still
+# ships. `!skills/**` above re-includes everything under skills/, and Docker is last-match-wins,
+# so excluding it means putting `skills/**/*.bak*` AFTER that re-assertion -- deliberately
+# breaking the invariant its own comment exists to protect ("re-assert LAST so nothing above
+# drops it"). Risking the skills runtime registry falling out of a production image to remove
+# one 4 KB stale file is not a good trade. Delete the file at source instead if it bothers you.
+
+# ALSO CORRECTED 2026-09-04: __pycache__ is NOT shipped. The dirs visible in a running pod are
+# written by Python at import time -- their mtimes are one second after container start, while
+# real shipped source carries the build mtime. `__pycache__/` and `*.pyc` above are working
+# correctly and need no change; an audit that counts files inside a RUNNING container is
+# measuring the runtime, not the image.
+
+# Protected-file ceremonies write <file>.ceremonyN-preimage-YYYYMMDD next to the
+# file. Those match NONE of the backup patterns above (*.bak, *_backup, **/*.bak*),
+# so before 2026-09-22 every one of them reached the build context and made the
+# build -dirty -- an image matching NO commit. Caught by dirtycheck.py on v454;
+# the tempting wrong answer there is -Force, which ships exactly that image.
+*-preimage-*

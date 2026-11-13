@@ -5,24 +5,32 @@ in front of several locally hosted models of different sizes, classifies each in
 request, and routes it to the smallest tier that can answer it -- falling through a cascade
 when a tier is unavailable.
 
-**Status: pre-release. This repository is scaffolding.** The source tree has not landed yet.
-See [RELEASE-SCOPE.md](RELEASE-SCOPE.md) for what v0.1 will and will not contain, and why
-the repository is being assembled in this order.
+**Status: pre-release, and the source has landed.** Both build contexts now exist --
+`services/router/` (29 files) and `services/portal/` (28 files) -- alongside the test
+harness under `harness/`. See [RELEASE-SCOPE.md](RELEASE-SCOPE.md) for what v0.1 does and
+does not contain, and why the repository was assembled in this order.
 
-**Can you run it today? No.** The Compose stack is written and parses, but neither image can
-be built: both build contexts (`services/router/`, `services/portal/`) are directories that
-do not exist in this repository yet. `docker compose build` stops with
-`unable to prepare context: path ".../services/router" not found`. What is runnable today is
-one module and its tests. [How to deploy the stack](#how-to-deploy-the-stack) documents the
-real path end to end and marks exactly which steps work now.
+**Can you run it today? Not yet, and the honest answer has changed shape.** Until the source
+landed, `docker compose build` could not reach a single instruction in either Dockerfile: it
+stopped while preparing a context that did not exist. That is no longer the failure mode --
+both contexts are present, so the build now reaches the Dockerfiles and CI's image job
+becomes a real gate rather than a skipped one. **Neither image has yet been observed to
+build.** That is the next thing to find out, not something this file will assert ahead of
+the evidence.
+
+What IS measured today: 1,968 tests pass against the harness (114 test files), the
+credential scanner reads clean over every file in the tree with a planted-address control
+proving it can still fire, and the Compose stack parses.
+[How to deploy the stack](#how-to-deploy-the-stack) documents the real path end to end and
+marks which steps are verified.
 
 Licensed under the [Apache License 2.0](LICENSE).
 
 ## Why this exists
 
-Most routing layers assume a cloud provider and optimise for cost per token. RAMEAU assumes
+Most routing layers assume a cloud provider and optimize for cost per token. RAMEAU assumes
 the opposite: the models are already running on hardware you own, the marginal cost of a
-token is electricity, and the thing worth optimising is **latency against answer quality**.
+token is electricity, and the thing worth optimizing is **latency against answer quality**.
 A request that a 4B model answers correctly should not wait on a 30B model.
 
 That inverts several design choices:
@@ -73,7 +81,7 @@ File-level, because "working" is a claim and a file is checkable.
 
 **`shared/resolver.py` -- the one real module (654 lines, stdlib only).** Every endpoint in
 its registry is resolved here, from the environment, with no fallback to a literal address.
-Three properties, all of them behaviours rather than intentions:
+Three properties, all of them behaviors rather than intentions:
 
 This paragraph claimed "and nowhere else" until 2026-11-02, and that was too strong. The
 session assembling the release reports that `fleet_config.json` -- one of the four runtime
@@ -148,7 +156,7 @@ gitleaks by default, which is how the first version of that control failed. The 
 byte-compiles, runs the tests, regenerates and diffs both env examples, asserts the
 in-network profile contains no loopback, and validates both compose files by path -- with a
 control that asserts the stack still **refuses** to resolve when `RAMEAU_OLLAMA_URL` is
-unset. Its loopback check and its licence check each run against a planted match and a planted
+unset. Its loopback check and its license check each run against a planted match and a planted
 near-miss before they are pointed at the real file, through the same function rather than a
 retyped copy of the pattern -- a control that retypes the pattern tests a different pattern. The image job builds both images **through compose**, because the thing most likely to
 be wrong at step 5 is the wiring rather than either Dockerfile -- each service's context is
@@ -225,8 +233,8 @@ than waving it through.
 
 **The rest of the scaffolding.** Apache-2.0 `LICENSE`; `SECURITY.md`, which routes reports
 through GitHub private vulnerability reporting and states a realistic one-week
-acknowledgement rather than an aspirational one; a `.gitignore` written as the second of
-three credential layers; `.gitattributes` normalising the tree to LF because it is assembled
+acknowledgment rather than an aspirational one; a `.gitignore` written as the second of
+three credential layers; `.gitattributes` normalizing the tree to LF because it is assembled
 on Windows and runs on Linux; `RELEASE-SCOPE.md` as the scope contract; and
 `deploy/`, which is documentation and configuration that is correct for the point at which
 the source lands -- see the deployment section below for what that means today.
@@ -247,7 +255,7 @@ scaffolding, is done. The remaining five:
    RELEASE-SCOPE.md and is not negotiable -- a credential committed to a private repository
    has still left the machine it was on, and no later rewrite un-sends it.
 4. **The source lands,** assembled from the allowlist into a history that begins here.
-5. **Containerisation.** The Compose stack and the offline profile. The files in `deploy/`
+5. **Containerization.** The Compose stack and the offline profile. The files in `deploy/`
    are written against the source that has not arrived; this step is what makes them build.
 6. **Hardening and release.** Documentation, an independent final scan, then the tag.
 
@@ -272,7 +280,7 @@ the worse of the two.
 ### A required `NOTICE` file
 
 Nine bundled `.woff2` faces (Instrument Sans, Instrument Serif, JetBrains Mono) and their
-three licence texts are in the release set under **SIL OFL 1.1**. That is compatible with
+three license texts are in the release set under **SIL OFL 1.1**. That is compatible with
 Apache-2.0 but is **not** Apache-2.0, so the third-party attribution has to be stated rather
 than implied by the root `LICENSE`. The file does not exist yet because the fonts have not
 landed; it goes in with them.
@@ -377,12 +385,12 @@ services -- but not in the same way, and the portal's is worse than this README 
   config-load time, so an unresolvable one is fatal: `[emerg] host not found in upstream`,
   and the container exits and crash-loops rather than serving anything. This README
   previously said the SPA kept serving while the panels sat empty. That is request-time
-  behaviour, and it is wrong for a literal upstream -- measured by running the pinned
+  behavior, and it is wrong for a literal upstream -- measured by running the pinned
   `nginx:alpine` against a literal name that does not resolve.
 
 The portal's `nginx.conf` is **not in this repository** -- it arrives with the unassembled
 `services/portal/` build context. What the correction rests on is therefore worth stating
-precisely, because the two parts are not equally strong. The nginx behaviour was
+precisely, because the two parts are not equally strong. The nginx behavior was
 **reproduced here**, by running the pinned `nginx:alpine` against a literal upstream name
 that does not resolve and watching the container exit; that is a measurement, not a report.
 What the assembling session supplied is only *which* routes are literal: of eight live
@@ -586,7 +594,7 @@ Measured on this tree on 2026-11-02, Docker 29.4.2 / Compose v5.1.3.
 | `python shared/resolver.py --write-examples` | **works.** Regenerates both example env files. |
 | `docker compose -f deploy/compose.yaml config` | **works.** Parses and resolves, with `RAMEAU_OLLAMA_URL` set. |
 | `docker compose -f deploy/compose.yaml -f deploy/compose.no-egress.yaml config` | **works.** Parses and resolves. |
-| the same, with `RAMEAU_OLLAMA_URL` unset | **fails, correctly.** `required variable RAMEAU_OLLAMA_URL is missing a value`. This is the designed behaviour and CI asserts it. |
+| the same, with `RAMEAU_OLLAMA_URL` unset | **fails, correctly.** `required variable RAMEAU_OLLAMA_URL is missing a value`. This is the designed behavior and CI asserts it. |
 | `docker compose build` (either image) | **blocked.** |
 | `docker compose up` | **blocked.** |
 | copying the four runtime JSON files | **works, and does not get you a running router.** `deploy/config/*.example.json` exist as placeholders; their schemas have not been derived. |
@@ -617,7 +625,7 @@ multi-host setup. The private deployment is not published and its history is not
 repository's history: this tree is assembled from an allowlisted, credential-scrubbed
 subset, and its git history begins at that assembled state.
 
-Anything this README claims about behaviour is either in the code in this repository or it
+Anything this README claims about behavior is either in the code in this repository or it
 is removed from this README. Measured figures carry the configuration they were measured on,
 or they are not quoted.
 

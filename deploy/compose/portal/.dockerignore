@@ -1,0 +1,34 @@
+# .dockerignore -- portal build. Context = bifrost-platform/bifrost-portal/
+#
+# This context is already a single app directory, so a deny-all floor is not needed to make
+# it minimal. What IS needed is to keep two specific things out, both of which would
+# otherwise be copied by the `COPY src/` + `COPY public/` lines or by a future `COPY . .`:
+
+# 1. A previous build output committed at the app root. Vite emits to dist/, so these are
+#    stale. Harmless in the build stage; in the serve stage they would shadow the fresh
+#    bundle and the portal would serve an old index.html with a dead asset hash.
+assets/
+vite.svg
+
+# 2. Anything a local dev loop leaves behind.
+node_modules/
+dist/
+.git/
+*.log
+*.bak
+*.bak-*
+*-bak
+*_fixed.jsx
+*_v2.jsx
+patch-*.py
+patch_*.py
+
+# Not needed in the image, and README.md is the stock Vite template text.
+README.md
+.gitignore
+
+# NOTE: public/vite.svg IS copied (index.html references /vite.svg as the favicon). The
+# `vite.svg` line above excludes only the stray copy at the APP ROOT, because in
+# .dockerignore a bare pattern does not cross `/` -- it does not touch public/vite.svg.
+# That distinction is load-bearing: the same `*` -does-not-cross-/` rule is what made 18
+# of the router's 63 unexcluded backup files slip through its .dockerignore.

@@ -1,0 +1,17 @@
+[
+  {
+    "id": "R1",
+    "description": "registry parses as valid JSON",
+    "type": "command_exit_zero",
+    "target": "python -c \"import json; json.load(open('capability_registry.json', encoding='utf-8'))\"",
+    "repo": "D:\\Projects\\bifrost-router"
+  },
+  {
+    "id": "R2",
+    "description": "claimed alias present in registry",
+    "type": "regex_in_file",
+    "target": "D:\\Projects\\bifrost-router\\capability_registry.json",
+    "expected": "FILL_IN_ALIAS",
+    "count": 1
+  }
+]

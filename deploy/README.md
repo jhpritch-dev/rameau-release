@@ -12,48 +12,48 @@ the stack's route off the machine.
 | `profiles/compose.env.example` | endpoint values for inside the container network, generated from `shared/resolver.py` |
 | `config/` | the four `*.example.json` placeholders, and where your own copies go (see step 2) |
 
-## Two things are not ready yet
+## What is ready, and what is not
 
-Stated first, because the stack does not build without them and you should not discover that
-by running it.
+Stated first, because the two things this section used to list as blockers are now done and
+a reader should not spend time on them.
 
-**1. There is no dependency manifest.** `images/router/Dockerfile` needs
-`services/router/requirements.txt`, and no such file has been selected for the release — the
-private repository's version is excluded from publication. The build stops on that COPY.
-Inventing a pin set is worse than a build that stops, because a reviewer cannot tell which
-pins were measured.
+**1. The dependency manifest exists.** `services/router/requirements.txt` ships with the
+router context: five range specifiers, which is what the import closure over that tree
+resolves to. The root `requirements.txt` for the harness is separate and marks its
+provenance per line -- `[frozen]` where a version came from a pip freeze of a running image,
+`[unmeasured]` where it did not -- so a reviewer can tell the two apart without being told.
+Inventing an unlabelled pin set would have been worse than a build that stops, which is why
+this took as long as it did.
 
-**Today it stops EARLIER than that, and the distinction is worth keeping straight.** Neither
-build context is assembled, so the build never reaches an instruction in either Dockerfile:
-it fails while preparing the context. Measured on 2026-11-03, Docker 29.4.2 / Compose
-v5.1.3, from `deploy/`:
+**The "131 dependency decisions" figure that used to appear here is withdrawn** — it was
+another service's. Reported 2026-11-02: 131 is two `bifrost-kb` files summed, and that
+service is not in this release; the router's manifest is five range specifiers. It is
+restated here rather than quietly dropped, because a withdrawn figure that stops being
+mentioned is one a reader can find in the history and believe again.
+
+**2. Both build contexts are assembled.** `services/router/` (29 files) and
+`services/portal/` (28 files) are the two contexts `compose.yaml` names, and both now exist.
+They landed together on purpose: the `images` job in CI skips only while BOTH are absent,
+and treats one-present-one-missing as a half-assembled tree and fails it, because a stack
+with one of its two services unbuildable is not a stack.
+
+**NEITHER IMAGE HAS BEEN BUILT.** What changed is the failure mode, not the outcome. Until
+step 4 the build could not reach an instruction in either Dockerfile -- it stopped while
+preparing a context that did not exist, measured 2026-11-03 on Docker 29.4.2 / Compose
+v5.1.3 from `deploy/`:
 
 ```
 $ docker compose -f compose.yaml build
 unable to prepare context: path ".../services/portal" not found
 ```
 
-So the COPY failure above is the state you reach once step 4 has landed the source and the
-manifest is still absent — it is the *next* failure, not the current one. Until then a reader
-who sees "fails on that COPY" and gets a context error has not found a second problem.
+That error is now unreachable. The build reaches both Dockerfiles, CI's image job stops
+skipping and becomes a real gate, and whether the images build is the next thing to find
+out. This file will say so when there is a run to cite.
 
-**The "131 dependency decisions" figure that used to appear here is withdrawn** — it was
-another service's. Reported 2026-11-02: 131 is two `bifrost-kb` files summed, and that
-service is not in this release; the router's manifest is five range specifiers. Nothing here
-can check that, so no replacement figure is quoted as if it were measured in this
-repository.
+## One thing is still not ready
 
-**What was open here is now closed.** `services/router/` is ruled the release's router
-source, and the import closure over that tree is verified in both directions, so the
-manifest's content is settled. `docker build` still fails on that COPY because the file is
-not here, and that is a **placement** decision belonging to step 4 rather than a gap in
-knowledge: committing it alone would leave `services/router/` holding a manifest and none of
-the source it describes, which turns CI red. RELEASE-SCOPE.md carries the closure as
-evidence, and the one remaining decision -- floors or exact pins -- with it.
-
-**2. The router source is not assembled yet, and the four config examples carry no schema.**
-`services/router/` and `services/portal/` are the build contexts this stack expects; the
-assembly that fills them has not run.
+**The four config examples carry no schema.**
 
 `config/*.example.json` now exist for all four runtime JSON files, but read one before you
 rely on it: **each is a placeholder, not a derived schema.** This repository contains no
@@ -416,7 +416,7 @@ mask the inner:
 | container up, `/livez` fine, leaf refused | `bifrost_delegate.py` absent from the context; it is imported by nothing and read with `ast` |
 | portal crash-loops | an unresolvable literal upstream — see below |
 
-Two more symptoms worth recognising, both of which look like something other than their cause:
+Two more symptoms worth recognizing, both of which look like something other than their cause:
 
 - **The portal container crash-loops and serves nothing.** `nginx.conf` proxies **five**
   routes to `host.docker.internal` -- literal upstreams, which nginx resolves when it
@@ -434,3 +434,35 @@ Two more symptoms worth recognising, both of which look like something other tha
   derives from the live variant.
 - **Generation times out rather than refusing.** That is the no-egress overlay: the name still
   resolves and the route is gone, so there is no gateway to send a reset.
+
+## Identity and local-path variables
+
+Added 2026-11-13. A sweep before publication found the operator's account name, two machine
+hostnames and several absolute developer paths committed across ten files. None of them is
+a secret; all of them identify a person or a private network, which is why they are
+configuration rather than source.
+
+**These do not live in `.env.example`.** That file is GENERATED from the endpoint registry
+in `shared/resolver.py` and a test asserts it matches what the generator produces, so a
+hand-written addition to it is reverted by the next regeneration — and is caught in CI
+before that. These are not endpoints, so they are documented here instead.
+
+**Every one defaults to unset, and none falls back to a guess.** That is the rule
+`shared/resolver.py` already applies to endpoints, for the same reason: a fallback turns
+"not configured" into "configured wrongly", and only one of those reports itself.
+
+| variable | what it sets | unset behaviour |
+|---|---|---|
+| `BIFROST_TOOL_ROOTS` | Filesystem roots the read-only delegate tool surface may reach, OS path-separator delimited | The router module's own directory. Deliberately one real directory rather than none: an empty allowlist would make every path check below it pass |
+| `BIFROST_FORGE_SSH` | `user@host` for the Forge quantum-reward helper | The tool refuses and says so, rather than reaching a host that is not yours |
+| `BIFROST_REPO_PATH` | Default advertised to the **model** for a `repo_path` tool argument | No default is advertised; the model is asked for a path instead of handed one that does not exist here |
+| `BIFROST_REDACT_OPERATORS` | Names stripped from retrieved chunks before a model sees them, comma-separated | Generic patterns (address ranges, process vocabulary) still apply, and the module logs a warning at import — redacted output looks identical either way right up until the chunk carrying a name |
+| `BIFROST_REDACT_HOSTS` | Hostnames stripped from retrieved chunks, comma-separated | As above |
+| `BIFROST_FLEET_HOSTNAMES` | `hostA=bifrost,hostB=hearth` — maps a machine hostname to its fleet label for telemetry attribution | Falls back to `BIFROST_MACHINE`, which `telemetry.py` already calls the only mechanism that works inside a container. The labels stay in source; only the hostnames mapping onto them live here |
+| `RAMEAU_SCAN_EXTRA_HOSTS` | Extra hostnames for `tools/scan_private_literals.py` to treat as private, comma-separated | The scanner matches addresses and reserved DNS suffixes only |
+
+**Why hostnames are a variable and not a committed list.** A committed list of the
+hostnames you are trying to keep out of the repository *is* the disclosure, not the fix.
+`tools/scan_private_literals.py` makes the same argument in its own header, and it is why
+that scanner can ship a rule for the *shape* of a user home path (`<drive>:\Users\<name>`)
+but not a rule naming any host.

@@ -1,0 +1,13 @@
+{
+  "id": "trivial_003",
+  "band": "TRIVIAL",
+  "assigned_tier": "T1A",
+  "description": "Write a function that flattens a nested list",
+  "prompt": "Write a Python function `flatten(lst: list) -> list` that recursively flattens arbitrarily nested lists. Example: flatten([1, [2, [3, 4]], 5]) -> [1, 2, 3, 4, 5]. Include a test_flatten() function testing: empty list, flat list, deeply nested list, mixed types.",
+  "expected_behavior": "flatten([]) returns [], flatten([1,2,3]) returns [1,2,3], flatten([1,[2,[3,[4]]]]) returns [1,2,3,4]",
+  "validation_criteria": {
+    "l3": "Code parses without syntax errors",
+    "l4": "test_flatten() passes all assertions",
+    "l5": "Handles arbitrary nesting depth and preserves non-list elements"
+  }
+}

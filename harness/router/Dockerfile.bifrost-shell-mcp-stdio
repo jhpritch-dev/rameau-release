@@ -1,0 +1,19 @@
+# Reconstructed 2026-06-19 from `docker history bifrost-shell-mcp:v1` (the original Dockerfile was
+# missing from the repo). Builds the STDIO gateway container the Docker MCP gateway spawns per-call
+# for the bifrost-shell server (full toolset: run_ruff/run_mypy/run_checks/kb_search/router_status/
+# autopilot_*). Build context = repo root: docker build --no-cache -f <this> -t bifrost-shell-mcp:v1 .
+FROM python:3.12-slim
+WORKDIR /app
+# git binary required by the git_read investigate tool (subprocess git log/show/diff). Without it
+# git_read fails "git executable not available" though grep_repo/list_dir work. (Stack B/C2 cert.)
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+# /repos/* are RO-mounted from the host (different owner uid) -> git refuses "dubious ownership".
+# Allow git_read to operate on the mounted repos regardless of ownership (read-only tool).
+RUN git config --system --add safe.directory '*'
+RUN useradd -m -u 1000 -s /bin/bash mcp
+COPY requirements-mcp.txt .
+RUN pip install --no-cache-dir -r requirements-mcp.txt
+COPY bifrost_shell.py bifrost_shell_policy.json checks.py ./
+RUN chown -R mcp:mcp /app
+USER mcp
+ENTRYPOINT ["python", "bifrost_shell.py", "--transport", "stdio"]

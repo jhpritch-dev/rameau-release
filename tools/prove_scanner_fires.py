@@ -286,7 +286,7 @@ def scan_round(pending):
 #
 # The claim being proved is "this scanner CAN detect this shape", and ONE firing draw
 # settles that. So the right treatment for an intermittent subject is re-draw, never
-# localisation -- an intermittent fault is neither monotonic nor stationary, so trying
+# localization -- an intermittent fault is neither monotonic nor stationary, so trying
 # to pin down WHICH draws fail would produce a crisp and worthless answer.
 #
 # The draw count is set from the measured rate, not chosen for looking generous. At 35 %

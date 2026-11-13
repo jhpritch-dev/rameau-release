@@ -1,0 +1,25 @@
+[
+  {
+    "id": "FC1",
+    "description": "fleet_config parses as valid JSON",
+    "type": "command_exit_zero",
+    "target": "python -c \"import json; json.load(open('fleet_config.json', encoding='utf-8-sig'))\"",
+    "repo": "D:\\Projects\\bifrost-router"
+  },
+  {
+    "id": "FC2",
+    "description": "claimed tier present in fleet_config",
+    "type": "regex_in_file",
+    "target": "D:\\Projects\\bifrost-router\\fleet_config.json",
+    "expected": "FILL_IN_TIER_ID",
+    "count": 1
+  },
+  {
+    "id": "FC3",
+    "description": "git diff shows real insertion (not whitespace-only)",
+    "type": "git_diff_contains",
+    "target": "fleet_config.json",
+    "expected": "FILL_IN_UNIQUE_STRING_FROM_NEW_TIER",
+    "repo": "D:\\Projects\\bifrost-router"
+  }
+]
