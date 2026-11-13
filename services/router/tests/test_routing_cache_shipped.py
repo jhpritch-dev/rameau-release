@@ -213,97 +213,19 @@ def test_the_endpoint_names_are_the_registrys_and_not_a_second_list():
         )
 
 
-CASCADE_DOC = SHIPPED / "skills" / "router" / "references" / "cascade-tables.md"
-
-
-def _md_tables(text):
-    """Markdown tables grouped by the heading above them: {heading: [[cell, ...], ...]}.
-
-    STRUCTURAL ON PURPOSE. The obvious way to check this document is to grep it for the stale
-    tier names, and that check cannot work here: the file ends with a section that NAMES every
-    retired claim deliberately, so a name count cannot tell a live table cell from a historical
-    note and would fail on the retirement it is supposed to reward. Parsing tables ignores
-    prose entirely, which is the distinction that matters.
-    """
-    out, heading = {}, None
-    for raw in text.splitlines():
-        line = raw.strip()
-        if line.startswith("#"):
-            heading = line.lstrip("#").strip()
-            continue
-        if not line.startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if not cells or all(set(c) <= set("-: ") for c in cells):
-            continue                      # separator row
-        out.setdefault(heading, []).append(cells)
-    return out
-
-
-def _unbacktick(s):
-    return s.replace("`", "").strip()
-
-
-def test_the_cascade_document_matches_the_shipped_config():
-    """The shipped skill reference must agree with the config.py beside it.
-
-    This document described a different deployment until 2026-11-13: two tiers that do not
-    exist, an operating mode that does not exist, three wrong models, and every tier written
-    as its enum MEMBER name rather than the VALUE the API accepts -- so a reader following it
-    to set X-Tier-Override would have sent something unroutable. Nothing could have caught
-    that, because nothing compared the two.
-
-    Set equality in BOTH directions, deliberately: a missing row and an invented row are
-    different defects and a one-way check sees only one of them.
-    """
-    tables = _md_tables(CASCADE_DOC.read_text(encoding="utf-8"))
-
-    truth = _in_image_layout(
-        "from config import CASCADE_TABLES, TIER_BACKENDS, ComplexityBand\n"
-        "print(json.dumps({\n"
-        "  'tiers': {t.value: (b.get('type'), b.get('model') or b.get('provider'))\n"
-        "            for t, b in TIER_BACKENDS.items()},\n"
-        "  'bands': [b.value for b in ComplexityBand],\n"
-        "  'cascades': {m.value: {b.value: [t.value for t in v] for b, v in tbl.items()}\n"
-        "               for m, tbl in CASCADE_TABLES.items()},\n"
-        "}))\n"
-    )
-
-    # --- the tier map ---------------------------------------------------------------
-    tier_rows = tables.get("Tier → backend map")
-    assert tier_rows, "no tier table found under its heading; the document was restructured"
-    documented = {_unbacktick(r[0]): _unbacktick(r[2]) for r in tier_rows[1:]}
-    assert documented == {k: v[1] for k, v in truth["tiers"].items()}, (
-        "the tier map disagrees with TIER_BACKENDS.\ndocumented: %s\nconfig.py:  %s"
-        % (sorted(documented.items()), sorted((k, v[1]) for k, v in truth["tiers"].items()))
-    )
-
-    # --- the cascades, one table per mode -------------------------------------------
-    for mode, bands in truth["cascades"].items():
-        rows = tables.get(mode)
-        assert rows, (
-            "config.py defines operating mode %r and the document has no table for it" % mode
-        )
-        doc_cascade = {
-            r[0].strip(): [_unbacktick(t) for t in r[1].split("→")]
-            for r in rows[1:]
-        }
-        assert doc_cascade == bands, (
-            "mode %s disagrees.\ndocumented: %s\nconfig.py:  %s"
-            % (mode, sorted(doc_cascade.items()), sorted(bands.items()))
-        )
-
-    # --- and no table for a mode that does not exist --------------------------------
-    # The JARVIS_OFFLINE case: the document carried a full four-row cascade table for a mode
-    # config.py has never had. The loop above cannot see that -- it iterates over what EXISTS.
-    documented_modes = {
-        h for h, rows in tables.items()
-        if h and rows and rows[0][0].strip().lower() == "band"
-    }
-    assert documented_modes <= set(truth["cascades"]), (
-        "the document has a cascade table for %s, which config.py does not define"
-        % sorted(documented_modes - set(truth["cascades"]))
-    )
+# THE CASCADE-DOCUMENT TEST LIVED HERE AND ITS SUBJECT IS CUT.
+#
+# It parsed the markdown tables in services/router/skills/router/references/
+# cascade-tables.md and set-compared them to config.py in both directions, because that
+# shipped document described a different deployment in eight places. On 2026-11-13 John
+# ruled the whole skills/ directory cut: sixteen Markdown files that nothing in the image
+# read, carrying machine names and LAN addresses in two mutually-de-masking styles.
+#
+# It is removed rather than rewritten to assert the file is absent, because that
+# assertion already exists one level up and in a better place: preflight B8 asserts both
+# that the directory is gone AND that no COPY names it, and the arms in tools/ci/arms.sh
+# plant each of those two states. A pytest copy of half that check would be a second
+# guard on one invariant, and the weaker of the two.
 
 
 def test_a_cache_served_result_is_never_written_back():

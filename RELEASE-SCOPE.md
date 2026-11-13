@@ -122,6 +122,7 @@ being published, or is large enough to deserve its own release.
 | overnight orchestration / scheduled self-improvement | operationally entangled with a specific fleet. **Narrowed 2026-10-27:** this cuts the scheduled overnight RUNNER and its fleet wiring, NOT the autopilot planning graph, which is ruled in above |
 | the agent sandbox | depends on a Linux-only isolation mechanism not present on every host. **Narrowed 2026-11-04:** this cuts the sandbox ISOLATION layer, not the shell-MCP server, which is ruled in above |
 | NPU classification path | hardware-specific, and the measured failure rate on the one host that has it is too high to publish |
+| the router's bundled skill registry | **Cut by John 2026-11-13.** Sixteen Markdown files under `services/router/skills/`, read by nothing in the image — `services/router/*.py` contains no reference to `skills/` at all, so they were inert payload. They carried named machines and their LAN addresses in two mutually-de-masking styles, a Tailscale funnel, a k3d control plane, a session codename, and a cascade reference that contradicted `config.py` in eight places. Preflight B2 asserted the directory was present; **B8 now asserts it is absent, and that no `COPY` names it** |
 | quantum-related experiments | research, not product |
 | workflow-automation integration | third-party service wiring, host-specific |
 | messaging bridges and notification transports | credential-bearing by nature |
@@ -647,7 +648,18 @@ A successful `docker build` proves the `COPY` groups resolve. A missing requirem
 - keep `--no-cache-dir`, as the Dockerfile already does, so a stale wheel cache cannot make a
   broken manifest look installable.
 
-#### OBLIGATION: `skills/` and the manifest live in DIFFERENT private trees
+#### OBLIGATION (VOID 2026-11-13): `skills/` and the manifest live in DIFFERENT private trees
+
+> **This obligation is discharged by removal, not by being met.** John ruled the skill
+> registry cut; there is no `skills/` to locate, the Dockerfile's `COPY skills/` layer
+> is gone, and the ignore file no longer re-admits the directory. Preflight B2 is
+> retired and **B8 asserts the absence from both ends** — no directory, and no `COPY`
+> naming one — because a cut only holds if something notices it coming back.
+>
+> The reasoning below is kept because it was correct about the artefact it was written
+> for, and because its central warning now reads as the opposite instruction: do not
+> create an empty `skills/` to get past a `COPY` that no longer exists.
+
 
 `COPY skills/ /app/skills/` needs that directory present in the context or the build fails
 on it, exactly as it currently fails on `requirements.txt`. Reported: `skills/` exists only
@@ -1198,10 +1210,11 @@ shebang file is `100755` in the index, with its control.
 
 Seven more need the assembled source and are **named and reported DEFERRED** until it exists,
 never counted as satisfied: every router and portal `COPY` source present including
-`nginx.conf`; `skills/` non-empty and still Markdown-only; `backends/` non-empty;
+`nginx.conf`; `backends/` and `shared/` carrying modules; `skills/` ABSENT and named by
+no `COPY` (B8, which replaced B2's inverse assertion when the directory was cut);
 `uvicorn[standard]` rather than bare `uvicorn`; nothing credential-shaped anywhere in either
 context; and **the flat-modules precondition**, which is the one worth having — a router
-module outside `backends/` or `skills/` is dropped twice, by the ignore file and by no `COPY`
+module outside `backends/` or `shared/` is dropped twice, by the ignore file and by no `COPY`
 naming it, and fails at import after a green build.
 
 An eighth item, the size the ignore files hold back, **reports rather than asserts**. There is

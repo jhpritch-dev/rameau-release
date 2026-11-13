@@ -70,8 +70,11 @@
 !backends/**
 
 # ---- the skill registry, baked at build time ----
-!skills/
-!skills/**
+# `!skills/` and `!skills/**` were here until 2026-11-13 and are deliberately NOT replaced.
+# The directory is cut (see layer 3 of the Dockerfile for what it held and why), so re-admitting
+# it would hand the context sixteen files no COPY wants. Preflight B8 asserts the absence from
+# both ends -- no directory, and no COPY naming one -- so restoring these two lines alone will
+# not quietly bring the payload back.
 # The endpoint registry, for layer 3b. This context is deny-all (`**` above) with explicit
 # allowances, so without these two lines `COPY shared/` has nothing to copy.
 #

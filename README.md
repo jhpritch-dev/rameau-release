@@ -6,7 +6,7 @@ request, and routes it to the smallest tier that can answer it -- falling throug
 when a tier is unavailable.
 
 **Status: pre-release, and the source has landed.** Three build contexts now exist --
-`services/router/` (34 tracked files, 33 of them in the image: its test directory is
+`services/router/` (18 tracked files, 17 of them in the image: its test directory is
 dockerignored), `services/portal/` (28) and `services/shell-mcp/` (2) -- alongside the test
 harness under `harness/`. See [RELEASE-SCOPE.md](RELEASE-SCOPE.md) for what v0.1 does and
 does not contain, and why the repository was assembled in this order.
@@ -193,7 +193,7 @@ carrying a shebang is `100755` *in the index* -- git's record is what travels, a
 assembled on Windows, which has no executable bit. Seven further obligations need the
 assembled source and are reported **deferred by name** rather than counted as satisfied, among
 them the one that is silent in both directions: a router module outside `backends/` or
-`skills/` is dropped twice, by the ignore file and by no `COPY` naming it, and fails at import
+`shared/` is dropped twice, by the ignore file and by no `COPY` naming it, and fails at import
 after a green build. The job reports one of four states by name, and says in its own output
 which obligations it *cannot* check so that they fall to step 5 rather than passing quietly.
 
@@ -328,7 +328,7 @@ in `245d1a9`, naming each face by family, and declaring that the faces are subse
 
   What is left is not derivation but **placement**, which belongs to step 4: committing the
   file alone would create a half-assembled `services/router/` with no `backends/`, no
-  `skills/` and no `*.py`, which measurably turns CI red rather than green -- the `images`
+  `shared/` and no `*.py`, which measurably turns CI red rather than green -- the `images`
   job stops skipping and `docker compose build` then fails on the rest. And one decision
   remains John's: the five lines are `>=` floors, and turning them into exact pins needs a
   reading from an environment that demonstrably serves traffic, which exists only on the

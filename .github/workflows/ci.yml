@@ -770,14 +770,18 @@ jobs:
           echo "               about this runner"
 
           # ---- router: what MUST arrive, and what MUST NOT ----
-          R_WANT="backends/nested/inner.py backends/ollama.py backends/tests/helper.py config.py main.py requirements.txt skills/registry.md skills/sub/deep.md"
+          R_WANT="backends/nested/inner.py backends/ollama.py backends/tests/helper.py config.py main.py requirements.txt shared/resolver.py"
+          # skills/registry.md and skills/sub/deep.md left this list on 2026-11-13 with
+          # the directory (B8); shared/resolver.py replaced them, which is the probe
+          # that the `!shared/` admission added with the routing cache actually reaches
+          # a file one level down rather than merely naming the directory.
           # backends/tests/helper.py is in the WANT list deliberately. `tests/` is top-level
           # only on purpose -- see the ignore file -- so a tests directory inside a re-admitted
           # package arrives. Encoding it here means a future generalisation of that pattern
           # fails this step and has to be an argued change rather than a silent one.
           R_DENY="test_probe.py probe_test.py tests/test_a.py strategies/tiers.py
                   .env .env.local secret.pem deploy.key id_rsa .netrc .git-credentials
-                  backends/.env backends/leak.pem skills/leak.key
+                  backends/.env backends/leak.pem shared/leak.key
                   node_modules/p/i.js __pycache__/x.pyc backends/__pycache__/y.pyc
                   backends/stray.pyc app.log backends/sub.log main.py.bak data.sqlite
                   fleet_config.json .git/config"
@@ -1248,7 +1252,7 @@ jobs:
           # services/ is absent, and whose empty output would otherwise be reported as
           # "0 source-dependent obligations". A count taken from a step that did not run is
           # the sibling of the secret canary printing "? finding(s)" for a crashed scan.
-          deferred="B1 router COPY sources exist|B2 skills/ present, non-empty, zero .py|B3 backends/ non-empty|B4 router modules are FLAT|B5 uvicorn[standard], not bare uvicorn|B6 portal COPY sources exist, nginx.conf included|B7 nothing credential-shaped in either context"
+          deferred="B1 router COPY sources exist|B3 backends/ and shared/ carry modules|B8 skills/ is cut, and no COPY names it|B4 router modules are FLAT|B5 uvicorn[standard], not bare uvicorn|B6 portal COPY sources exist, nginx.conf included|B7 nothing credential-shaped in either context"
           # B8 is deliberately NOT in that list. It REPORTS what the ignore files are
           # holding back; it asserts nothing, so counting it as an obligation would make the
           # deferred total disagree with the checked total -- which is how I noticed.
@@ -1294,7 +1298,6 @@ jobs:
           stray_modules() { sm_r="$1"
             find "$sm_r" -mindepth 2 -name '*.py' -type f \
               -not -path "$sm_r/backends/*" \
-              -not -path "$sm_r/skills/*" \
               -not -path "$sm_r/shared/*" \
               -not -path '*/tests/*' \
               -not -name 'test_*.py' \
@@ -1310,6 +1313,21 @@ jobs:
           # /MATCHER
           # MATCHER: non-empty-directory
           has_no_files() { [ -z "$(find "$1" -type f -print -quit 2>/dev/null)" ]; }
+          # /MATCHER
+          # MATCHER: skills-copy-line
+          # Defined HERE, with the other primitives, and not beside B8 where it is used:
+          # the control block below calls it, and a shell function defined after its
+          # caller is "command not found" at the point it matters.
+          #
+          # THE COMMENT FILTER IS LOAD-BEARING. The Dockerfile RECORDS the cut in a
+          # comment that contains this exact line, so a matcher that read comments would
+          # fire on the record of the removal and make the cut impossible to document.
+          #
+          # AND IT GOES AFTER non-empty-directory's CLOSER, not between that matcher and
+          # its own. Placed inside that span it left has_no_files covered by nothing and
+          # produced two consecutive closers; the census's undeclared-construct leg
+          # reported it as UNDECLARED, which is that leg doing precisely its job.
+          skills_copy_lines() { grep -nE '^[[:space:]]*COPY[[:space:]]+skills/' "$1" 2>/dev/null | grep -v '^[0-9]*:[[:space:]]*#' || true; }
           # /MATCHER
           # MATCHER: credential-shaped-find
           cred_shaped()  {
@@ -1330,7 +1348,7 @@ jobs:
           fail_control() { echo "CONTROL FAILED: $1"; exit 1; }
           pl="$(mktemp -d)"
           PR="$pl/router"
-          mkdir -p "$PR/backends" "$PR/skills" "$PR/strategies" "$PR/deep/deeper" \
+          mkdir -p "$PR/backends" "$PR/shared" "$PR/skills" "$PR/strategies" "$PR/deep/deeper" \
                    "$PR/tests" "$PR/util" "$PR/pkg/__pycache__"
           # B4 positives: a module in a directory no COPY names and the ignore file denies.
           : > "$PR/strategies/tiers.py"
@@ -1338,6 +1356,7 @@ jobs:
           # B4 near-misses, one per exclusion the pattern carries.
           : > "$PR/main.py"
           : > "$PR/backends/ollama.py"
+          : > "$PR/shared/resolver.py"
           : > "$PR/skills/helper.py"
           : > "$PR/tests/test_x.py"
           : > "$PR/util/test_helper.py"
@@ -1345,7 +1364,11 @@ jobs:
           : > "$PR/pkg/__pycache__/cached.py"
           : > "$PR/skills/doc.md"
 
-          want="$PR/deep/deeper/buried.py $PR/strategies/tiers.py "
+          # skills/helper.py IS expected in this set as of 2026-11-13. It was excluded while
+          # `skills/` was a COPY'd directory; the directory is cut (B8) and the exclusion went
+          # with it, so a .py under a returned skills/ is now a stray module and this control
+          # is what proves the exclusion really left rather than being commented out.
+          want="$PR/deep/deeper/buried.py $PR/skills/helper.py $PR/strategies/tiers.py "
           got=$(stray_modules "$PR")
           [ "$got" = "$want" ] || fail_control "stray_modules returned [$got], expected [$want].
             This is the matcher that was INERT when it merged: \`-not -path \"\$R/*.py\"\`
@@ -1359,13 +1382,24 @@ jobs:
           mkdir -p "$pl/nested/sub" && : > "$pl/nested/sub/only.py"
           [ "$(top_py_count "$pl/nested")" -eq 0 ] || fail_control "top_py_count counted a .py one directory down, so -maxdepth 1 is not in force and \`COPY *.py ./\` would look satisfied by a module it cannot copy"
 
-          [ "$(py_count "$PR/skills")" -eq 1 ] || fail_control "py_count missed a .py under skills/"
+          # py_count's production consumer moved from B2 (skills/, retired) to B3 (shared/),
+          # so its control is planted where it is now used. The Markdown-only near-miss is the
+          # half that matters for B3: a shared/ holding only a README is non-empty and still
+          # breaks `from shared.resolver import resolve` at import.
+          [ "$(py_count "$PR/shared")" -eq 1 ] || fail_control "py_count missed a .py under shared/"
           mkdir -p "$pl/mdonly" && : > "$pl/mdonly/a.md"
-          [ "$(py_count "$pl/mdonly")" -eq 0 ] || fail_control "py_count reported a .py in a Markdown-only tree"
+          [ "$(py_count "$pl/mdonly")" -eq 0 ] || fail_control "py_count reported a .py in a Markdown-only tree, so B3 would accept a shared/ with no modules"
 
           mkdir -p "$pl/dirs-only/nested"
-          has_no_files "$pl/dirs-only" || fail_control "has_no_files called a tree of empty directories non-empty; an empty skills/ would then pass B2 and the build would go green shipping a router with no skills"
-          ! has_no_files "$PR/skills" || fail_control "has_no_files called a tree WITH files empty"
+          has_no_files "$pl/dirs-only" || fail_control "has_no_files called a tree of empty directories non-empty; an empty backends/ would then pass B3 and the build would go green shipping a router that fails at import"
+          ! has_no_files "$PR/shared" || fail_control "has_no_files called a tree WITH files empty"
+
+          # B8's matcher, both ways. A grep that matches nothing and a Dockerfile with no such
+          # COPY produce the same empty output, which is the whole reason this plant exists.
+          printf 'FROM scratch\nCOPY skills/ /app/skills/\n' > "$pl/df-with"
+          printf 'FROM scratch\n# COPY skills/ /app/skills/\nCOPY shared/ /app/shared/\n' > "$pl/df-without"
+          [ -n "$(skills_copy_lines "$pl/df-with")" ] || fail_control "skills_copy_lines missed a live COPY naming skills/, so B8 could not see the payload being restored"
+          [ -z "$(skills_copy_lines "$pl/df-without")" ] || fail_control "skills_copy_lines matched a COMMENTED-OUT COPY or an unrelated one; the Dockerfile documents the cut in a comment, so a matcher that reads comments would fire on the record of the removal itself"
 
           PU="$pl/req"
           mkdir -p "$PU"
@@ -1430,39 +1464,64 @@ jobs:
           fi
 
           # --- B1: every router COPY group's source exists -----------------------------
-          # The Dockerfile's COPY lines are requirements.txt, backends/, skills/ and *.py.
-          # A missing one stops the build -- which is the release's first visible failure
-          # today -- and is cheaper to learn here than from a build log.
+          # The Dockerfile's COPY lines are requirements.txt, backends/, shared/ and *.py.
+          # A missing one stops the build and is cheaper to learn here than from a build log.
+          # This list tracked `skills/` until 2026-11-13 and `shared/` replaced it: the skills
+          # registry was cut (B8) and the endpoint registry arrived with the routing cache.
+          # Measured that the omission is not cosmetic -- deleting the ignore file's `!shared/`
+          # admission makes buildkit stop with `"/shared": not found`, which is the failure
+          # this assertion exists to find one job earlier.
           checked=$((checked + 1))
           test -f "$R/requirements.txt" || v "B1 $R/requirements.txt is missing; the router build stops on COPY requirements.txt"
-          for d in "$R/backends" "$R/skills"; do
+          for d in "$R/backends" "$R/shared"; do
             test -d "$d" || v "B1 $d/ is missing; the router build stops on its COPY"
           done
           top_py=$(top_py_count "$R")
           [ "$top_py" -gt 0 ] || v "B1 no *.py at the top level of $R, so COPY *.py ./ copies nothing"
           test -f "$R/main.py" || v "B1 $R/main.py is missing, and the Dockerfile's CMD is uvicorn main:app"
 
-          # --- B2: skills/ present and NON-EMPTY --------------------------------------
-          # "Do not create an empty skills/ to get past the COPY. It would make the build go
-          # green while shipping a router with no skills." Reported from the private side:
-          # nine files, all Markdown, zero .py -- so it contributes no third-party import and
-          # cannot change the manifest. The zero is asserted because it is load-bearing: a
-          # .py appearing in skills/ would invalidate the manifest reasoning, not just add a
-          # file. The nine is NOT asserted -- this repository cannot check that count, and
-          # quoting an unverifiable figure is the mistake the withdrawn "131" was.
+          # --- B8: THE SKILL REGISTRY IS CUT, FROM BOTH ENDS ---------------------------
+          # B2 LIVED HERE AND IS RETIRED, not deleted silently. It asserted that `skills/` was
+          # present, non-empty and Markdown-only, on RELEASE-SCOPE.md's grounds that "an empty
+          # skills/ would make the build go green while shipping a router with no skills".
+          # That obligation was sound about the artefact it was written for and its subject is
+          # gone: John ruled on 2026-11-13 to cut the directory, after it was measured to be
+          # sixteen Markdown files that nothing in the image reads, carrying named machines,
+          # LAN addresses in two mutually-de-masking styles, a Tailscale funnel, a k3d control
+          # plane, a session codename, and a cascade reference that contradicted config.py in
+          # eight places.
+          #
+          # B8 IS ITS INVERSE because a cut only holds if something notices it coming back,
+          # and re-adding a directory by reflex is cheaper than the review that removed it.
+          # Both ends are asserted, and the second is the one that matters: the directory
+          # alone returning is inert payload, but a COPY naming it puts the payload in the
+          # image. Either on its own is a failure here.
+          #
+          # py_count is still the instrument for the second half of B3 rather than being
+          # retired with B2 -- `shared/` is now a COPY'd package directory and "carries at
+          # least one module" is the same question B2 asked of skills/, inverted.
           checked=$((checked + 1))
           if [ -d "$R/skills" ]; then
-            if has_no_files "$R/skills"; then
-              v "B2 $R/skills/ exists but is EMPTY -- the build would go green shipping a router with no skills"
-            fi
-            spy=$(py_count "$R/skills")
-            [ "$spy" -eq 0 ] || v "B2 $R/skills/ contains $spy .py file(s); it was measured as Markdown-only, and a .py there changes the manifest"
+            v "B8 $R/skills/ is back. It was cut on 2026-11-13 (sixteen files, read by nothing in the image, carrying machine names and partially-masked LAN addresses). If it is wanted again, that is a scope ruling and RELEASE-SCOPE.md records the last one -- not a directory to restore in passing."
           fi
+          sc=$(skills_copy_lines deploy/images/router/Dockerfile)
+          [ -z "$sc" ] || v "B8 deploy/images/router/Dockerfile has a live COPY naming skills/: $sc -- the directory is cut and a COPY is what would put it back IN THE IMAGE rather than merely in the context."
 
-          # --- B3: backends/ non-empty ------------------------------------------------
+          # --- B3: the COPY'd package directories carry something ----------------------
+          # backends/ since this job existed; shared/ added 2026-11-13 with the routing cache.
+          # An empty directory satisfies its COPY and ships nothing, and the router then fails
+          # at IMPORT inside the container -- `from shared.resolver import resolve` -- after a
+          # green build. That is the same shape B2 was written to catch for skills/, which is
+          # why py_count moved here rather than being retired with it: for shared/ the module
+          # count is the whole question, because a `shared/` holding only a README would pass
+          # a mere non-emptiness check and still break the import.
           checked=$((checked + 1))
           if [ -d "$R/backends" ] && has_no_files "$R/backends"; then
             v "B3 $R/backends/ exists but is EMPTY"
+          fi
+          if [ -d "$R/shared" ]; then
+            shpy=$(py_count "$R/shared")
+            [ "$shpy" -gt 0 ] || v "B3 $R/shared/ exists but holds no .py; COPY shared/ succeeds and the router then fails at import on 'from shared.resolver import resolve', after a green build"
           fi
 
           # --- B4: THE ROUTER'S MODULES ARE FLAT --------------------------------------
@@ -1476,6 +1535,11 @@ jobs:
           # Neither mechanism's absence would reveal the other, which is why no build and no
           # existing check can see this. tests/ and test_*.py are excluded from the scan
           # because the ignore file denies them deliberately and no COPY wants them.
+          #
+          # `skills/` LEFT THIS LIST on 2026-11-13 when the directory was cut, and that is
+          # deliberate: B8 asserts the directory is absent, and if it returns carrying a .py
+          # this find is the second thing that says so. An exclusion for a directory that
+          # should not exist would be a hole kept open for its return.
           #
           # THE EXCLUSION LIST IS A RATCHET, and `shared/` joined it on 2026-11-13 when the
           # routing cache landed and needed the endpoint registry in the context. B4 fired on
@@ -2049,7 +2113,18 @@ jobs:
           # adding one real pattern set leaves 37 matchers and 37 arms, so the floor is 37:
           # equal to the population, which is the only value at which a symmetric removal of
           # one pair is visible. A floor is not a pin -- growth raises it, by hand, here.
-          MATCHER_FLOOR=37
+          # 37 -> 38 when skills-copy-line was declared for B8. Raised in the same change
+          # that grew the population, for the reason two paragraphs up: a floor left behind
+          # is SLACK, and at 37 against 38 the DEMO arm's symmetric matcher+arm removal lands
+          # on 37 and this leg stops seeing the one case set equality cannot.
+          #
+          # py-count did NOT leave, which is why this is +1 and not a swap. Its only
+          # production consumer was B2 (skills/, retired here); rather than retire the matcher
+          # with its obligation, it moved to B3's new shared/ half, where "carries at least
+          # one module" is the same question B2 asked of skills/. Measured after the change:
+          # 38 matchers, 38 arms, 12 obligations, 12 obligation arms, all four correspondence
+          # sets empty.
+          MATCHER_FLOOR=38
           OBLIGATION_FLOOR=12
           [ "$NM" -ge "$MATCHER_FLOOR" ] || blame "POPULATION SHRANK: $NM matchers against a floor of $MATCHER_FLOOR. Set equality cannot see a matcher deleted together with its arm, which is what this floor is for. If the removal was deliberate, lower the floor in the same change and say why." ""
           [ "$NO" -ge "$OBLIGATION_FLOOR" ] || blame "OBLIGATIONS SHRANK: $NO against a floor of $OBLIGATION_FLOOR." ""
