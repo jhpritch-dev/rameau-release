@@ -326,6 +326,52 @@ shell runs it — Python's text-mode stdout does the translation, not the shell 
 comes out right and the bytes wrong, which the test comparing file to generator reports as a
 failure with no apparent cause.
 
+## Turning the routing cache on (optional, and off by default)
+
+The router image contains the routing cache. It does nothing until you set a switch, and that
+is the shipped default rather than a soft one: with `BIFROST_ROUTING_CACHE_SERVE` unset, no
+cache object is constructed, no persisted file is opened, and the classifier runs as it always
+did.
+
+To serve from it you need two variables, both in `profiles/compose.env` like the other
+optional endpoints:
+
+```
+BIFROST_ROUTING_CACHE_SERVE=1
+RAMEAU_EMBED_URL=http://host.docker.internal:11434
+```
+
+`RAMEAU_EMBED_URL` must point at something that answers Ollama's `/api/embeddings` with a
+`nomic-embed-text` model. **There is no default and there is no fallback** — the router
+resolves it through `shared/resolver.py`, which raises when it is unset, so a cache switched
+on without an embedder declines every request and says why in the log rather than probing an
+address nobody configured. Give it an origin and the route is appended; give it a complete URL
+and it is used as written.
+
+Confirm what it is actually doing from `/status`, not from the boot log:
+
+```
+curl -s http://127.0.0.1:18080/status | python -m json.tool | grep -A6 routing_cache
+```
+
+### If you mount a volume to keep the cache across restarts, read this first
+
+By default the cache persists to `routing_cache.bin` inside the container, which is lost on
+recreate. The obvious fix is to mount a host directory and point `BIFROST_TELEMETRY_DIR` at
+it. Before you do: **that file is loaded with `pickle`, so the directory you mount is a
+directory the router deserializes from at startup.** Unpickling is equivalent to executing
+whatever wrote the file.
+
+That is acceptable when the directory is the router's own and nothing else can write it. It is
+not acceptable if the mount is shared with another service, writable by other users, or
+restored from a backup you did not produce. Treat it as router-private storage, or accept a
+cold cache on every restart — which costs one classification per distinct prompt and nothing
+else.
+
+This is stated here rather than fixed in code because `routing_cache.py` is byte-identical to
+the published source on purpose, and a test enforces that; changing its format is a change to
+make upstream, not a patch applied to the copy inside a build context.
+
 ## No egress
 
 ```

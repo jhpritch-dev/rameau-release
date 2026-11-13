@@ -10,15 +10,23 @@ document -- and, since the step-4 assembly, the router and portal build contexts
 credential-scrubbed subset of a private archive. See
 [RELEASE-SCOPE.md](RELEASE-SCOPE.md) for the assembly order.
 
-**The two directories under `services/` are build contexts, not the working copy.** Day-to-day
-work happens in `harness/`, which is what the test suite imports; `services/router/` and
-`services/portal/` hold only what the Dockerfiles COPY. A change made in one and not the
-other is the mistake this layout invites, so make it deliberately or not at all.
+**The three directories under `services/` are build contexts, not the working copy.** Day-to-day
+work happens in `harness/`, which is what the test suite imports; `services/router/`,
+`services/portal/` and `services/shell-mcp/` hold only what the Dockerfiles COPY. A change
+made in one and not the other is the mistake this layout invites, so make it deliberately or
+not at all.
 
-**The assembly is all-or-nothing and CI enforces it.** The `images` job skips only while BOTH
-contexts are absent; with one present and one missing it reports a half-assembled tree and
-fails the build, on the grounds that a stack with one of its two services unbuildable is not
-a stack. Do not land one without the other.
+**Several files now exist in both trees on purpose, and a CI step pins them byte-identical.**
+`routing_cache.py`, `routing_cache_serve_path.py`, `shared/resolver.py`, `checks.py` and
+`bifrost_shell_static.py` are copies, listed in
+`services/router/tests/test_routing_cache_shipped.py`. Edit the published file and re-copy;
+never patch a service's copy to make a build fit. That test is also what lets the harness's
+own tests count as coverage of the shipped modules at all.
+
+**The assembly is all-or-nothing and CI enforces it.** The `images` job skips only while ALL
+THREE contexts are absent; with any present and any missing it reports a half-assembled tree
+and fails the build, on the grounds that a stack with one of its services unbuildable is not
+a stack. Do not land one without the others.
 
 ## The one rule that matters most
 

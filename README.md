@@ -6,9 +6,10 @@ request, and routes it to the smallest tier that can answer it -- falling throug
 when a tier is unavailable.
 
 **Status: pre-release, and the source has landed.** Three build contexts now exist --
-`services/router/` (29 files), `services/portal/` (28) and `services/shell-mcp/` (2) --
-alongside the test harness under `harness/`. See [RELEASE-SCOPE.md](RELEASE-SCOPE.md) for
-what v0.1 does and does not contain, and why the repository was assembled in this order.
+`services/router/` (18 tracked files, 17 of them in the image: its test directory is
+dockerignored), `services/portal/` (28) and `services/shell-mcp/` (2) -- alongside the test
+harness under `harness/`. See [RELEASE-SCOPE.md](RELEASE-SCOPE.md) for what v0.1 does and
+does not contain, and why the repository was assembled in this order.
 
 **All three images build.** This sentence replaces "neither image has yet been observed to
 build", which was true when it was written and is the kind of claim this file retires by
@@ -192,7 +193,7 @@ carrying a shebang is `100755` *in the index* -- git's record is what travels, a
 assembled on Windows, which has no executable bit. Seven further obligations need the
 assembled source and are reported **deferred by name** rather than counted as satisfied, among
 them the one that is silent in both directions: a router module outside `backends/` or
-`skills/` is dropped twice, by the ignore file and by no `COPY` naming it, and fails at import
+`shared/` is dropped twice, by the ignore file and by no `COPY` naming it, and fails at import
 after a green build. The job reports one of four states by name, and says in its own output
 which obligations it *cannot* check so that they fall to step 5 rather than passing quietly.
 
@@ -327,7 +328,7 @@ in `245d1a9`, naming each face by family, and declaring that the faces are subse
 
   What is left is not derivation but **placement**, which belongs to step 4: committing the
   file alone would create a half-assembled `services/router/` with no `backends/`, no
-  `skills/` and no `*.py`, which measurably turns CI red rather than green -- the `images`
+  `shared/` and no `*.py`, which measurably turns CI red rather than green -- the `images`
   job stops skipping and `docker compose build` then fails on the rest. And one decision
   remains John's: the five lines are `>=` floors, and turning them into exact pins needs a
   reading from an environment that demonstrably serves traffic, which exists only on the
@@ -365,7 +366,7 @@ Three services on one bridge network named `rameau`.
 
 | service | what it is | container port | published by default |
 |---|---|---|---|
-| `router` | the OpenAI-compatible endpoint, the pre-generation classifier, tier selection and the cascade | 8080 | `127.0.0.1:18080` |
+| `router` | the OpenAI-compatible endpoint, the pre-generation classifier, tier selection and the cascade, plus the routing cache -- **off unless switched on**, see below | 8080 | `127.0.0.1:18080` |
 | `portal` | the existing web UI, as it stands -- nginx serving a Vite bundle | 80 | `127.0.0.1:13110` |
 | `shell-mcp` | the delegated-shell MCP server, static-analysis subset only: `run_ruff`, `run_mypy`, `run_checks`. Bearer-authenticated, and it **refuses to start** without a token of at least 32 characters | 8086 | `127.0.0.1:8086` |
 
@@ -379,6 +380,39 @@ wrote down.
 Inside the network the router is `http://router:8080`. That is the port the container
 listens on and it is **not** the port the private deployment published -- an in-container URL
 built from a host-side port resolves to nothing.
+
+### The routing cache ships, and ships OFF
+
+The router image contains the routing cache: `routing_cache.py` and
+`routing_cache_serve_path.py`, byte-identical to the published source under `harness/router/`
+with a test pinning them that way. It answers a request from a previous classification when a
+prompt's embedding is a near neighbour, skipping the classifier.
+
+**It is inert until an operator sets `BIFROST_ROUTING_CACHE_SERVE`.** With the variable unset,
+`serve_enabled()` is false, no cache object is constructed, no persisted file is read, and the
+classifier runs exactly as it would without any of this. That is the shipped default and it is
+not a soft default: the switch is read before any other work the feature would do.
+
+Turning it on needs an embedding endpoint, `RAMEAU_EMBED_URL`. There is **no literal
+fallback** -- the published source defaults this to a private LAN address, and this release
+resolves it through `shared/resolver.py`, which raises instead. An unconfigured embedder
+therefore degrades to plain classification and logs why, rather than reaching for somebody
+else's network.
+
+| variable | effect | default |
+|---|---|---|
+| `BIFROST_ROUTING_CACHE_SERVE` | the switch; nothing is built without it | unset — off |
+| `RAMEAU_EMBED_URL` | where embeddings come from; required once serving | unset — raises |
+| `BIFROST_ROUTING_CACHE_SERVE_BANDS` | which bands it may answer | all four |
+| `BIFROST_ROUTING_CACHE_THRESHOLD` | cosine similarity floor for a hit | 0.85 |
+| `BIFROST_ROUTING_CACHE_CONF_FLOOR` | confidence a stored entry needs to be usable | 0.7 |
+
+`/status` reports the live state under `routing_cache`, separately from whether the switch is
+set, because those come apart: the switch is read at startup, so exporting it into a running
+container changes the reported flag and nothing else.
+
+**The autopilot is not included.** It was considered alongside the cache and deliberately left
+out; `RELEASE-SCOPE.md` records that as a ruling rather than an oversight.
 
 **There is no `ollama` service, and that is not an omission.** A container that wanted the
 accelerator would need device passthrough, which ties the stack to one vendor's driver stack

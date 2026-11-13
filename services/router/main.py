@@ -50,6 +50,19 @@ from strategies import two_pass_stream, select_local_tier
 from review_prompts import get_review_provider
 from commands import handle_command
 from metrics import metrics, MetricsCollector, RoutingEvent
+from config import classifier_config
+
+# The routing cache. OFF unless BIFROST_ROUTING_CACHE_SERVE is set in the environment, and
+# off is the shipped default -- `routing_cache.serve_enabled()` returns False for an unset
+# variable, so importing these three modules changes no routing decision by itself.
+#
+# routing_cache.py and routing_cache_serve_path.py are byte-identical copies of the published
+# source under harness/router/ and a CI step asserts it. routing_cache_wiring.py holds
+# everything this release decides for itself, which is why the edits to THIS file are an
+# import, a startup block, one substituted call and one /status key.
+import routing_cache
+import routing_cache_serve_path
+import routing_cache_wiring
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +124,21 @@ async def lifespan(app: FastAPI):
         profile=settings.bifrost_profile.value,
     )
     log.info(f"  Prometheus: /metrics endpoint active")
+
+    # Routing cache. build_cache returns None when the serve switch is off, and then nothing
+    # is constructed and no persisted file is read -- see routing_cache_wiring.build_cache for
+    # why that matters beyond saving a few milliseconds.
+    _built = routing_cache_wiring.build_cache()
+    if _built is None:
+        app.state.routing_cache = None
+        log.info(f"  Cache:   OFF (set {routing_cache.SERVE_ENV_VAR} to serve)")
+    else:
+        app.state.routing_cache, _loaded = _built
+        # status_line is COMPUTED from the live switch rather than written as a literal. The
+        # published source carries a note about why: its predecessor was the fixed string
+        # "(shadow mode; serves nothing)", which stayed in the logs after the serve path went
+        # live and was serving.
+        log.info(f"  Cache:   {routing_cache_serve_path.status_line(_loaded)}")
 
     # Persistent httpx client for slash commands (Arbiter calls, etc.)
     app.state.http_client = httpx.AsyncClient()
@@ -194,6 +222,44 @@ def extract_user_prompt(messages: list[dict]) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# Routing-cache adapters
+# ---------------------------------------------------------------------------
+# These exist to meet `routing_cache_serve_path.serve_or_classify`'s contract without editing
+# it: it awaits `classify_fn` and returns its result verbatim on the disabled and declined
+# paths, while returning a (classification, routing_telemetry) PAIR on a hit. So classify_fn
+# must be a coroutine returning the same pair shape, or the call site would unpack two
+# different things depending on a switch it cannot see.
+
+_ROUTING_SOURCE_CLASSIFIER = "classifier"
+
+_cfg_version = None
+
+
+def _cache_config_version() -> str:
+    """The cache's invalidation key, computed at most once.
+
+    Passed to serve_or_classify as a CALLABLE on purpose -- that function short-circuits
+    before invoking it when the feature is off, so a disabled router never hashes the
+    classifier config at all.
+    """
+    global _cfg_version
+    if _cfg_version is None:
+        _cfg_version = routing_cache_wiring.config_version(classifier_config)
+    return _cfg_version
+
+
+async def _classify_for_cache(prompt: str, file_count: int, hint: str | None):
+    """The real classifier, in the shape serve_or_classify expects.
+
+    `classify` is synchronous and cheap (keyword and threshold scoring, no I/O), so there is
+    nothing to offload to a thread here; the coroutine exists only to satisfy the await.
+    """
+    return classify(prompt=prompt, file_count=file_count, hint=hint), {
+        "routing_source": _ROUTING_SOURCE_CLASSIFIER,
+    }
+
+
 def add_routing_headers(response: Response, band: ComplexityBand, tier: Tier, classification: ClassificationResult):
     """Add X-Bifrost-* headers to response."""
     response.headers["X-Bifrost-Band"] = band.value
@@ -248,9 +314,33 @@ async def chat_completions(request: Request):
     hint = request.headers.get("X-Complexity-Hint")
     file_count = int(request.headers.get("X-File-Count", "0"))
 
-    # Classify
-    classification = classify(prompt=user_prompt, file_count=file_count, hint=hint)
+    # Classify -- or answer from the routing cache, when an operator has turned it on.
+    # With the switch off this costs one function call and one boolean: serve_or_classify
+    # short-circuits to _classify_for_cache before embedding, hashing or touching the cache.
+    classification, routing_td = await routing_cache_serve_path.serve_or_classify(
+        prompt=user_prompt,
+        file_count=file_count,
+        hint=hint,
+        classify_fn=_classify_for_cache,
+        cache=app.state.routing_cache,
+        embed_fn=routing_cache_wiring.embed,
+        config_version_fn=_cache_config_version,
+    )
     band = classification.band
+
+    # Feed the cache ONLY a genuine classification. Writing a cache-served result back would
+    # hand the cache its own output as authoritative, and its errors would then compound with
+    # nothing left to correct them. Detached, so a miss is never charged a second embed on the
+    # request path -- see routing_cache_wiring.schedule_write_back.
+    if app.state.routing_cache is not None and routing_cache_wiring.should_write_back(
+        routing_td, hint
+    ):
+        routing_cache_wiring.schedule_write_back(
+            prompt=user_prompt,
+            classification=classification,
+            cache=app.state.routing_cache,
+            cfg_version=_cache_config_version(),
+        )
     cascade = get_cascade(band)
 
     if settings.log_routing_decisions:
@@ -551,6 +641,7 @@ async def status():
             "min_band": settings.two_pass_min_band,
             "local_timeout": settings.two_pass_local_timeout,
         },
+        "routing_cache": routing_cache_wiring.status(app.state.routing_cache),
         "metrics": metrics.summary(),
     }
 

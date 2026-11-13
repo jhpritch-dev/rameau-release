@@ -27,21 +27,26 @@
 # the deterministic pip step, the non-root user, EXPOSE and the CMD.
 #
 # -----------------------------------------------------------------------------------------
-# THIS IMAGE CANNOT BUILD YET -- requirements.txt is not in the release
+# THE DEPENDENCY MANIFEST -- RESOLVED 2026-11-13, and what it still does not settle
 # -----------------------------------------------------------------------------------------
-# Layer 1 needs services/router/requirements.txt. The private repository's requirements.txt
-# is dispositioned EXCLUDE_INTERNAL in the allowlist, so no dependency manifest has been
-# selected for the release, and `docker build` will fail on the COPY below until one exists.
-# That is left as a loud failure on purpose. The alternatives were to invent a pin set, with
-# no way for a reviewer to tell which pins were measured; or to install unpinned, which makes
-# two builds of one commit different images. A missing file that stops the build is the
-# honest state of this gap.
+# This block said "THIS IMAGE CANNOT BUILD YET -- requirements.txt is not in the release"
+# until 2026-11-13. It builds: services/router/requirements.txt exists and the images job is
+# green on the runner. The reasoning is kept rather than deleted because the gap it describes
+# only half closed.
 #
-# This comment quoted "131 dependency decisions" until 2026-11-02. That figure was another
-# service's -- two bifrost-kb files summed, for a service not in this release -- and the
-# router's own manifest is reported to be five range specifiers. Neither number is checkable
-# from this repository, so none is quoted here as measured. The reasoning above never
-# depended on the size.
+# What it was right about: the private repository's manifest is dispositioned
+# EXCLUDE_INTERNAL, so none of its pins could be copied, and a missing file stopping the build
+# was the honest state of that.
+#
+# What is still open: the manifest that now exists is five RANGE specifiers, not pins, so two
+# builds of this one commit on different days can still be different images -- the exact
+# objection this block raised against installing unpinned. Only numpy is pinned, and only
+# because the repository's own requirements.txt had already measured that pin for
+# routing_cache.py on CPython 3.11, which is this base image. The other five remain ranges
+# nobody has measured a floor for. Do not read a green build as a reproducible one.
+#
+# This comment also quoted "131 dependency decisions" until 2026-11-02. That figure was
+# another service's -- two bifrost-kb files summed, for a service not in this release.
 #
 # -----------------------------------------------------------------------------------------
 # THE TRAP THIS CONTEXT INTRODUCES -- do not accept this image on /health alone
@@ -77,8 +82,47 @@ RUN pip install --no-cache-dir -r requirements.txt --no-compile \
 # ---- layer 2: the backends package ------------------------------------------------------
 COPY backends/ /app/backends/
 
-# ---- layer 3: the skill registry --------------------------------------------------------
-COPY skills/ /app/skills/
+# ---- layer 3: THE SKILL REGISTRY, CUT 2026-11-13 ----------------------------------------
+# `COPY skills/ /app/skills/` used to be here. RULED BY JOHN: cut the directory.
+#
+# WHY, measured. The sixteen Markdown files it copied were the private deployment's operator
+# playbook, and nothing in this image read them -- `services/router/*.py` contains no
+# reference to `skills/` at all, so they were inert payload. They described named machines and
+# their LAN addresses, a Tailscale funnel, a k3d control plane and a session codename, and
+# `skills/router/references/cascade-tables.md` contradicted the `config.py` beside it in eight
+# places. One file carried BOTH of the tree's address-masking styles -- one replaces the THIRD
+# octet and shows the fourth, the other replaces the FOURTH and shows the third -- so its own
+# lines reconstructed between them what each was individually hiding. The private-literal
+# scanner passed them only because a masked form is not a valid address literal, which is the
+# gap its own header admits it cannot close.
+#
+# NEITHER FORM IS WRITTEN OUT HERE, deliberately. An earlier draft of this comment quoted both
+# to explain the problem and thereby became the only file in the tree carrying the second one
+# -- reproducing the defect in the course of describing it. Measured after the rewrite: no
+# tracked file outside harness/ carries both styles.
+#
+# THE OBLIGATION IS INVERTED, NOT DELETED. Preflight B2 used to assert `skills/` was present,
+# non-empty and Markdown-only, on the grounds that an empty one would ship a router with no
+# skills. B8 now asserts the opposite -- that the directory is absent AND that no COPY here
+# names it -- because a cut only holds if something notices it coming back. Re-adding the
+# directory by reflex is exactly the failure this image should not permit twice.
+#
+# Nothing replaces it. A skills registry that an operator wants is configuration, not image
+# payload, and should arrive on a mount with the four runtime JSON files.
+
+# ---- layer 3b: the endpoint registry ----------------------------------------------------
+# `shared/resolver.py`, byte-identical to the copy at the repository root -- a CI step asserts
+# that, so this cannot drift into a second registry. It needs its own COPY because the
+# wildcard in layer 4 does not descend into directories, and it must keep the `shared/`
+# package path because that is how the code imports it in both places
+# (`from shared.resolver import resolve`); flattening it to `resolver.py` here would make the
+# image's import line differ from the repository's for no gain.
+#
+# WHY THE ROUTER NEEDS IT AT ALL: routing_cache_wiring.py resolves the embedding endpoint
+# through the registry rather than carrying its own copy of the variable names, so an operator
+# who sets RAMEAU_EMBED_URL configures this call site along with the others, and an
+# unconfigured one gets a ConfigError instead of a guess at somebody's LAN.
+COPY shared/ /app/shared/
 
 # ---- layer 4: application source --------------------------------------------------------
 # Dockerfile.dockerignore beside this file is what bounds this; the wildcard cannot widen

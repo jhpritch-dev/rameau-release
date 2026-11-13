@@ -455,6 +455,11 @@ note "$sm_report"
 # was never true, the check correctly did not fire, and the arm read that as the check being
 # broken. Three arms failed that way and one of them is the B3 twin.
 #
+# THAT EXAMPLE IS HISTORICAL as of 2026-11-13: `skills/` is cut, B2 is retired, and B8
+# asserts the directory is ABSENT. The stub builds `shared/` instead, because that is the
+# COPY'd package directory B1 and B3 now read. The reasoning above is unchanged and is
+# exactly why the stub must stay authoritative rather than additive.
+#
 # `rm -rf services` first makes the stub AUTHORITATIVE rather than additive: what the
 # obligations read is exactly what the line below builds, as it was before the source
 # existed, and as it will stay however the real tree grows. This runs in the disposable
@@ -462,11 +467,11 @@ note "$sm_report"
 # it removes nothing from the repository and the checkout is never touched.
 STUB='
 rm -rf services
-mkdir -p services/router/backends services/router/skills services/portal/src services/portal/public
+mkdir -p services/router/backends services/router/shared services/portal/src services/portal/public
 printf "fastapi\nuvicorn[standard]==0.30.6\n" > services/router/requirements.txt
 : > services/router/main.py
 : > services/router/backends/ollama.py
-: > services/router/skills/registry.md
+: > services/router/shared/resolver.py
 for f in package.json package-lock.json index.html vite.config.js nginx.conf; do : > services/portal/$f; done
 : > services/portal/src/App.jsx
 : > services/portal/public/favicon.ico
@@ -537,15 +542,27 @@ fires "B1 main.py gone but another top-level .py present" \
       "main.py is missing, and the Dockerfile's CMD is uvicorn main:app" \
       "$(with_stub 'mv services/router/main.py services/router/app.py')"
 
-# OBLIGATION-ARM: B2
-fires "B2 skills/ empty" "skills/ exists but is EMPTY" \
-      "$(with_stub 'rm services/router/skills/registry.md')"
-fires "B2 a .py appears in skills/" "it was measured as Markdown-only" \
-      "$(with_stub ': > services/router/skills/loader.py')"
+# OBLIGATION-ARM: B8
+# B2 lived here and is retired with its subject: it asserted skills/ was present and
+# non-empty, and John ruled the directory cut on 2026-11-13. B8 is its inverse, so these
+# two arms plant the two ways the cut could come undone -- and they are genuinely
+# different failures. The directory returning is inert payload in the CONTEXT; a COPY
+# naming it is payload in the IMAGE. An arm for only the first would leave the one that
+# actually ships files untested.
+fires "B8 the cut directory returns" "is back" \
+      "$(with_stub 'mkdir -p services/router/skills && : > services/router/skills/registry.md')"
+fires "B8 a live COPY names skills/ again" "has a live COPY naming skills/" \
+      "$(with_stub "echo 'COPY skills/ /app/skills/' >> deploy/images/router/Dockerfile")"
 
 # OBLIGATION-ARM: B3
 fires "B3 backends/ empty" "backends/ exists but is EMPTY" \
       "$(with_stub 'rm services/router/backends/ollama.py')"
+# The shared/ half, added with the routing cache. NON-EMPTY IS NOT THE TEST: a shared/
+# holding only a README satisfies its COPY and the router still dies on `from
+# shared.resolver import resolve`, so the arm plants exactly that -- a directory with a
+# file in it and no module.
+fires "B3 shared/ holds no module" "holds no .py" \
+      "$(with_stub 'rm services/router/shared/resolver.py && : > services/router/shared/README.md')"
 
 # OBLIGATION-ARM: B4
 fires "B4 a module in a directory no COPY names" \
@@ -779,8 +796,26 @@ fires "top-level .py count: -maxdepth 1 removed" \
 
 # ARM: py-count
 fires "*.py count: narrowed to an extension nothing uses" \
-      "CONTROL FAILED: py_count missed a .py under skills/" \
+      "CONTROL FAILED: py_count missed a .py under shared/" \
       "mutate .github/workflows/ci.yml 'py_count()     { find \"\$1\" -name '\"'\"'*.py'\"'\"'' 'py_count()     { find \"\$1\" -name '\"'\"'*.pyx'\"'\"''"
+
+# ARM: skills-copy-line
+fires "skills COPY matcher: the pattern no longer matches a COPY of skills/" \
+      "CONTROL FAILED: skills_copy_lines missed a live COPY naming skills/" \
+      "mutate .github/workflows/ci.yml 'COPY[[:space:]]+skills/' 'COPY[[:space:]]+skillz/'"
+# A SECOND ARM LIVED HERE, FOR A COMMENT FILTER THAT TURNED OUT TO BE DEAD CODE, and it
+# is worth saying what it bought. The matcher carried `| grep -v` on comment lines
+# because the Dockerfile records this cut in a comment containing the matched line, so a
+# matcher that read comments would fire on the record of the removal. This arm deleted
+# that filter and expected the near-miss control to fail. It reported FAIL-TO-FIRE:
+# removing the filter changed NO outcome, because `^[[:space:]]*COPY` already cannot
+# match a line whose first non-space character is '#'.
+#
+# So the arm did its job by failing -- it found redundant code in the matcher it was
+# written to defend, which reading the regex a second time had not. The filter is gone
+# and this arm goes with it; the near-miss control it would have broken stays, as the
+# control for the ANCHOR. The ARM marker above is unchanged, so the census still sees
+# one arm for one matcher.
 
 # ARM: non-empty-directory
 fires "non-empty directory: -type f dropped, so a tree of directories reads non-empty" \
