@@ -123,6 +123,7 @@ being published, or is large enough to deserve its own release.
 | the agent sandbox | depends on a Linux-only isolation mechanism not present on every host. **Narrowed 2026-11-04:** this cuts the sandbox ISOLATION layer, not the shell-MCP server, which is ruled in above |
 | NPU classification path | hardware-specific, and the measured failure rate on the one host that has it is too high to publish |
 | the router's bundled skill registry | **Cut by John 2026-11-13.** Sixteen Markdown files under `services/router/skills/`, read by nothing in the image — `services/router/*.py` contains no reference to `skills/` at all, so they were inert payload. They carried named machines and their LAN addresses in two mutually-de-masking styles, a Tailscale funnel, a k3d control plane, a session codename, and a cascade reference that contradicted `config.py` in eight places. Preflight B2 asserted the directory was present; **B8 now asserts it is absent, and that no `COPY` names it** |
+| `deploy/compose/` (6 files) | **Cut by John 2026-11-13**, and it was never dispositioned by this document at all — it appears nowhere above or below, which is how it survived step 4. Nothing in the repository referenced any of it: every CI and README reference is to `deploy/compose.yaml`, the release's own file at `deploy/`. `docker-compose.build.yml` defined 10 services whose every build context was `../src/bifrost-*`, paths that do not exist here, and 6 of those services are cut from v0.1 by rows above. It also carried build-host absolute paths — `verify-context.py` loaded `dirtycheck.py` from a staging directory by absolute path, with the staging date in it — which the router Dockerfile names as one of three things that *had* to change for the release |
 | quantum-related experiments | research, not product |
 | workflow-automation integration | third-party service wiring, host-specific |
 | messaging bridges and notification transports | credential-bearing by nature |
@@ -133,6 +134,50 @@ being published, or is large enough to deserve its own release.
 
 If a week of the release schedule slips, the slack is taken from the bottom of the in-scope
 table — never from the scrub or the scanning steps.
+
+### A directory this document never dispositioned — `deploy/compose/`, cut 2026-11-13
+
+Recorded separately because the *reason it survived* is the finding, not its contents.
+
+Every other item in this release was dispositioned: ruled in, ruled out, or named as an
+obligation. `deploy/compose/` was none of those. It appears nowhere in this document, so
+no gate asked about it, no obligation covered it, and step 4 copied it in with everything
+else. **Absence from a scope document is not a disposition, and nothing here could tell
+the difference** — which is the generalisable part: the census and the preflight both
+check that declared things are correct, and neither can see something nobody declared.
+
+What it held, measured 2026-11-13:
+
+| file | what it was |
+|---|---|
+| `docker-compose.build.yml` | 590 lines, 10 services, every build context `../src/bifrost-*` |
+| `verify-context.py` | a throwaway probe loading `dirtycheck.py` from a build-host absolute path |
+| `docker-compose.bifrost-shell-mcp.yml` | superseded by the `shell-mcp` service in `deploy/compose.yaml` |
+| `bifrost-shell-mcp-server.yaml` | a private image tag, `bifrost-shell-mcp:v1` |
+| `bifrost-mcp-catalog-bootstrap.yaml` | an MCP catalog bootstrap for a private registry |
+| `observability/prometheus-config.yaml` | scrape config for services not in v0.1 |
+
+No guard replaces it, deliberately, and the contrast with B8 is the reason. The skill
+registry needed one because a `COPY` could put it back in an image; nothing references
+this directory, so its return would be inert and a guard would assert a path that was
+never load-bearing. What this cut argues for instead is that **a new top-level directory
+under `deploy/` should be dispositioned here before it lands**, which is a review habit
+and not something a gate can check.
+
+**A related defect, fixed in the same change.** `checks.py` — which ships inside the
+shell-mcp image — carried `Machine: <name> (<drive-letter build path>)` in its module
+docstring. Edited in the published file under `harness/router/` and re-copied, because
+the pair is byte-identity-pinned by a test and patching the service copy alone would have
+left the published source still carrying it. After this change no file in any `services/`
+build context names a machine or a build-host path.
+
+**NOT fixed, and left as a scope question:** 23 build-host absolute paths remain across
+about a dozen files under `harness/`, which is published source rather than image
+payload. `tools/scan_private_literals.py` has no rule for the shape, so none of them is
+gated. Adding one would turn CI red in 23 places at once and needs a ruling on whether a
+build-host path is a disclosure this release cares about outside an image — the router
+Dockerfile says it is, for itself, and 23 survivors suggest it was never applied as a
+blanket rule.
 
 ## Known assembly obligations, recorded before they can be forgotten
 
