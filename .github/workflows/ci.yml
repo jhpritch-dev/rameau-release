@@ -2021,7 +2021,16 @@ jobs:
           # at 34 against 36 the DEMO arm's symmetric matcher+arm removal lands on 35 and
           # the floor stays quiet, so the one leg that can see that removal stops seeing it.
           # Measured, not reasoned about -- the arm scored WRONG-REASON for exactly this.
-          MATCHER_FLOOR=36
+          #
+          # 36 -> 37 when shell-mcp-ignore-patterns was declared, and the paragraph above
+          # turned out to be a prediction. Step 4 landed six ignore files under
+          # deploy/compose/ and the population went 36 -> 42 with the floor left at 36; six
+          # slack, and the DEMO arm scored WRONG-REASON for the whole of that time while the
+          # failure was read as belonging to the census beside it. Retiring those files and
+          # adding one real pattern set leaves 37 matchers and 37 arms, so the floor is 37:
+          # equal to the population, which is the only value at which a symmetric removal of
+          # one pair is visible. A floor is not a pin -- growth raises it, by hand, here.
+          MATCHER_FLOOR=37
           OBLIGATION_FLOOR=12
           [ "$NM" -ge "$MATCHER_FLOOR" ] || blame "POPULATION SHRANK: $NM matchers against a floor of $MATCHER_FLOOR. Set equality cannot see a matcher deleted together with its arm, which is what this floor is for. If the removal was deliberate, lower the floor in the same change and say why." ""
           [ "$NO" -ge "$OBLIGATION_FLOOR" ] || blame "OBLIGATIONS SHRANK: $NO against a floor of $OBLIGATION_FLOOR." ""
