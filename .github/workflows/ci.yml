@@ -1295,6 +1295,7 @@ jobs:
             find "$sm_r" -mindepth 2 -name '*.py' -type f \
               -not -path "$sm_r/backends/*" \
               -not -path "$sm_r/skills/*" \
+              -not -path "$sm_r/shared/*" \
               -not -path '*/tests/*' \
               -not -name 'test_*.py' \
               -not -name '*_test.py' \
@@ -1475,6 +1476,24 @@ jobs:
           # Neither mechanism's absence would reveal the other, which is why no build and no
           # existing check can see this. tests/ and test_*.py are excluded from the scan
           # because the ignore file denies them deliberately and no COPY wants them.
+          #
+          # THE EXCLUSION LIST IS A RATCHET, and `shared/` joined it on 2026-11-13 when the
+          # routing cache landed and needed the endpoint registry in the context. B4 fired on
+          # it, which is B4 working: a new subdirectory must not be waved through, and adding
+          # a name here is the author asserting that BOTH mechanisms are present.
+          #
+          # What makes the assertion checkable rather than a promise is that the premise above
+          # -- silent in both directions -- holds only for a directory NO COPY NAMES. Once a
+          # COPY group exists, the ignore file denying it is LOUD. Measured that day by
+          # deleting the `!shared/` lines and rebuilding:
+          #
+          #     COPY shared/ /app/shared/
+          #     ERROR: failed to compute cache key: ... "/shared": not found
+          #
+          # So for each name on this list the coupling is enforced by buildkit, and the
+          # dangerous case -- a directory with an admission and no COPY, or neither -- is
+          # still exactly what the find above catches. Do not add a name here without a COPY
+          # group in deploy/images/router/Dockerfile; that, not this list, is what holds.
           checked=$((checked + 1))
           # -mindepth 2 to exclude the TOP LEVEL, not `-not -path "$R/*.py"`. In find's
           # -path glob, `*` matches a '/' as well, so that pattern excluded every .py at any
