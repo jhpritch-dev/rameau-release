@@ -365,7 +365,7 @@ Three services on one bridge network named `rameau`.
 
 | service | what it is | container port | published by default |
 |---|---|---|---|
-| `router` | the OpenAI-compatible endpoint, the pre-generation classifier, tier selection, the cascade and the request cache | 8080 | `127.0.0.1:18080` |
+| `router` | the OpenAI-compatible endpoint, the pre-generation classifier, tier selection and the cascade | 8080 | `127.0.0.1:18080` |
 | `portal` | the existing web UI, as it stands -- nginx serving a Vite bundle | 80 | `127.0.0.1:13110` |
 | `shell-mcp` | the delegated-shell MCP server, static-analysis subset only: `run_ruff`, `run_mypy`, `run_checks`. Bearer-authenticated, and it **refuses to start** without a token of at least 32 characters | 8086 | `127.0.0.1:8086` |
 

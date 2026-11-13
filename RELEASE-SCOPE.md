@@ -51,6 +51,35 @@ The last four rows were added by ruling, not by drafting, and the reason is reco
 below under "A scope gap and a scope contradiction, both settled by ruling" -- the
 census had already selected both families and this table did not name them.
 
+### THIS TABLE IS SATISFIED AT THE REPOSITORY LEVEL, NOT AT THE IMAGE LEVEL — measured 2026-11-13
+
+Recorded because the distinction is invisible from the table and a reader will not guess it.
+Four of the rows above name code that **is in this repository and is not in the router
+image**:
+
+| row | where it actually lives |
+|---|---|
+| request cache | `harness/router/routing_cache.py`, `routing_cache_serve_path.py`, `embed_similarity.py` |
+| autopilot | `harness/router/autopilot_graph.py`, `autopilot_state.py` |
+| delegated tool execution | `harness/router/bifrost_delegate.py`, `igor_tool_loop.py`, `decomposer_prompt.py` |
+| the shell-MCP server | its own image and service since 2026-11-13 — this row IS wired |
+
+The measurement: `harness/router/` holds **55** top-level modules; `services/router/`, which
+is the build context the image is `COPY`'d from, holds **8** — `arbiter`, `classifier`,
+`commands`, `config`, `main`, `metrics`, `review_prompts`, `strategies`. The shipped
+`main.py` imports none of the modules above; its local imports are `classifier`, `config`,
+`strategies`, `review_prompts`, `commands` and the three backends. So `docker compose up`
+gets a router that classifies, selects a tier and cascades, and does **not** cache, plan or
+delegate.
+
+**That may be correct and it is not asserted either way here.** "In v0.1" has meant "enters
+this tree" throughout this document, and by that reading every row is satisfied — the code is
+published. The open question is whether the default IMAGE is meant to be the reduced router
+it currently is, or whether `services/router/` is short of modules the allowlist selected. It
+is a scope question, not a defect, and it needs the same kind of ruling the last four rows
+got. What would be a defect is a reader inferring from the table that the container runs the
+cache, so the table now says where to look instead.
+
 ## Explicitly NOT in v0.1
 
 Listed, not forgotten. Each is either host-specific, depends on infrastructure that is not
