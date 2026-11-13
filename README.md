@@ -603,31 +603,27 @@ green while generation is failing. For liveness only, the application serves `/l
 
 ### What works today, and what is blocked
 
-Measured on this tree on 2026-11-02, Docker 29.4.2 / Compose v5.1.3.
+Rows marked 2026-11-02 were measured on Docker 29.4.2 / Compose v5.1.3; the build row is from
+the CI runner at `30ba18d` on `main`, docker 28.0.4.
 
 | step | state |
 |---|---|
-| `python -m pytest shared/test_resolver.py` | **works.** 87 passed. |
-| `python shared/resolver.py --write-examples` | **works.** Regenerates both example env files. |
-| `docker compose -f deploy/compose.yaml config` | **works.** Parses and resolves, with `RAMEAU_OLLAMA_URL` set. |
+| `python -m pytest` (the whole suite) | **works.** 2,156 passed, 5 skipped, 1 xfailed, 0 failures, 0 errors. |
+| `python -m pytest shared/test_resolver.py` | **works.** 87 passed when last measured alone. |
+| `python shared/resolver.py --write-examples` | **works.** Regenerates both example env files, and CI regenerates-and-diffs to keep that true. |
+| `docker compose -f deploy/compose.yaml config` | **works.** Parses and resolves all three services, with `RAMEAU_OLLAMA_URL` set. |
 | `docker compose -f deploy/compose.yaml -f deploy/compose.no-egress.yaml config` | **works.** Parses and resolves. |
 | the same, with `RAMEAU_OLLAMA_URL` unset | **fails, correctly.** `required variable RAMEAU_OLLAMA_URL is missing a value`. This is the designed behavior and CI asserts it. |
-| `docker compose build` (either image) | **blocked.** |
-| `docker compose up` | **blocked.** |
+| `docker compose build` | **works.** All three images build on the runner. |
+| `docker compose up` | **blocked, on configuration rather than code.** The router needs the four runtime JSON files and this repository has not derived their schemas; `shell-mcp` needs a bearer token you generate. |
 | copying the four runtime JSON files | **works, and does not get you a running router.** `deploy/config/*.example.json` exist as placeholders; their schemas have not been derived. |
 
-What a reader actually sees if they try `build` or `up` today:
-
-```
-unable to prepare context: path "...\RAMEAU-release\services\router" not found
-```
-
-The build context directories `services/router/` and `services/portal/` do not exist in this
-repository. That is the first failure, and it arrives before anything is downloaded and
-before any instruction in either Dockerfile is reached -- including the missing
-`requirements.txt` that `deploy/README.md` and the router Dockerfile both name as the blocker.
-Both are true; the missing context is simply the one you hit first. Nothing here is a
-misconfiguration to debug: it is step 4 of the assembly order not having happened.
+Until step 4 landed, `build` and `up` both failed before reaching any instruction in any
+Dockerfile -- `unable to prepare context: path "...\services\router" not found`, which arrived
+before anything was downloaded. That is no longer reachable, and it is worth knowing it was
+never a misconfiguration to debug: it was step 4 of the assembly order not having happened.
+What remains between a green build and a running stack is the runtime config, which is a
+smaller and much better-defined gap.
 
 All three images now build from this tree, on the CI runner at `30ba18d`. Before step 4 the
 Dockerfiles had only been exercised against a throwaway stub context, created and then
