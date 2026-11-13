@@ -26,7 +26,12 @@ Every command must be prefixed: `[Bifrost]`, `[Hearth]`, or `[Forge]`. Never omi
 - Files with BOM: use `encoding='utf-8-sig'`
 
 ## Cascade and tier reference
-See `references/cascade-tables.md` for full IP/port table and all cascade definitions.
+See `references/cascade-tables.md` for the tier map, all five modes' cascades, and the
+endpoint VARIABLES. There is no IP/port table there any more and this line used to promise
+one: every endpoint in this release resolves from the environment through
+`shared/resolver.py`, which raises rather than defaulting, so there is no address to print.
+That file also records the eight claims it carried that `config.py` contradicted — including
+tier names that would have made an `X-Tier-Override` fail.
 
 ## Common tasks
 
