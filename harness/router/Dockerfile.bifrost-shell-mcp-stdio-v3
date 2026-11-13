@@ -1,0 +1,29 @@
+# v3 (2026-07-04, SANDBOX-EXECUTION-PATH): v1 stdio gateway image + kubectl, so the
+# run_in_sandbox tool can launch throwaway pods in the k3d `sandbox` namespace. Creds are
+# NOT baked -- the scoped sandbox-runner kubeconfig is MOUNTED at /kc via the catalog volume
+# (KUBECONFIG=/kc), so token rotation never requires an image rebuild.
+# Build context = repo root: docker build --no-cache -f <this> -t bifrost-shell-mcp:v3 .
+FROM python:3.12-slim
+WORKDIR /app
+# git (git_read) + kubectl (run_in_sandbox). curl/ca-certificates only for the kubectl download.
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates \
+    && curl -fsSLo /usr/local/bin/kubectl https://dl.k8s.io/release/v1.30.5/bin/linux/amd64/kubectl \
+    && chmod 0755 /usr/local/bin/kubectl \
+    && apt-get purge -y curl && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+RUN git config --system --add safe.directory '*'
+RUN useradd -m -u 1000 -s /bin/bash mcp
+COPY requirements-mcp.txt .
+RUN pip install --no-cache-dir -r requirements-mcp.txt
+# bifrost_gates.py + bifrost-gates.toml (Ceremony 3) and bifrost_halt.py
+# (Ceremony 5) are imported inside guarded try blocks. Leaving them out builds
+# an image that serves every tool with those controls SILENTLY INERT -- which
+# is what this line did until 2026-09-21. tests/test_image_carries_the_gates.py
+# fails if a future import is added without being shipped.
+COPY bifrost_shell.py bifrost_shell_policy.json checks.py bifrost_delegate.py \
+     bifrost_gates.py bifrost-gates.toml bifrost_halt.py ./
+RUN chown -R mcp:mcp /app
+USER mcp
+# The scoped sandbox-runner kubeconfig is mounted here (RO) by the catalog volume.
+ENV KUBECONFIG=/kc
+ENTRYPOINT ["python", "bifrost_shell.py", "--transport", "stdio"]

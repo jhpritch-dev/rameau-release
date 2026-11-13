@@ -1,0 +1,13 @@
+{
+  "id": "complex_002",
+  "band": "COMPLEX",
+  "assigned_tier": "T2",
+  "description": "Build a rate limiter with sliding window and token bucket algorithms",
+  "prompt": "Write a Python module with: (1) class `SlidingWindowRateLimiter` with __init__(self, max_requests: int, window_seconds: float), allow(self, client_id: str) -> bool, and get_stats(self, client_id: str) -> dict. (2) class `TokenBucketRateLimiter` with __init__(self, capacity: int, refill_rate: float), allow(self, client_id: str, tokens: int = 1) -> bool, get_stats(self, client_id: str) -> dict. Both must be thread-safe. Use time.monotonic() for timing. Include test_sliding_window() and test_token_bucket() testing: under-limit allows, over-limit blocks, window expiry re-allows, multi-client isolation. Use time.sleep() sparingly (<=0.1s) in tests.",
+  "expected_behavior": "Both rate limiters correctly enforce limits, handle window expiry, and isolate clients",
+  "validation_criteria": {
+    "l3": "Code parses without syntax errors",
+    "l4": "All test functions pass including timing-based tests",
+    "l5": "Thread-safe implementation, correct sliding window vs token bucket semantics, proper stats"
+  }
+}

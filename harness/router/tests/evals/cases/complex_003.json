@@ -1,0 +1,13 @@
+{
+  "id": "complex_003",
+  "band": "COMPLEX",
+  "assigned_tier": "T1A",
+  "description": "Build a JSON Schema validator supporting core keywords",
+  "prompt": "Write a Python module with: (1) `validate(instance, schema: dict) -> tuple[bool, list[str]]` that validates a JSON instance against a JSON Schema (draft-07 subset). Support these keywords: type (string, number, integer, boolean, array, object, null), required, properties, items, minLength, maxLength, minimum, maximum, enum, pattern (regex), additionalProperties. Return (True, []) on success, (False, [list of error messages]) on failure. (2) class `SchemaError` raised for invalid schemas. Include test_validate() testing: type validation, required fields, nested objects, array items, pattern matching, multiple errors collected.",
+  "expected_behavior": "Validates JSON instances against schema subset, collects all errors rather than failing on first",
+  "validation_criteria": {
+    "l3": "Code parses without syntax errors",
+    "l4": "test_validate() passes all assertion groups",
+    "l5": "Handles nested validation, collects multiple errors, correct type coercion rules"
+  }
+}

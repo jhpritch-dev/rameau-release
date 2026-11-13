@@ -31,7 +31,7 @@ from resolver import (  # noqa: E402
 def test_resolves_the_canonical_variable():
     # rameau-scan: allow -- an RFC1918 fixture, and deliberately one. An operator on a
     # private LAN will configure exactly this, so the resolver MUST accept it; swapping in
-    # a documentation-range address would leave that behaviour unproven.
+    # a documentation-range address would leave that behavior unproven.
     env = {"RAMEAU_ROUTER_URL": "http://10.0.0.9:8089"}
     assert resolve("router", env=env) == "http://10.0.0.9:8089"  # rameau-scan: allow
 
@@ -142,7 +142,7 @@ def test_x_x_x_x_is_UNREACHABLE_not_unfixed():
 
     `x.x.x.x` is structurally identical to `a.b.c.d` -- four single-character non-octet
     labels, zero octets -- so no shape-based rule can refuse one and accept the other.
-    This test records the behaviour so a later reader sees a decision rather than a gap.
+    This test records the behavior so a later reader sees a decision rather than a gap.
     """
     url = "http://x.x.x.x:8089"
     assert resolve("router", env={"RAMEAU_ROUTER_URL": url}) == url
@@ -212,7 +212,7 @@ def test_the_redaction_rule_s_documented_blind_spot():
 def test_a_real_address_with_four_octets_is_NOT_mistaken_for_a_redaction():
     """Positive twin for the test above: the placeholder check must not be so eager
     that it rejects ordinary addresses."""
-    # rameau-scan: allow -- same reason as the parametrised list above: the RFC1918 entry
+    # rameau-scan: allow -- same reason as the parametrized list above: the RFC1918 entry
     # is the point of the test, since the eager-placeholder check must not reject it.
     for good in ("http://192.0.2.4:8089", "http://10.1.2.3:80",
                  "http://127.0.0.1:11434", "https://router.example.com"):
@@ -314,8 +314,17 @@ _CANONICAL_PREFIX = "RAMEAU"
 _CANONICAL_SUFFIX = "URL"
 _PERMITTED_ROLE_WORDS = frozenset({
     "ARBITER", "BROADCASTER", "CHAT", "EMBED", "HEALTH",
-    "KB", "OLLAMA", "ROUTER", "SEARCH",
+    "KB", "OLLAMA", "PORTAL", "ROUTER", "SEARCH",
 })
+# PORTAL was added when this allowlist met the portal endpoint, and the two arrived from
+# different branches: the vocabulary was written against a registry that had no portal,
+# and `RAMEAU_PORTAL_URL` was added by the branch that landed `services/portal/`. Neither
+# change fails on its own and they do not touch the same lines, so the textual merge was
+# clean and the suite was not -- which is the cost this comment block says is intended,
+# arriving exactly as described: "adding an endpoint whose name uses a new word makes
+# this test FAIL until the word is added here." It is admitted on the stated criterion
+# and nothing weaker -- `portal` is the service's role, checkable by eye as naming no
+# machine -- so the property the allowlist asserts is unchanged.
 
 
 def _canonical_name_violations(env_name):

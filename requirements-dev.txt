@@ -1,0 +1,25 @@
+# Test and development dependencies. Installs the runtime set too.
+#
+# Run the suite from the repository root with no path argument:
+#
+#   pip install -r requirements-dev.txt
+#   python -m pytest -q
+#
+# RUN IT FROM THE ROOT, AND WITHOUT A PATH ARGUMENT. conftest.py at the repository root is
+# what puts harness/router on sys.path, and pytest only loads it when the root is the
+# rootdir. `pytest harness/router/tests/some_test.py` makes that directory the rootdir
+# instead, the conftest never loads, and every bare import fails with a message that looks
+# like missing code rather than a missing path entry.
+#
+# Verified 2026-11-13 to resolve together with requirements.txt and requirements-opt.txt on
+# CPython 3.11 via `pip install --dry-run --ignore-installed`.
+
+-r requirements.txt
+-r requirements-opt.txt
+
+pytest==9.2.0                          # [unmeasured]  the test suite
+starlette==0.38.6                      # [frozen]  test_dependency_hardening.py imports
+                                       #   starlette.requests.Request directly. It also arrives
+                                       #   transitively with fastapi==0.115.0, which resolves to
+                                       #   exactly this version -- pinned so the direct import has
+                                       #   a stated owner rather than an accidental one.

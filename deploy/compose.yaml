@@ -198,6 +198,42 @@ services:
     logging: *logging
     restart: "no"
 
+  shell-mcp:
+    # The delegated-shell MCP service, ruled in scope 2026-11-03 along with "its compose
+    # wiring" -- which until now did not exist. The assembly landed the private
+    # deployment's Dockerfile for it twice and neither could build here; see
+    # deploy/images/shell-mcp/Dockerfile for what differs and why.
+    build:
+      context: ../services/shell-mcp
+      dockerfile: ../../deploy/images/shell-mcp/Dockerfile
+    image: rameau/shell-mcp:${RAMEAU_TAG:-dev}
+    env_file: *env-file
+    volumes:
+      # IT EXITS 2 WITHOUT THIS, by design and immediately: with --transport http the server
+      # requires a token file of at least 32 characters and refuses to serve unauthenticated.
+      # No token ships in this repository and none ever should -- generate one on the host
+      # and point RAMEAU_SHELL_MCP_TOKEN_FILE at it. deploy/README.md carries the command.
+      #
+      # THE HOST-SIDE NAME ENDS `.token` ON PURPOSE, and it is the one part of this line that
+      # is not cosmetic. `.gitignore` ignores `/deploy/config/*.json` and `*.token`; a file
+      # called `shell_mcp_token` matches NEITHER, so the obvious name would have had every
+      # operator create a committable secret in a tracked directory. `*.token` is also one of
+      # the 36 never-block shapes, so the same name keeps it out of every build context.
+      # Measured both ways before it was written down. The container-side path is the
+      # server's own default and is not ours to rename.
+      #
+      # If the path does not exist, Docker creates a DIRECTORY there and the server then
+      # fails on an unreadable token rather than a missing one. That is a confusing message
+      # for a simple cause, so it is written down here rather than discovered twice.
+      - ${RAMEAU_SHELL_MCP_TOKEN_FILE:-./config/shell_mcp.token}:/run/secrets/shell_mcp_token:ro
+    ports:
+      # Loopback by default, as the portal is. The server is Bearer-authenticated, but the
+      # default is still not to expose it beyond the host.
+      - "${RAMEAU_SHELL_MCP_PUBLISH:-127.0.0.1:8086}:8086"
+    networks: [rameau]
+    logging: *logging
+    restart: "no"
+
 networks:
   rameau:
     driver: bridge

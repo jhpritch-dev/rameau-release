@@ -1,0 +1,64 @@
+# bifrost-gates.toml -- tool-class gates and task phase transitions.
+#
+# Source-controlled but NOT in protected_files.json. It is inert until
+# bifrost_shell.py reads it, and that wiring is a rule-3 change (Ceremony 3).
+# Until then nothing consumes this file; bifrost_gates.py loads it standalone.
+#
+# Reload is by MTIME, not SIGHUP. The briefed design called
+# signal.signal(signal.SIGHUP, ...) at import -- signal.SIGHUP does not exist on
+# Windows, so that line raises AttributeError and takes the whole module down on
+# the host bifrost_shell.py actually runs on.
+#
+# CLASS SET IS NOT INVENTED. The brief listed five classes
+# (READ/WRITE/EXECUTE/DELEGATE/EXTERNAL). The live surface has EIGHT, defined in
+# bifrost_shell_policy.json, and "EXTERNAL" is not among them. The names below
+# are that file's, exactly -- test_the_class_set_matches_the_live_policy fails if
+# they ever drift apart. `enabled` carries the same meaning it has there and is
+# the authoritative on/off today; the risk keys are the NEW dimension this file
+# adds, and they gate nothing until Ceremony 3 wires them in.
+
+schema_version = 1
+
+[tool_classes]
+READ     = { enabled = true,  max_risk = 0.2, ceremony_required = false, review_required = false }
+READ_FS  = { enabled = true,  max_risk = 0.3, ceremony_required = false, review_required = false }
+ANALYZE  = { enabled = true,  max_risk = 0.3, ceremony_required = false, review_required = false }
+COMPUTE  = { enabled = true,  max_risk = 0.4, ceremony_required = false, review_required = false }
+# WEB added 2026-10-08 (Ceremony 107 addendum B, signed John). Read-only -- web_search
+# returns a value and writes nothing -- but it leaves the network to a third party,
+# which READ_FS does not, hence 0.4 rather than 0.3. NOTE: these flags are consulted
+# through gated_tool, and web_search is served IN-PROCESS by run_tool_loop, so this
+# entry is INERT for it today. It exists so this file and bifrost_shell_policy.json
+# agree, which is what the drift tripwire in tests/test_bifrost_gates.py checks. The
+# halt that DOES reach web_search is the explicit check in igor_tool_loop.py.
+WEB      = { enabled = true,  max_risk = 0.4, ceremony_required = false, review_required = false }
+SANDBOX  = { enabled = true,  max_risk = 0.5, ceremony_required = false, review_required = false }
+DELEGATE = { enabled = true,  max_risk = 0.5, ceremony_required = true,  review_required = false }
+WRITE    = { enabled = true,  max_risk = 0.6, ceremony_required = true,  review_required = false }
+EXECUTE  = { enabled = true,  max_risk = 0.8, ceremony_required = true,  review_required = true  }
+
+# Task phases: pending -> running -> review -> done, with blocked as a sink.
+# These match the board's BOARD_PHASES in arbiter.py.
+
+[phase_gates.pending_to_running]
+requires_free_dependency = true      # every depends_on must be done
+max_concurrent_running   = 3
+
+[phase_gates.running_to_review]
+requires_result = true               # a non-null result must exist
+
+[phase_gates.review_to_done]
+human_approval_required = false      # default: auto-advance
+shieldstral_score_max   = 0.70
+
+[phase_gates.review_to_blocked]
+shieldstral_score_min = 0.70         # at or above this -> hold for a human
+
+[overlay]
+# A deployment (e.g. a Rameau client) may ship an overlay TOML merged over this
+# base. An overlay may only make a gate STRICTER, never looser -- see
+# bifrost_gates.TIGHTEN_ONLY. A client can require human approval on EXECUTE, or
+# disable a class outright; a client cannot turn ceremony_required off or enable
+# a class this file disabled, which would let an overlay quietly switch off the
+# control it exists to enforce.
+path = ""

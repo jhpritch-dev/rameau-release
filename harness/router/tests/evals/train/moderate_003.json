@@ -1,0 +1,13 @@
+{
+  "id": "moderate_003",
+  "band": "MODERATE",
+  "assigned_tier": "T1A",
+  "description": "Build a CSV parser that handles quoted fields and escapes",
+  "prompt": "Write a Python module with: (1) `parse_csv_line(line: str, delimiter: str = ',') -> list[str]` that correctly handles quoted fields, escaped quotes (\"\"), and embedded delimiters. (2) `parse_csv(text: str, delimiter: str = ',', has_header: bool = True) -> list[dict] | list[list]` that parses multi-line CSV text. If has_header=True, return list of dicts with header keys. Include test_parse_csv() testing: simple rows, quoted fields with commas, escaped quotes, multiline within quotes.",
+  "expected_behavior": "Parses RFC 4180 compliant CSV including quoted fields, embedded commas, and escaped double-quotes",
+  "validation_criteria": {
+    "l3": "Code parses without syntax errors",
+    "l4": "test_parse_csv() passes all edge cases",
+    "l5": "Handles: quoted fields, embedded delimiters, escaped quotes, header mapping"
+  }
+}

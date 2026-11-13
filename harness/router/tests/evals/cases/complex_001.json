@@ -1,0 +1,13 @@
+{
+  "id": "complex_001",
+  "band": "COMPLEX",
+  "assigned_tier": "T1A",
+  "description": "Build a dependency resolver with cycle detection for a package manager",
+  "prompt": "Write a Python module with: (1) class `Package` with name: str and deps: list[str], (2) `resolve_order(packages: dict[str, Package]) -> list[str]` that returns a topological install order, (3) `detect_cycles(packages: dict[str, Package]) -> list[list[str]]` that finds all dependency cycles. If resolve_order encounters a cycle, raise `CyclicDependencyError` with the cycle path. Include test_resolve_order() testing: linear chain, diamond dependency, cycle detection, missing dependency error. Include test_detect_cycles() testing: no cycles returns empty, single cycle, multiple independent cycles.",
+  "expected_behavior": "Topological sort for acyclic graphs, CyclicDependencyError with path for cyclic graphs, all cycles enumerated",
+  "validation_criteria": {
+    "l3": "Code parses without syntax errors",
+    "l4": "test_resolve_order() and test_detect_cycles() pass all assertions",
+    "l5": "Correct topological ordering, cycle detection finds ALL cycles, handles diamond deps"
+  }
+}

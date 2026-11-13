@@ -1,0 +1,28 @@
+[
+  {
+    "id": "D1",
+    "description": "router /health returns 200",
+    "type": "command_exit_zero",
+    "target": "curl.exe -s -m 10 -o NUL -w \"%{http_code}\" http://192.168.x.4:8089/health | findstr 200"
+  },
+  {
+    "id": "D2",
+    "description": "health shows classifier up",
+    "type": "command_output_contains",
+    "target": "curl.exe -s -m 10 http://192.168.x.4:8089/health",
+    "expected": "\"classifier\""
+  },
+  {
+    "id": "D3",
+    "description": "claimed alias advertised by router",
+    "type": "command_output_contains",
+    "target": "curl.exe -s -m 10 http://192.168.x.4:8089/v1/models",
+    "expected": "bifrost-cohere"
+  },
+  {
+    "id": "D5",
+    "description": "router health endpoint returns HTTP 200",
+    "type": "command_exit_zero",
+    "target": "curl.exe -s -f -m 10 http://192.168.x.4:8089/health"
+  }
+]

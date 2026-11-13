@@ -8,14 +8,14 @@ It is the contract: anything cut is listed here as cut, by name.
 This repository was created as scaffolding first and will receive source second. That is
 deliberate, not an accident of scheduling.
 
-1. **Scaffolding** — licence, ignore rules, secret-scanning CI, this document. *Done.*
+1. **Scaffolding** — license, ignore rules, secret-scanning CI, this document. *Done.*
 2. **Allowlist** — an explicit, mechanically generated list of which paths from the private
    archive enter this tree. A release built by excluding what looks internal will miss
    something; a release built by including only what is approved will not.
 3. **Scrub** — credential removal, verified by more than one independent scanner over both
    the working tree and the full history of the source archive.
 4. **Source lands** — assembled from the allowlist, into a history that begins here.
-5. **Containerisation** — the Compose stack and an offline profile.
+5. **Containerization** — the Compose stack and an offline profile.
 6. **Hardening and release** — documentation, an independent final scan, then the tag.
 
 Step 4 does not begin until step 3 reads clean. The ordering is the whole point: a
@@ -129,7 +129,7 @@ can be written against this table.
 neither table — the same gap as the portal. They are now in scope under one row,
 *delegated tool execution*. `docker/shell-mcp/` was the sharper case: the cut list named
 "the agent sandbox" directly while six shell-mcp paths were selected, a live contradiction
-between two parts of this document. It resolves in favour of the selection — the shell-MCP
+between two parts of this document. It resolves in favor of the selection — the shell-MCP
 server has its own in-scope row, and the cut row is narrowed to the isolation layer it
 actually cuts.
 
@@ -138,7 +138,7 @@ questions. Each of the six families now appears in the in-scope table, and the t
 rows that used to contradict it say what they cut.
 
 - **A `NOTICE` file is required at the root.** Nine `.woff2` faces (Instrument Sans,
-  Instrument Serif, JetBrains Mono) and their three OFL licence texts are in the release
+  Instrument Serif, JetBrains Mono) and their three OFL license texts are in the release
   set. SIL OFL 1.1 is compatible with Apache-2.0 but is *not* Apache-2.0, so the third-party
   attribution has to be stated rather than implied. This file does not exist yet because the
   fonts have not landed; it goes in with them, not before.
@@ -182,12 +182,12 @@ rows that used to contradict it say what they cut.
 - **Every file in the planned `docs/` slot is new writing.** The source archive's entire
   `docs/` tree is excluded as internal, so no documentation carries over.
 - **`bfg-1.14.0.jar` (GPLv3, 13.8 MB, two copies) is excluded** and must be named in the
-  wipe ledger. A GPL artefact reaching an Apache-2.0 release would be a licence conflict,
+  wipe ledger. A GPL artefact reaching an Apache-2.0 release would be a license conflict,
   not merely unwanted weight.
 
 No model weights exist anywhere in the source archive, so none can leak into the release.
 
-### Containerisation findings of 2026-11-02, recorded before step 5 begins
+### Containerization findings of 2026-11-02, recorded before step 5 begins
 
 Both Dockerfiles were exercised against a throwaway stub build context, created outside git
 and discarded; no stub reached this repository and `services/` is still absent here rather
@@ -201,8 +201,8 @@ rather than left in commit messages.
   as the only layer that blocks a credential before the object reaches the remote. It had
   never run once.
 
-  **This generalises into an obligation on step 4.** This tree is assembled on Windows,
-  which does not carry the executable bit, and `.gitattributes` normalises line endings
+  **This generalizes into an obligation on step 4.** This tree is assembled on Windows,
+  which does not carry the executable bit, and `.gitattributes` normalizes line endings
   only — `* text=auto eol=lf` has nothing to say about file modes. So every file arriving
   at step 4 whose job depends on being executable will arrive `100644` and will fail
   *silently*. Assert the mode after assembly, and do not infer it from the file working
@@ -226,7 +226,7 @@ rather than left in commit messages.
   success, after which the build ran three more instructions and died at
   `sh: vite: not found`.
 
-### Containerisation findings of 2026-11-03
+### Containerization findings of 2026-11-03
 
 Found and discharged in this repository, with Docker 29.4.2 / Compose v5.1.3 available, so
 the compose claims below are measured rather than parsed by eye. Two further items are left
@@ -308,7 +308,7 @@ than fixing something.
   CORRECTED in documentation only.** It is declared under the portal's `environment:`, which
   outranks `env_file:`; measured with the file setting it, the portal still resolved the
   default. This is not the router's defect repeated: the variable needs a working default,
-  because `${VAR:-}` would blank the one name the envsubst filter exists for. The behaviour is
+  because `${VAR:-}` would blank the one name the envsubst filter exists for. The behavior is
   right and was undocumented, so `deploy/README.md` and `compose.yaml` now name the shell and
   `deploy/.env` as its home.
 
@@ -358,7 +358,7 @@ than fixing something.
   in the same sentence: the second was falsified by the first. CORRECTED 2026-11-03.**
   Six is not reachable in either case. The figure came from a throwaway test file that
   set the five optional endpoints plus `RAMEAU_ROUTER_CHAT_URL`, and was then
-  generalised as a property of the shipped example rather than read off it. **That is
+  generalized as a property of the shipped example rather than read off it. **That is
   the same defect as the withdrawn "131 dependency decisions"** and the one
   `PROVENANCE` in `shared/resolver.py` exists to prevent: a number lifted from the
   wrong instrument and quoted without the configuration it was measured on. Found by
@@ -374,10 +374,10 @@ than fixing something.
 
 `nginx.conf` is **not in this repository** — a sweep for `nginx*.conf` and
 `*.conf.template` finds nothing, and it arrives with the unassembled `services/portal/`
-context. Four statements here were therefore predicting the behaviour of a file this
+context. Four statements here were therefore predicting the behavior of a file this
 repository does not contain, and four of them were wrong about the symptom. The shapes
 below were reported by the session assembling the release, with no values; the nginx
-behaviour they are read against was reproduced here against the pinned `nginx:alpine`.
+behavior they are read against was reproduced here against the pinned `nginx:alpine`.
 
 Eight live `proxy_pass` directives. Three more are commented out, which is why a bare
 `grep -c proxy_pass` returns eleven and misleads.
@@ -548,7 +548,7 @@ one, **keep the floors** rather than invent pins.
 #### TWO NAME TRAPS FOR WHOEVER WRITES THE FILE
 
 - The metrics client's **import name uses an underscore and its distribution a hyphen**. pip
-  normalises the two, so a line written either way installs, but the mapping is to be read
+  normalizes the two, so a line written either way installs, but the mapping is to be read
   from `importlib.metadata.packages_distributions()` in an environment where the packages are
   installed — never from recall. This is the same class as `yaml` → `PyYAML`.
 - **`uvicorn[standard]` is not `uvicorn`.** Dropping the extras marker silently removes the
@@ -858,7 +858,7 @@ each side is true:
   of networks, so knowing it identifies nothing and reaches nothing.
 - **It violates this repository's own stated rule**, the first of the rules below: no address
   from the private deployment appears here. A rule that is suspended once it becomes
-  inconvenient is not a rule, and the whole release is organised around that one.
+  inconvenient is not a rule, and the whole release is organized around that one.
 
 And unlike a credential, **an address cannot be rotated** — the remedy that this document
 prescribes for a leaked secret has no analogue. The rule immediately below also says a
@@ -949,7 +949,7 @@ The result is lopsided and the shape of it matters more than the count: **every 
 `ci.yml`, and the hook is clean.** `tools/git-hooks/pre-push` was rewritten on 2026-11-02 for
 exactly this class of fault. `ci.yml` carries the same control, written the same way, and was
 not revisited — so the fix landed on one of two instances of one defect. That is the
-generalisable lesson here, and it is why this audit was asked for as a sweep rather than as a
+generalizable lesson here, and it is why this audit was asked for as a sweep rather than as a
 second look at the hook.
 
 ### The nine findings
@@ -1012,7 +1012,7 @@ one without being wrong.
 `export RAMEAU_COMMIT="$(git rev-parse --short HEAD)"`. Measured: `export V="$(false)"` exits
 **0** under `set -euo pipefail` and leaves `V` empty, where the bare assignment `V="$(false)"`
 exits 1. So a failed `rev-parse` yields an empty value, `${RAMEAU_COMMIT:-unknown}` resolves
-to `unknown`, and the image is labelled with a plausible wrong provenance instead of the build
+to `unknown`, and the image is labeled with a plausible wrong provenance instead of the build
 failing. Proposal: assign, then export.
 
 ### The one weak check, recorded as weak rather than as a defect
@@ -1054,7 +1054,7 @@ defect cannot be reproduced on demand has not been shown to fix anything.
 | A | crashing scanner, no report written | `control ok …`, exit **0** | refuses: "crashed rather than found the canary" |
 | A | scanner misses the canary (exit 0) | fails | fails: "did not flag a generated known-positive" |
 | B | — | control passed neither reporting argument | control passes the gate's `--report-format sarif --report-path` |
-| C | — | *no behavioural arm: this is a rename* | step now named `scan every object in full history` |
+| C | — | *no behavioral arm: this is a rename* | step now named `scan every object in full history` |
 | D | each of the four subjects deleted | skips green, "expected pre-source" | fails, naming the file |
 | E | profile unreadable (`grep` exit 2) | `no loopback …`, exit **0** | fails: "an ERROR rather than a verdict" |
 | F | `RAMEAU_ROUTER_CHAT_URL` pointed at a wrong host | passes, exit **0** | fails, naming the variable |
@@ -1088,7 +1088,7 @@ Not changed, deliberately: the advisory working-tree pass, the hook's history sc
 Everything above this line that places an obligation on step 4 was enforced by nothing. Each
 was measured, each is correct, and each depended on a human reading a 900-line document at
 the one moment it matters. That is the weaker half of a gate — the same shape as the
-executable bit before `28f7c82`, generalised to every other obligation in this document.
+executable bit before `28f7c82`, generalized to every other obligation in this document.
 
 `.github/workflows/ci.yml` now carries a `step-4 preflight` job that asserts them in one
 place and reports exactly one state by name. The executable-bit check is **folded into it**
@@ -1111,7 +1111,7 @@ right about *assembly*; they do not cover a live defect found before step 4.
 
 **What it asserts.** Five hold with or without the source: the ignore files sit where Docker
 reads them (**the location, not mere existence** — a rename or a lone `git mv` disarms every
-pattern silently); no `.jar`, because a GPLv3 artefact in an Apache-2.0 release is a licence
+pattern silently); no `.jar`, because a GPLv3 artefact in an Apache-2.0 release is a license
 conflict; no model weights; `NOTICE` exists the moment any font is tracked, which couples two
 things this document could previously only ask a reader to remember; and every tracked
 shebang file is `100755` in the index, with its control.
@@ -1253,7 +1253,7 @@ crash-versus-verdict classification was corrected on 2026-11-02.
 | 3 | `grep`'s three-way exit | `build` | a directory as the target → status 2 | — | sound |
 | 4 | jq key selector | `build` | a key that is set | a key that is missing, a key that is empty | `//` does **not** fire on `""` |
 | 5 | jq blank-value selector | `build` | `RAMEAU_` empty and null | `OTHER_EMPTY`, which is empty and not reported | sound |
-| 6 | Apache licence substring | `build` | the Apache header | MIT, GPL, lower case | sound |
+| 6 | Apache license substring | `build` | the Apache header | MIT, GPL, lower case | sound |
 | 7 | router ignore patterns | `images` | 8 re-admitted paths | 24 denied paths | **a credential hole — see below** |
 | 8 | portal ignore patterns | `images` | 12 re-admitted paths | 20 denied paths | **the same hole, wider** |
 | 9 | `*.jar` pathspec (A2) | `step4` | `.jar` at depth 3 | `notajar.jarx`, a file named `jar` | sound, reaches any depth |
@@ -1303,7 +1303,7 @@ with `publicDir` left at its default a `public/leak.key` becomes `dist/leak.key`
 serves it. `vite.config.js` is not in this repository and arrives with the context, so that
 default is an assumption rather than a measurement — **step 4 must read it.**
 
-`**/P` also matches a top-level `P`, measured, so the generalised patterns replace the bare
+`**/P` also matches a top-level `P`, measured, so the generalized patterns replace the bare
 forms rather than joining them.
 
 **What was deliberately left top-level only**, with the reason, because denying too much is
@@ -1330,7 +1330,7 @@ rather than being dropped twice.
    wrong length occasionally clears gitleaks' entropy threshold on an
    `aws_access_key_id = …` line. Observed failing once, on a clean repository, with a message
    blaming the matcher; an isolated loop of twelve runs produced none. The rate is not
-   characterised and does not need to be — any nonzero rate disqualifies it, because a control
+   characterized and does not need to be — any nonzero rate disqualifies it, because a control
    that fails at random teaches people to re-run the job. Both near-misses are now
    deterministic and carry no entropy. Measured on gitleaks 8.21.2, all four files in one
    commit: `creds.txt` alone is flagged, rule `aws-access-token`, entropy 3.58, and AKIA

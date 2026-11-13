@@ -1,0 +1,10 @@
+node_modules
+dist
+*.bak
+*.bak-*
+*-bak
+*_fixed.jsx
+*_v2.jsx
+patch-*.py
+patch_*.py
+*.log

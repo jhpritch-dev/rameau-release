@@ -1,0 +1,17 @@
+# syntax=docker/dockerfile:1
+# Dockerfile.bifrost-shell-mcp
+# BIFROST Shell MCP server - static-analysis subset (run_ruff, run_mypy, run_checks).
+# Phase 1 of MCP-DOCKER-1: container-safe tools only (no host-coupled paths/endpoints).
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# fastmcp pinned to match the host (audit MCP-DOCKER-0: host is on 3.1.1).
+RUN pip install --no-cache-dir fastmcp==3.1.1 ruff mypy
+
+COPY checks.py .
+COPY bifrost_shell_static.py .
+
+EXPOSE 8086
+
+CMD ["python", "bifrost_shell_static.py", "--transport", "http", "--port", "8086", "--host", "0.0.0.0"]

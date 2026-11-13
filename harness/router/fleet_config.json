@@ -1,0 +1,790 @@
+{
+  "_file": "fleet_config.json",
+  "_status": "DEFAULT CONFIGURATION. Structure derived from a working deployment; every address replaced with loopback and every local model alias replaced with a placeholder. Edit before use.",
+  "_how_to_use": "Point each tier's base_url at a host running that model and set active_model to a model you have pulled. Tiers you do not run should be deleted: the cascade skips what is absent, and a tier pointing at nothing is a slower failure than a tier that was never declared.",
+  "tiers": [
+    {
+      "tier": "1a-coder",
+      "machine": "bifrost",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "granite4.2-8b-16k",
+      "num_ctx": 16384,
+      "capabilities": {
+        "thinking": true,
+        "vision": false,
+        "tool_use": false,
+        "profiles": [
+          "coding"
+        ]
+      }
+    },
+    {
+      "tier": "1a-instruct",
+      "machine": "bifrost",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "granite4.2-8b-16k",
+      "num_ctx": 16384,
+      "capabilities": {
+        "thinking": true,
+        "vision": false,
+        "tool_use": false,
+        "profiles": [
+          "general"
+        ]
+      }
+    },
+    {
+      "tier": "1b",
+      "machine": "bifrost",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "granite4.2-8b-16k",
+      "num_ctx": 16384,
+      "capabilities": {
+        "thinking": true,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "general"
+        ]
+      }
+    },
+    {
+      "tier": "1a-hearth",
+      "machine": "hearth",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "qwen3.5-4b-32k:latest",
+      "num_ctx": 32768,
+      "capabilities": {
+        "thinking": true,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "general"
+        ]
+      }
+    },
+    {
+      "tier": "1a-overflow",
+      "machine": "hearth",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11436",
+      "active_model": "REPLACE_ME-local-model-alias",
+      "num_ctx": 4096,
+      "capabilities": {
+        "thinking": true,
+        "vision": false,
+        "tool_use": false,
+        "profiles": [
+          "general",
+          "research"
+        ]
+      }
+    },
+    {
+      "tier": "2",
+      "machine": "forge",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "REPLACE_ME-local-model-alias",
+      "num_ctx": 16384,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "research",
+          "general"
+        ]
+      }
+    },
+    {
+      "tier": "1a-forge",
+      "machine": "forge",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "gemma4:e4b",
+      "num_ctx": 8192,
+      "capabilities": {
+        "thinking": true,
+        "vision": true,
+        "tool_use": false,
+        "profiles": [
+          "general"
+        ]
+      }
+    },
+    {
+      "tier": "2.5",
+      "machine": "forge",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11435",
+      "active_model": "gpt-oss-igor-65k",
+      "num_ctx": 65536,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "coding",
+          "research",
+          "general"
+        ]
+      },
+      "vram_hint_gb": 64.47
+    },
+    {
+      "tier": "npu",
+      "machine": "forge",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:8003",
+      "active_model": "gemma4-it:e4b",
+      "num_ctx": 4096,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": false,
+        "profiles": [
+          "general"
+        ]
+      }
+    },
+    {
+      "tier": "forge-t1",
+      "machine": "forge",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "REPLACE_ME-local-model-alias",
+      "num_ctx": 4096,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "general"
+        ]
+      }
+    },
+    {
+      "tier": "3-claude",
+      "machine": "cloud",
+      "type": "anthropic",
+      "base_url": null,
+      "active_model": "claude-sonnet-4-6",
+      "num_ctx": 131072,
+      "escalation_only": true,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "coding",
+          "general",
+          "research"
+        ]
+      },
+      "_profile_affinity": [
+        "quality",
+        "judgment",
+        "max"
+      ]
+    },
+    {
+      "tier": "3-gemini",
+      "machine": "cloud",
+      "type": "openai_compat",
+      "provider": "gemini",
+      "base_url": null,
+      "active_model": "gemini-2.5-flash",
+      "num_ctx": 131072,
+      "escalation_only": true,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "coding",
+          "general",
+          "research"
+        ]
+      },
+      "_profile_affinity": [
+        "reasoning",
+        "complex",
+        "vision"
+      ]
+    },
+    {
+      "tier": "3-fast",
+      "machine": "cloud",
+      "type": "openai_compat",
+      "provider": "groq",
+      "base_url": null,
+      "active_model": "llama-3.3-70b-versatile",
+      "num_ctx": 131072,
+      "escalation_only": true,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": false,
+        "profiles": [
+          "general",
+          "coding"
+        ]
+      },
+      "_profile_affinity": [
+        "chat",
+        "fast"
+      ]
+    },
+    {
+      "tier": "3-openrouter",
+      "machine": "cloud",
+      "type": "openai_compat",
+      "provider": "openrouter",
+      "base_url": null,
+      "escalation_only": true,
+      "active_model": "anthropic/claude-sonnet-4-5",
+      "num_ctx": 131072,
+      "capabilities": {
+        "thinking": false,
+        "vision": true,
+        "tool_use": true,
+        "profiles": [
+          "coding",
+          "general",
+          "research"
+        ]
+      },
+      "_profile_affinity": [
+        "research",
+        "fallback",
+        "cost"
+      ]
+    },
+    {
+      "tier": "search",
+      "machine": "bifrost",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "REPLACE_ME-local-model-alias",
+      "num_ctx": 8192,
+      "capabilities": {
+        "thinking": true,
+        "vision": false,
+        "tool_use": false,
+        "profiles": [
+          "research"
+        ]
+      }
+    },
+    {
+      "tier": "n8n-ops",
+      "machine": "hearth",
+      "type": "n8n_workflow",
+      "base_url": "http://127.0.0.1:5678",
+      "active_model": "n8n",
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": []
+      }
+    },
+    {
+      "tier": "embed-hearth",
+      "machine": "hearth",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "nomic-embed-text",
+      "num_ctx": 2048,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": false,
+        "embedding": true,
+        "profiles": []
+      }
+    },
+    {
+      "tier": "2_devstral",
+      "machine": "forge",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "devstral:latest",
+      "num_ctx": 16384,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [],
+        "_profiles_note": "agentic-scaffold coder (OpenHands/SWE-Agent); weak at STANDALONE code/tests -- intentionally excluded from the coding profile; add an 'agentic' profile if wired later"
+      }
+    },
+    {
+      "tier": "2_qwen_coder",
+      "machine": "forge",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "REPLACE_ME-local-model-alias",
+      "num_ctx": 16384,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "coding"
+        ]
+      }
+    },
+    {
+      "tier": "2_kat_long",
+      "machine": "forge",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "REPLACE_ME-local-model-alias",
+      "num_ctx": 65536,
+      "aliases": [
+        "bifrost-kat-long"
+      ],
+      "capabilities": {
+        "thinking": true,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "coding"
+        ]
+      }
+    },
+    {
+      "tier": "2_qwen_coder_kilo2",
+      "machine": "forge",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "REPLACE_ME-local-model-alias",
+      "num_ctx": 32768,
+      "aliases": [
+        "bifrost-coder-kilo2"
+      ],
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "coding"
+        ]
+      }
+    },
+    {
+      "tier": "2a_bifrost_mistral",
+      "machine": "forge",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "qwen3:8b",
+      "num_ctx": 16384,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "general"
+        ]
+      }
+    },
+    {
+      "tier": "3-cerebras",
+      "machine": "cloud",
+      "type": "openai_compat",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "llama-3.3-70b",
+      "num_ctx": 8192,
+      "escalation_only": true,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "general",
+          "coding"
+        ]
+      },
+      "budget": {
+        "daily_tokens": 1000000,
+        "warn_pct": 80,
+        "gate_pct": 95,
+        "cost_per_1k_tokens": 0.0
+      },
+      "_profile_affinity": [
+        "agent",
+        "coding",
+        "speed",
+        "trivial"
+      ],
+      "provider": "cerebras"
+    },
+    {
+      "tier": "3-perplexity",
+      "machine": "cloud",
+      "type": "openai_compat",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "sonar",
+      "num_ctx": 127072,
+      "escalation_only": true,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": false,
+        "profiles": [
+          "research"
+        ]
+      },
+      "budget": {
+        "daily_tokens": 200000,
+        "warn_pct": 80,
+        "gate_pct": 95,
+        "cost_per_1k_tokens": 0.001
+      },
+      "_profile_affinity": [
+        "research",
+        "web",
+        "current"
+      ],
+      "provider": "perplexity"
+    },
+    {
+      "tier": "3-cohere",
+      "machine": "cloud",
+      "type": "openai_compat",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "command-r-plus",
+      "num_ctx": 131072,
+      "escalation_only": true,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "general"
+        ]
+      },
+      "budget": {
+        "daily_tokens": 100000,
+        "warn_pct": 80,
+        "gate_pct": 95,
+        "cost_per_1k_tokens": 0.003
+      },
+      "_profile_affinity": [
+        "rag",
+        "document",
+        "research"
+      ],
+      "provider": "cohere"
+    },
+    {
+      "tier": "3-together",
+      "machine": "cloud",
+      "type": "openai_compat",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+      "num_ctx": 131072,
+      "escalation_only": true,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "general",
+          "coding"
+        ]
+      },
+      "budget": {
+        "daily_tokens": null,
+        "dollar_budget": 25.0,
+        "warn_pct": 80,
+        "gate_pct": 95,
+        "cost_per_1k_tokens": 0.0009
+      }
+    },
+    {
+      "tier": "3-grok",
+      "machine": "cloud",
+      "type": "openai_compat",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "grok-3",
+      "num_ctx": 131072,
+      "escalation_only": true,
+      "capabilities": {
+        "thinking": true,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "coding",
+          "general",
+          "research"
+        ]
+      },
+      "budget": {
+        "daily_tokens": 100000,
+        "warn_pct": 80,
+        "gate_pct": 95,
+        "cost_per_1k_tokens": 0.003
+      }
+    },
+    {
+      "tier": "2.5-solo",
+      "machine": "forge",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11435",
+      "active_model": "gpt-oss-igor-65k",
+      "num_ctx": 65536,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "coding",
+          "research",
+          "general"
+        ]
+      }
+    },
+    {
+      "tier": "2_panel_oss20b",
+      "machine": "forge",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "REPLACE_ME-local-model-alias",
+      "num_ctx": 16384,
+      "capabilities": {
+        "thinking": true,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "coding",
+          "research",
+          "general"
+        ]
+      }
+    },
+    {
+      "tier": "2_north_code",
+      "machine": "forge",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "REPLACE_ME-local-model-alias",
+      "num_ctx": 16384,
+      "capabilities": {
+        "thinking": true,
+        "vision": false,
+        "tool_use": false,
+        "profiles": [
+          "coding"
+        ]
+      }
+    },
+    {
+      "tier": "3-coder-super",
+      "machine": "cloud",
+      "type": "openai_compat",
+      "provider": "openrouter",
+      "base_url": null,
+      "active_model": "cohere/north-mini-code:free",
+      "num_ctx": 256000,
+      "profile": "agent",
+      "role": "synthesis",
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "coding"
+        ]
+      }
+    },
+    {
+      "tier": "3-synthesis",
+      "machine": "cloud",
+      "type": "openai_compat",
+      "provider": "openrouter",
+      "base_url": null,
+      "active_model": "dots-studio/dots-3-note-preview:free",
+      "num_ctx": 512000,
+      "profile": "research",
+      "role": "assembly",
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "coding",
+          "research",
+          "general"
+        ]
+      }
+    },
+    {
+      "tier": "3-reasoning",
+      "machine": "cloud",
+      "type": "openai_compat",
+      "provider": "openrouter",
+      "base_url": null,
+      "active_model": "nvidia/nemotron-3-super-120b-a12b:free",
+      "num_ctx": 262144,
+      "profile": "research",
+      "role": "evaluation",
+      "capabilities": {
+        "thinking": true,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "research",
+          "general"
+        ]
+      }
+    },
+    {
+      "tier": "3-vision",
+      "machine": "cloud",
+      "type": "openai_compat",
+      "provider": "openrouter",
+      "base_url": null,
+      "active_model": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      "num_ctx": 256000,
+      "profile": "any",
+      "role": "multimodal",
+      "capabilities": {
+        "thinking": false,
+        "vision": true,
+        "tool_use": true,
+        "profiles": [
+          "general"
+        ]
+      }
+    },
+    {
+      "tier": "3-lite-free",
+      "machine": "cloud",
+      "type": "openai_compat",
+      "provider": "openrouter",
+      "base_url": null,
+      "active_model": "nvidia/nemotron-3.5-lightning:free",
+      "num_ctx": 1000000,
+      "profile": "chat",
+      "role": "overflow",
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": [
+          "general",
+          "coding"
+        ]
+      }
+    },
+    {
+      "tier": "3-glm52",
+      "machine": "cloud",
+      "type": "openai_compat",
+      "provider": "openrouter",
+      "base_url": null,
+      "active_model": "z-ai/glm-5.2:free",
+      "num_ctx": 32768,
+      "escalation_only": true,
+      "capabilities": {
+        "thinking": true,
+        "vision": false,
+        "tool_use": false,
+        "profiles": [
+          "general",
+          "coding"
+        ]
+      }
+    },
+    {
+      "tier": "1a-hearth-cand-g42",
+      "machine": "hearth",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "granite4.2:3b",
+      "num_ctx": 8192,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": []
+      }
+    },
+    {
+      "tier": "1a-hearth-cand-g41",
+      "machine": "hearth",
+      "type": "ollama",
+      "base_url": "http://127.0.0.1:11434",
+      "active_model": "granite-4.1-8b-tekken:latest",
+      "num_ctx": 8192,
+      "capabilities": {
+        "thinking": false,
+        "vision": false,
+        "tool_use": true,
+        "profiles": []
+      }
+    }
+  ],
+  "pipeline_mode": {
+    "enabled": true,
+    "_note": "MoA pipeline v1. READER: config.get_pipeline_config(); CONSUMER: strategies.select_pipeline_stages(). Baked into the image -- enabling is a rebuild + rollout, not an in-pod edit. Stage 2 is 2.5-solo (Igor), NOT 2.5 (qwen3-coder:30b).",
+    "trigger_bands": [
+      "COMPLEX",
+      "FRONTIER"
+    ],
+    "_phase": "acceptance PHASE 2b -- stage 1 draft is tier 2 (gemma4-26B @16k, profiles research+general), NOT 2_qwen_coder (profiles coding). Phase 2 measured a 75% stop rate with the coder as drafter on 20 general prompts, and every escalation reason (too_short x3, truncated_code_block x2, hedging) is what a coding model emits when handed prose -- so that number is confounded by the drafter. Stage 2 (2.5-solo = Igor) and the gate are unchanged, so re-running the same 20 prompts isolates the drafter as the single variable. To go back, set stage 1 tier to 2_qwen_coder and rebuild.",
+    "_critique": "CEREMONY 116 (2026-10-13): stage 2 reviews the draft instead of rewriting it, and stage 3 (the drafter's own tier) writes the final answer from the draft and the review. Stage 1 is UNGATED (stop_on_confident false) so the critique always runs: with tier 2 drafting, the gate stopped 40 of 40 general prompts at stage 1 (RESULT-c1-lane-a-drafter-acceptance-2026-09-04), which would leave stages 2 and 3 dead. Every stage streams to the caller; the final answer is the text after the last stage header. The critique stage must never be last and never be gated. Opt-in only (X-Bifrost-Pipeline). John 2026-10-13: 'Make it fire, then measure'.",
+    "stages": [
+      {
+        "stage": 1,
+        "tier": "2",
+        "role": "draft",
+        "stop_on_confident": false
+      },
+      {
+        "stage": 2,
+        "tier": "2.5-solo",
+        "role": "critique",
+        "stop_on_confident": false,
+        "instruction": "The draft above answers the original request. Do NOT rewrite it. Review it adversarially and report only findings: for each, state what is wrong or missing, why it matters, and the minimum fix. Be concise and specific. If the draft is sound, say so in one line."
+      },
+      {
+        "stage": 3,
+        "tier": "2",
+        "role": "revise",
+        "stop_on_confident": false,
+        "instruction": "Above are your draft and an independent review of it. Produce the corrected final answer to the original request, applying the review where it is right and ignoring it where it is wrong. Reply with the final answer only -- no preamble and no commentary about the review."
+      }
+    ]
+  },
+  "quality_weighted_fanout": {
+    "enabled": false,
+    "_note": "Parallel MoA. READER: config.get_fanout_config(); CONSUMER: strategies.select_fanout_config() / fanout_stream(). MUTUALLY EXCLUSIVE with pipeline_mode -- enabling both logs an ERROR and runs neither. Candidates must be CO-RESIDENT to race: 2.5-solo (64.5GB) + 2 (18.0GB) were both loaded on Forge when this shipped, 82.5GB of the 100GiB GTT pool.",
+    "trigger_bands": [
+      "COMPLEX",
+      "FRONTIER"
+    ],
+    "primary_wins_on_tie": true,
+    "signals": [
+      "self_eval",
+      "avg_logprob"
+    ],
+    "candidates": [
+      {
+        "tier": "2.5-solo",
+        "role": "primary"
+      },
+      {
+        "tier": "2",
+        "role": "challenger"
+      }
+    ]
+  }
+}

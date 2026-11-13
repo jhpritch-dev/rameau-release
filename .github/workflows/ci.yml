@@ -261,7 +261,25 @@ jobs:
           }
           # No discovery step, and no contradiction check: it could not fire either, since
           # the anchor matches `test_*.py` itself. See the byte-compile step above.
-          python -m pip install --quiet --disable-pip-version-check pytest
+          # THE RUNTIME DEPENDENCIES, not just pytest. The suite imports fastapi,
+          # httpx, pydantic, numpy, langgraph and nest_asyncio at module scope; with only
+          # pytest installed, collection dies on the first of them. This step predates the
+          # source and was correct while shared/test_resolver.py -- standard library only
+          # -- was the whole suite.
+          python -m pip install --quiet --disable-pip-version-check \
+            -r requirements.txt -r requirements-dev.txt
+
+          # THE ENVIRONMENT, from .env.example rather than a list pasted here. resolver.py
+          # resolves every endpoint from the environment and deliberately never falls back
+          # to a literal, so an unset variable is a ConfigError at IMPORT time and takes
+          # collection down with it -- measured as
+          # `no endpoint configured for 'broadcaster'`. Sourcing the example file means
+          # this step cannot drift from the registry, because the step below regenerates
+          # that file and diffs it.
+          set -a
+          . ./.env.example
+          set +a
+
           python -m pytest -q --tb=line
           echo "tests ok"
 
@@ -775,6 +793,17 @@ jobs:
                   .git-credentials src/.env src/leak.pem public/leak.key app.log
                   src/sub.log old.bak old.bak-1 App_fixed.jsx App_v2.jsx"
 
+          # ---- shell-mcp: what MUST arrive, and what MUST NOT ----
+          # The real context holds exactly two files, so this probe is mostly about what the
+          # never-block denies rather than about re-admission. sub/ok.py is in the WANT list
+          # on purpose: this ignore file denies credential SHAPES at any depth, and the test
+          # that it has not become a blanket subdirectory denial is a plain .py one level
+          # down that must still arrive.
+          S_WANT="bifrost_shell_static.py checks.py sub/ok.py"
+          S_DENY=".env .env.local secret.pem deploy.key id_rsa .netrc .git-credentials
+                  credentials.json auth.json kubeconfig api.token sub/.env sub/leak.pem
+                  __pycache__/x.pyc .mypy_cache/x.json app.log old.bak data.sqlite"
+
           # MATCHER: ignore-pattern-probe
           probe() {
             svc="$1"; want="$2"
@@ -819,8 +848,10 @@ jobs:
 
           plant "$pl/router-ctx" "$R_WANT $R_DENY"
           plant "$pl/portal-ctx" "$P_WANT $P_DENY"
+          plant "$pl/shell-mcp-ctx" "$S_WANT $S_DENY"
           probe router "$R_WANT" "$R_DENY"
           probe portal "$P_WANT" "$P_DENY"
+          probe shell-mcp "$S_WANT" "$S_DENY"
 
       - name: are the build contexts here yet?
         id: contexts
@@ -835,7 +866,14 @@ jobs:
         run: |
           set -euo pipefail
           missing=""
-          for d in services/router services/portal; do
+          # services/shell-mcp joined these on 2026-11-13, when the shell-MCP server got the
+          # compose wiring its scope ruling named. It belongs in BOTH places below: the loop,
+          # so the log says what is present, and the all-absent condition, so "nothing is
+          # assembled" keeps meaning nothing. A third context added to the loop alone would
+          # make a tree with only shell-mcp present read as "no context exists yet", and the
+          # build would then be skipped rather than attempted -- the half-assembled hole in
+          # reverse.
+          for d in services/router services/portal services/shell-mcp; do
             if [ -d "$d" ]; then
               echo "present: $d"
             else
@@ -844,7 +882,8 @@ jobs:
             fi
           done
 
-          if [ -n "$missing" ] && [ ! -d services/router ] && [ ! -d services/portal ]; then
+          if [ -n "$missing" ] && [ ! -d services/router ] && [ ! -d services/portal ] \
+             && [ ! -d services/shell-mcp ]; then
             echo "present=false" >> "$GITHUB_OUTPUT"
             msg="No image was built: neither build context exists yet."
             echo "$msg"
@@ -1982,7 +2021,16 @@ jobs:
           # at 34 against 36 the DEMO arm's symmetric matcher+arm removal lands on 35 and
           # the floor stays quiet, so the one leg that can see that removal stops seeing it.
           # Measured, not reasoned about -- the arm scored WRONG-REASON for exactly this.
-          MATCHER_FLOOR=36
+          #
+          # 36 -> 37 when shell-mcp-ignore-patterns was declared, and the paragraph above
+          # turned out to be a prediction. Step 4 landed six ignore files under
+          # deploy/compose/ and the population went 36 -> 42 with the floor left at 36; six
+          # slack, and the DEMO arm scored WRONG-REASON for the whole of that time while the
+          # failure was read as belonging to the census beside it. Retiring those files and
+          # adding one real pattern set leaves 37 matchers and 37 arms, so the floor is 37:
+          # equal to the population, which is the only value at which a symmetric removal of
+          # one pair is visible. A floor is not a pin -- growth raises it, by hand, here.
+          MATCHER_FLOOR=37
           OBLIGATION_FLOOR=12
           [ "$NM" -ge "$MATCHER_FLOOR" ] || blame "POPULATION SHRANK: $NM matchers against a floor of $MATCHER_FLOOR. Set equality cannot see a matcher deleted together with its arm, which is what this floor is for. If the removal was deliberate, lower the floor in the same change and say why." ""
           [ "$NO" -ge "$OBLIGATION_FLOOR" ] || blame "OBLIGATIONS SHRANK: $NO against a floor of $OBLIGATION_FLOOR." ""

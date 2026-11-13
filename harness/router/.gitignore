@@ -1,0 +1,102 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Temp / scratch
+*.zip
+*.bak
+*.bak-*
+*.bak[0-9]*
+*.pre-*
+*.broken-*
+*.env
+cloud-keys.env
+mode.json
+Temp_*
+output.csv
+
+# Agent handoff state dumps (transient; archived via compact_handoff.py)
+AGENT_HANDOFF_*.md
+
+# Scratch working dir (audit dumps, log bundles, snapshots) — never committed
+scratch/
+.pytest_cache/
+
+# Build outputs
+dist/
+node_modules/
+*.db
+*.sqlite
+
+# One-off patch scripts (patch_*.py and patch-*.py)
+patch_*.py
+patch-*.py
+
+# Bench / scratch scripts and results
+bench_*.py
+bench_*.json
+*_results.json
+warmup-run*.log
+
+# Worktree utilities
+worktree_*.py
+
+# Foreign / third-party skill packs (not BIFROST source)
+skills/
+
+# Session / run artifacts
+sessions/.current-session
+save_safety_*.py
+test_imports.py
+test_maxcut.py
+test_simple_qaoa.py
+qaoa_*.py
+rag_*.py
+format_stress_guard.py
+fp1_acceptance_tests.py
+harness_setup.py
+igor_prompt.py
+overlay_dispatch.py
+
+# Misc one-off scripts
+pk_record_*.py
+npu_classifier_shadow.py
+bifrost_telegram.py
+tools/warmup.py
+
+# Cold store metadata
+cold_store_*.json
+_build_v*.log
+
+# ---------------------------------------------------------------------------
+# 2026-08-12 PROVENANCE FIX. These four are IMPORTED AT RUNTIME by main.py and are
+# baked into the image by COPY . ., yet the rules above hid them from git. Their
+# source existed only on Bifrost's disk and inside built images, so a clean-clone
+# build shipped without them -- that is the v303 crash of 2026-08-03, and it is why
+# build.ps1 is mandatory and git archive is banned.
+#
+# igor_prompt.py is additionally on the PROTECTED list in protected_files.json
+# (rule 1, 'agent operating instructions = policy config-of-record'), so the
+# protected-file ceremony was running pre/post SHA against a file git did not track,
+# with no history to diff and no way to recover a prior revision.
+#
+# Negations, not deletions: ag_*.py above still legitimately hides scratch
+# (rag_query*.py, rag_recheck.py, rag_collections_probe.py). Only the imported one
+# is exempted. Check main.py's import list before adding to this block.
+!igor_prompt.py
+!overlay_dispatch.py
+!npu_classifier_shadow.py
+!rag_inject_chromadb.py
+
+# 2026-10-05: ceremony preimages accumulate here (32 files, 3.6 MB). .dockerignore
+# already excludes backups/ AND *-preimage-*, so they never reach the image -- but
+# untracked they keep `git status` dirty, and build.ps1 aborts on a dirty tree.
+backups/

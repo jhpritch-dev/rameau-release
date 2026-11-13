@@ -445,7 +445,23 @@ note "$sm_report"
 # the clone, never committed, discarded with the clone. It is NOT the real source and nothing
 # here pretends otherwise -- an arm against a stub shows the assertion CAN fire, which is the
 # strongest claim available before step 4 and is not the same as having run at the transition.
+#
+# STEP 4 HAS NOW HAPPENED, and the line above anticipated this without being able to act on
+# it. Until the source landed, `services/` did not exist and `mkdir -p` built the whole of
+# what the obligations would read. Now `services/router/` holds 29 real files and
+# `services/portal/` 28, so the same `mkdir -p` OVERLAYS them instead of creating them, and
+# every arm that works by taking something away stopped reaching its state: `rm
+# services/router/skills/registry.md` left fifteen real files in `skills/`, so B2's "EMPTY"
+# was never true, the check correctly did not fire, and the arm read that as the check being
+# broken. Three arms failed that way and one of them is the B3 twin.
+#
+# `rm -rf services` first makes the stub AUTHORITATIVE rather than additive: what the
+# obligations read is exactly what the line below builds, as it was before the source
+# existed, and as it will stay however the real tree grows. This runs in the disposable
+# clone under $WORK -- `git clone --local` at line 92, mutations eval'd via `cd "$AR"` -- so
+# it removes nothing from the repository and the checkout is never touched.
 STUB='
+rm -rf services
 mkdir -p services/router/backends services/router/skills services/portal/src services/portal/public
 printf "fastapi\nuvicorn[standard]==0.30.6\n" > services/router/requirements.txt
 : > services/router/main.py
@@ -490,8 +506,14 @@ fires "A3 a .safetensors two directories down" "sub/deep/w.safetensors" \
       'mkdir -p sub/deep && : > sub/deep/w.safetensors && git add -f sub/deep/w.safetensors'
 
 # OBLIGATION-ARM: A4
+# NOTICE NOW EXISTS, so adding a font no longer reaches the state this arm names. It landed
+# with the nine woff2 faces at step 4, and until then its absence was the default the arm
+# could rely on without saying so. Planting a font beside an existing NOTICE is the case A4
+# is supposed to ACCEPT -- the arm below it checks exactly that -- so this one stopped being
+# a mutation at all and reported the check as broken. Removing NOTICE is now part of the
+# mutation rather than part of the background.
 fires "A4 a font with no NOTICE" "font file(s) are tracked but NOTICE is absent" \
-      ': > Inter.woff2 && git add Inter.woff2'
+      'git rm -q --cached NOTICE && rm -f NOTICE && : > Inter.woff2 && git add Inter.woff2'
 passes "A4 a font WITH NOTICE, and A4 moves from not-yet-due to checked" \
        "repository-only obligations:  5 checked, 0 violated, 0 not yet due" \
        ': > Inter.woff2 && printf "RAMEAU\nOFL fonts.\n" > NOTICE && git add Inter.woff2 NOTICE'
@@ -567,9 +589,14 @@ run_state_bare() {
       GITHUB_STEP_SUMMARY="$WORK/sum" GITHUB_OUTPUT="$WORK/out2" \
       bash "$(step_path step4__05)" 2>&1 )
 }
+# "No source present" was the repository's own condition until step 4 and is now a state it
+# has permanently left, so the arm has to CONSTRUCT it instead of inheriting it. Without the
+# removal the mutation lands on an assembled tree and the preflight says ASSEMBLED AND
+# VIOLATED -- the right answer to a different question, and indistinguishable in a substring
+# test from the check being broken.
 fires "state: a repository violation with no source present" \
       "STATE: NOT ASSEMBLED YET, AND VIOLATED" \
-      ': > probe.jar && git add probe.jar'
+      'rm -rf services && : > probe.jar && git add probe.jar'
 fires "state: an assembled source with a violation" "STATE: ASSEMBLED AND VIOLATED" \
       "$(with_stub 'mkdir -p services/router/strategies && : > services/router/strategies/tiers.py')"
 fires "state: INDETERMINATE when the repository step did not finish" \
@@ -680,6 +707,31 @@ PY' \
 fires "portal ignore patterns: reverted to single-segment credential patterns" \
       "src/.env" \
       'python3 - deploy/images/portal/Dockerfile.dockerignore <<PY
+import io, sys
+p = sys.argv[1]
+lines = io.open(p).read().split("\n")
+out, n = [], 0
+for line in lines:
+    if line.startswith("**/"):
+        out.append(line[3:]); n += 1
+    else:
+        out.append(line)
+if n == 0:
+    sys.stderr.write("no **/ patterns to revert\n"); sys.exit(2)
+io.open(p, "w").write("\n".join(out))
+PY' \
+      run_images_probe
+
+# ARM: shell-mcp-ignore-patterns
+# The third pattern set, and the reason the census derives ids from the FILE rather than from
+# a registry: this arm had to exist before the file could be added. The mutation is the same
+# one the two above use -- strip `**/` so every credential pattern becomes top-level-only --
+# and the expectation is a credential planted ONE LEVEL DOWN, because that is precisely the
+# depth a single-segment pattern stops reaching. `.env` at the context root would still be
+# denied after the mutation and would prove nothing.
+fires "shell-mcp ignore patterns: reverted to single-segment credential patterns" \
+      "sub/.env" \
+      'python3 - deploy/images/shell-mcp/Dockerfile.dockerignore <<PY
 import io, sys
 p = sys.argv[1]
 lines = io.open(p).read().split("\n")

@@ -1,0 +1,335 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "bifrost-router",
+    "title": "BIFROST Router",
+    "tags": ["bifrost", "router", "inference"],
+    "timezone": "browser",
+    "refresh": "5s",
+    "time": {
+      "from": "now-30m",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Operating Mode",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "bifrost_router_info",
+            "legendFormat": "{{mode}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+          }
+        },
+        "options": {
+          "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/^mode$/" },
+          "textMode": "value",
+          "colorMode": "background"
+        }
+      },
+      {
+        "id": 2,
+        "title": "Total Requests",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+        "targets": [
+          {
+            "expr": "sum(bifrost_requests_total)",
+            "legendFormat": "Total"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "blue", "value": null },
+                { "color": "green", "value": 10 }
+              ]
+            }
+          }
+        },
+        "options": { "colorMode": "value", "graphMode": "area" }
+      },
+      {
+        "id": 3,
+        "title": "Local %",
+        "type": "gauge",
+        "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+        "targets": [
+          {
+            "expr": "bifrost_local_percentage",
+            "legendFormat": "Local"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "max": 100,
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "red", "value": null },
+                { "color": "yellow", "value": 50 },
+                { "color": "green", "value": 75 }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Uptime",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "expr": "bifrost_uptime_seconds",
+            "legendFormat": "Uptime"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+          }
+        },
+        "options": { "colorMode": "value" }
+      },
+      {
+        "id": 5,
+        "title": "Cloud Requests",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+        "targets": [
+          {
+            "expr": "sum(bifrost_cloud_requests_total)",
+            "legendFormat": "Cloud"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 10 },
+                { "color": "red", "value": 50 }
+              ]
+            }
+          }
+        },
+        "options": { "colorMode": "value" }
+      },
+      {
+        "id": 6,
+        "title": "Escalations",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+        "targets": [
+          {
+            "expr": "sum(bifrost_escalations_total)",
+            "legendFormat": "Escalations"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "orange", "value": 5 }
+              ]
+            }
+          }
+        },
+        "options": { "colorMode": "value" }
+      },
+      {
+        "id": 10,
+        "title": "Requests / min by Band",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+        "targets": [
+          {
+            "expr": "sum(rate(bifrost_band_total[1m])) by (band) * 60",
+            "legendFormat": "{{band}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "reqpm" },
+          "overrides": [
+            { "matcher": { "id": "byName", "options": "TRIVIAL" }, "properties": [{ "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "MODERATE" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FADE2A", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "COMPLEX" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FF9830", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "FRONTIER" }, "properties": [{ "id": "color", "value": { "fixedColor": "#F2495C", "mode": "fixed" } }] }
+          ]
+        },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] }
+        }
+      },
+      {
+        "id": 11,
+        "title": "Requests / min by Tier",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+        "targets": [
+          {
+            "expr": "sum(rate(bifrost_tier_total[1m])) by (tier) * 60",
+            "legendFormat": "{{tier}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "reqpm" },
+          "overrides": [
+            { "matcher": { "id": "byName", "options": "1a-coder" }, "properties": [{ "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "3-fast" }, "properties": [{ "id": "color", "value": { "fixedColor": "#8AB8FF", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "3-gemini" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FF9830", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "3-claude" }, "properties": [{ "id": "color", "value": { "fixedColor": "#F2495C", "mode": "fixed" } }] }
+          ]
+        },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] }
+        }
+      },
+      {
+        "id": 20,
+        "title": "Band Distribution (Total)",
+        "type": "piechart",
+        "gridPos": { "h": 8, "w": 8, "x": 0, "y": 12 },
+        "targets": [
+          {
+            "expr": "sum(bifrost_band_total) by (band)",
+            "legendFormat": "{{band}}"
+          }
+        ],
+        "fieldConfig": {
+          "overrides": [
+            { "matcher": { "id": "byName", "options": "TRIVIAL" }, "properties": [{ "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "MODERATE" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FADE2A", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "COMPLEX" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FF9830", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "FRONTIER" }, "properties": [{ "id": "color", "value": { "fixedColor": "#F2495C", "mode": "fixed" } }] }
+          ]
+        },
+        "options": {
+          "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] },
+          "pieType": "donut"
+        }
+      },
+      {
+        "id": 21,
+        "title": "Local vs Cloud (Total)",
+        "type": "piechart",
+        "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
+        "targets": [
+          {
+            "expr": "sum(bifrost_local_requests_total)",
+            "legendFormat": "Local"
+          },
+          {
+            "expr": "sum(bifrost_cloud_requests_total)",
+            "legendFormat": "Cloud"
+          }
+        ],
+        "fieldConfig": {
+          "overrides": [
+            { "matcher": { "id": "byName", "options": "Local" }, "properties": [{ "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "Cloud" }, "properties": [{ "id": "color", "value": { "fixedColor": "#8AB8FF", "mode": "fixed" } }] }
+          ]
+        },
+        "options": {
+          "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] },
+          "pieType": "donut"
+        }
+      },
+      {
+        "id": 22,
+        "title": "Request Latency (p50 / p95 / p99)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 8, "x": 16, "y": 12 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(bifrost_request_latency_ms_bucket[5m])) by (le))",
+            "legendFormat": "p50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(bifrost_request_latency_ms_bucket[5m])) by (le))",
+            "legendFormat": "p95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(bifrost_request_latency_ms_bucket[5m])) by (le))",
+            "legendFormat": "p99"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "custom": { "fillOpacity": 10 }
+          },
+          "overrides": [
+            { "matcher": { "id": "byName", "options": "p50" }, "properties": [{ "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "p95" }, "properties": [{ "id": "color", "value": { "fixedColor": "#FADE2A", "mode": "fixed" } }] },
+            { "matcher": { "id": "byName", "options": "p99" }, "properties": [{ "id": "color", "value": { "fixedColor": "#F2495C", "mode": "fixed" } }] }
+          ]
+        },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+        }
+      },
+      {
+        "id": 30,
+        "title": "Latency by Tier",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(bifrost_request_latency_ms_bucket[5m])) by (le, tier))",
+            "legendFormat": "{{tier}} p95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "ms" }
+        },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }
+        }
+      },
+      {
+        "id": 31,
+        "title": "Latency by Band",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(bifrost_request_latency_ms_bucket[5m])) by (le, band))",
+            "legendFormat": "{{band}} p95"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "ms" }
+        },
+        "options": {
+          "tooltip": { "mode": "multi" },
+          "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }
+        }
+      }
+    ],
+    "templating": { "list": [] },
+    "annotations": { "list": [] },
+    "schemaVersion": 39
+  },
+  "overwrite": true
+}

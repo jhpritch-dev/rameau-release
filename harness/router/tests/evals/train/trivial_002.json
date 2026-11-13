@@ -1,0 +1,13 @@
+{
+  "id": "trivial_002",
+  "band": "TRIVIAL",
+  "assigned_tier": "T1A",
+  "description": "Write a function that checks if a string is a palindrome",
+  "prompt": "Write a Python function `is_palindrome(s: str) -> bool` that returns True if the input string is a palindrome (case-insensitive, ignoring non-alphanumeric characters). Include a test_is_palindrome() function testing: 'racecar'->True, 'hello'->False, 'A man a plan a canal Panama'->True, ''->True.",
+  "expected_behavior": "Correctly identifies palindromes, handles mixed case and punctuation",
+  "validation_criteria": {
+    "l3": "Code parses without syntax errors",
+    "l4": "test_is_palindrome() passes all assertions",
+    "l5": "Handles edge cases: empty string, single char, mixed case, punctuation"
+  }
+}

@@ -4,13 +4,21 @@ Read this before doing anything else here. It is short on purpose.
 
 ## What this repository is right now
 
-Scaffolding. Licence, ignore rules, secret-scanning CI, scope document. **There is no source
-tree yet.** It arrives as an allowlisted, credential-scrubbed subset of a private archive,
-and only after the scrub reads clean under more than one scanner. See
+Scaffolding plus the landed source. License, ignore rules, secret-scanning CI, scope
+document -- and, since the step-4 assembly, the router and portal build contexts under
+`services/` and the test harness under `harness/`. All of it arrived as an allowlisted,
+credential-scrubbed subset of a private archive. See
 [RELEASE-SCOPE.md](RELEASE-SCOPE.md) for the assembly order.
 
-If you were expecting source and did not find it, that is the current state and not a
-checkout problem.
+**The two directories under `services/` are build contexts, not the working copy.** Day-to-day
+work happens in `harness/`, which is what the test suite imports; `services/router/` and
+`services/portal/` hold only what the Dockerfiles COPY. A change made in one and not the
+other is the mistake this layout invites, so make it deliberately or not at all.
+
+**The assembly is all-or-nothing and CI enforces it.** The `images` job skips only while BOTH
+contexts are absent; with one present and one missing it reports a half-assembled tree and
+fails the build, on the grounds that a stack with one of its two services unbuildable is not
+a stack. Do not land one without the other.
 
 ## The one rule that matters most
 
@@ -76,12 +84,12 @@ So:
 
 - Do not write code that assumes a reachable private host, and do not hardcode an address
   to make something testable. Use a configurable endpoint with a placeholder default.
-- Do not try to verify behaviour against a live model host. Verify against tests, fixtures
+- Do not try to verify behavior against a live model host. Verify against tests, fixtures
   and a locally runnable CPU-sized model if one is configured.
 - Anything that genuinely needs the real deployment is not this session's work. Say what
   needs measuring and leave it.
 
-## Division of labour
+## Division of labor
 
 This session's job is **judgment**: security review of the tree, adversarial review of
 changes, Docker and Compose design review, documentation prose, and the final pre-release
@@ -108,7 +116,7 @@ for.
 
 ## Conventions
 
-- Licence is Apache-2.0. New source files carry the standard short header.
+- License is Apache-2.0. New source files carry the standard short header.
 - Python targets 3.11+. Keep output ASCII-safe where it is logged.
 - Shell and Compose examples must work on Linux; do not assume a Windows host.
 - Keep the offline deployment profile genuinely offline — no new outbound dependency may be

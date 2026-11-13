@@ -1,0 +1,43 @@
+# RAMEAU router -- runtime dependencies.
+#
+# PROVENANCE IS MARKED PER LINE, because the alternative -- a pin set with no way for a
+# reviewer to tell which pins were measured -- is the thing this repository refuses to do
+# elsewhere. Two markers are used:
+#
+#   [frozen]      the version appears in harness/kb/requirements-frozen-1.18.txt, a pip
+#                 freeze taken from a running image on the same python:3.11-slim base.
+#                 Measured -- but measured for the KB service, not for the router.
+#   [unmeasured]  no version evidence exists in this repository. The pin is the current
+#                 release as of 2026-11-13, chosen so that the build is reproducible, and
+#                 it is labeled so that nobody mistakes it for a measurement.
+#
+# THE WHOLE SET RESOLVES TOGETHER. Verified 2026-11-13 with
+#   pip install --dry-run --ignore-installed -r requirements.txt
+# on CPython 3.11. This is not a lock file. See requirements-dev.txt for the test
+# dependencies, requirements-opt.txt for guarded optional features, and
+# requirements-mcp.txt for the MCP and decomposer paths -- that last file does NOT
+# co-install with this one, and it explains why in its own header.
+#
+# PYTHON 3.11 IS THE TARGET and it constrains real choices here: numpy 2.5.x requires
+# 3.12+, so a visitor on this project's own base image would silently resolve to something
+# older if the pin were absent.
+
+fastapi==0.115.0                       # [frozen]  main.py, anthropic_adapter.py, anthropic_passthrough.py
+uvicorn[standard]==0.30.6              # [frozen]  the Dockerfile CMD is `uvicorn main:app`.
+                                       #   THE EXTRAS ARE LOAD-BEARING: bare `uvicorn` omits
+                                       #   httptools, websockets, watchfiles, python-dotenv and
+                                       #   uvloop, all five of which the frozen image contains.
+httpx==0.27.2                          # [frozen]  the most-used dependency here: 17 runtime modules
+pydantic==2.8.2                        # [frozen]  config.py, telemetry.py, bifrost_message.py, autopilot_graph.py
+numpy==2.4.4                           # [frozen]  main.py, routing_cache.py. Newest numpy still supporting 3.11.
+PyYAML==6.0.3                          # [frozen]  SKILL.md front-matter parsing. Import name is `yaml`.
+prometheus-client==0.26.0              # [unmeasured]  metrics.py. Import name is `prometheus_client`.
+langgraph==1.2.21                      # [unmeasured]  router_graph.py, subtask_graph.py, autopilot_graph.py.
+                                       #   NOT optional: main.py imports autopilot_graph at module
+                                       #   scope, so the router does not import without this.
+nest-asyncio==1.6.0                    # [unmeasured]  subtask_graph.py calls nest_asyncio.apply() at import
+
+# tomllib is standard library from 3.11 and bifrost_gates.py prefers it; tomli is only the
+# `< 3.11` fallback branch. The environment marker is what keeps it off the 3.11 image --
+# a comment would not.
+tomli==2.5.0 ; python_version < "3.11"   # [unmeasured]  bifrost_gates.py fallback only

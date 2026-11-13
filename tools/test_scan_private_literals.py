@@ -356,3 +356,57 @@ def test_the_tracked_tree_is_checked_by_git_not_a_glob():
     out = subprocess.run(["git", "-C", REPO, "ls-files"], capture_output=True, text=True)
     assert out.returncode == 0
     assert set(sut._tracked_files(REPO)) == set(out.stdout.split())
+
+
+# --------------------------------------------------------------------------------------
+# R4 in JavaScript. `metrics.local` is a property access; "bifrost.lan" a host.  # rameau-scan: allow
+# The
+# rule cannot tell them apart by shape, so it is told apart by QUOTING, and both
+# directions are asserted here -- an exemption with only its happy path tested is a hole.
+# --------------------------------------------------------------------------------------
+
+
+def jsx_rules_fired(text):
+    """Scan as a .jsx file. `rules_fired` scans as probe.py and cannot reach this rule."""
+    findings, _ = sut.scan_text("src/Probe.jsx", text, None)
+    return {f["rule"] for f in findings}
+
+
+def test_a_js_property_access_is_not_a_hostname():
+    """REGRESSION, from the first .jsx file ever scanned in this tree.
+
+    The portal's src/BifrostPortal.jsx produced eight findings; five were property
+    accesses of the form `<identifier>.local` / `<identifier>.lan`, which R4 matches
+    because a property access and a hostname are the same characters. Fixed in the rule
+    rather than with five `rameau-scan: allow` markers, which would have recorded a
+    defect as five deliberate literals.
+    """
+    for line in ("const local = metrics.local || 0;",  # rameau-scan: allow
+                 "  <LocalPanel local={metrics.local} />",  # rameau-scan: allow
+                 "const pct = node.lan;",  # rameau-scan: allow
+                 "return props.corp ? 1 : 0;"):  # rameau-scan: allow
+        assert jsx_rules_fired(line) == set(), line
+
+
+def test_the_js_exemption_does_NOT_hide_a_quoted_host_in_a_jsx_file():
+    """The control. A host has to be a string before anything can fetch it.
+
+    If the exemption read "any dotted name in a .jsx file", it would be a hole in the
+    one file type most likely to carry a fetch target. A QUOTED host must still fire --
+    in each of the three JS string forms, and inside a URL.
+    """
+    assert jsx_rules_fired('const H = "bifrost.lan";') == {"internal-dns-suffix"}   # rameau-scan: allow
+    assert jsx_rules_fired("const H = 'bifrost.lan';") == {"internal-dns-suffix"}   # rameau-scan: allow
+    assert jsx_rules_fired("const H = `bifrost.lan`;") == {"internal-dns-suffix"}   # rameau-scan: allow
+    assert jsx_rules_fired('fetch("http://box.internal/api")') == {"internal-dns-suffix"}  # rameau-scan: allow
+
+
+def test_the_js_exemption_is_scoped_to_js_files():
+    """The second control: the same unquoted text in a .py file is unaffected.
+
+    The exemption is keyed on the extension as well as on quoting, and a change that
+    dropped the extension test would silently widen it across the whole tree -- where
+    nearly every file is YAML, Markdown or Python and the ambiguity does not exist.
+    """
+    findings, _ = sut.scan_text("probe.py", "x = metrics.local", None)  # rameau-scan: allow
+    assert {f["rule"] for f in findings} == {"internal-dns-suffix"}

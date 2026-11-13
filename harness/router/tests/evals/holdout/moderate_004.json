@@ -1,0 +1,13 @@
+{
+  "id": "moderate_004",
+  "band": "MODERATE",
+  "assigned_tier": "T1A",
+  "description": "Implement a priority queue with decrease-key operation",
+  "prompt": "Write a Python class `MinHeap` with: __init__(self), push(self, key: str, priority: float), pop(self) -> tuple[str, float] (returns and removes min), decrease_key(self, key: str, new_priority: float), peek(self) -> tuple[str, float], __len__(self) -> int. Include test_min_heap() testing: push/pop ordering, decrease_key changes extraction order, empty heap behavior.",
+  "expected_behavior": "MinHeap maintains correct min-heap ordering, decrease_key updates priority in-place",
+  "validation_criteria": {
+    "l3": "Code parses without syntax errors",
+    "l4": "test_min_heap() passes: ordering, decrease_key, edge cases",
+    "l5": "O(log n) push/pop, decrease_key correctly re-heapifies"
+  }
+}
